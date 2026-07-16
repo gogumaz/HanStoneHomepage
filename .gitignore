@@ -1,0 +1,13 @@
+_workspace/
+reference/
+node_modules/
+dist/
+build/
+*.zip
+.env
+.env.*
+*.pem
+*.key
+secrets.*
+.DS_Store
+Thumbs.db
