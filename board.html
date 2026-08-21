@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="바둑타고 한국사 여행 게시판과 고객지원">
+  <meta name="theme-color" content="#f6f0e2">
+  <title>커뮤니티 | 바둑타고 한국사 여행</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="board-page">
+  <a class="skip-link" href="#boardMain">본문 바로가기</a>
+
+  <div class="announcement">
+    <div class="container announcement-inner">
+      <p><span class="announcement-badge">BOARD</span> 새로운 소식과 수업 자료를 확인하세요.</p>
+      <a href="index.html">홈으로 <span aria-hidden="true">→</span></a>
+    </div>
+  </div>
+
+  <header class="site-header">
+    <div class="container header-inner board-header-inner">
+      <a class="brand" href="index.html" aria-label="바둑타고 한국사 여행 홈">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><b>路</b></span>
+        <span class="brand-copy"><strong>바둑타고</strong><small>한국사 여행</small></span>
+      </a>
+      <nav class="board-top-nav" aria-label="바로가기">
+        <a href="index.html#journey">시대여행</a>
+        <a href="board.html?type=classHelper">수업도우미</a>
+        <a href="index.html#materials">교재·자료실</a>
+      </nav>
+      <div class="board-user-area">
+        <span id="currentRoleBadge">비회원</span>
+        <a class="button button-small button-dark" href="index.html">홈으로</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="boardMain">
+    <section class="board-hero">
+      <div class="container board-hero-inner">
+        <div>
+          <p class="eyebrow"><span></span> COMMUNITY & SUPPORT</p>
+          <h1 id="boardTitle">공지사항</h1>
+          <p id="boardDescription">서비스의 새로운 소식과 중요한 안내를 확인하세요.</p>
+        </div>
+        <div class="role-preview" id="rolePreview" hidden>
+          <label for="demoRoleSelect">개발용 권한 미리보기</label>
+          <select id="demoRoleSelect">
+            <option value="guest">비회원</option>
+            <option value="student">학생</option>
+            <option value="guardian">학부모</option>
+            <option value="teacher">지도자</option>
+            <option value="operator">운영자</option>
+            <option value="admin">관리자</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <div class="board-tab-wrap">
+      <nav class="container board-tabs" id="boardTabs" aria-label="게시판 선택"></nav>
+    </div>
+
+    <section class="board-content-section">
+      <div class="container">
+        <div class="board-toolbar">
+          <div class="board-search">
+            <label class="sr-only" for="boardSearch">게시글 검색</label>
+            <input id="boardSearch" type="search" placeholder="제목과 내용을 검색하세요">
+            <label class="sr-only" for="boardCategory">분류 선택</label>
+            <select id="boardCategory"><option value="">전체 분류</option></select>
+          </div>
+          <button class="button button-primary" id="writeButton" type="button">글쓰기</button>
+        </div>
+
+        <div class="permission-banner" id="permissionBanner" role="status"></div>
+        <div class="board-count"><strong id="boardCount">0</strong>개의 글</div>
+        <div class="board-list" id="boardList" aria-live="polite"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer board-footer">
+    <div class="container footer-bottom">
+      <p>바둑타고 한국사 여행 · 커뮤니티</p>
+      <div><a href="index.html">홈</a><a href="board.html?type=notice">공지사항</a><a href="board.html?type=inquiry">1:1 문의</a></div>
+      <p>© <span id="year"></span> Baduk History Journey.</p>
+    </div>
+  </footer>
+
+  <div class="modal" id="writeModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="writeModalTitle">
+    <div class="modal-backdrop" data-close-board-modal></div>
+    <div class="modal-panel board-write-panel">
+      <button class="modal-close" type="button" aria-label="닫기" data-close-board-modal>×</button>
+      <p class="eyebrow">WRITE</p>
+      <h2 id="writeModalTitle">글쓰기</h2>
+      <p id="writeModalDescription">필수 정보를 입력해 주세요.</p>
+      <form id="boardWriteForm">
+        <div class="dynamic-form" id="dynamicForm"></div>
+        <div class="form-actions">
+          <button class="button button-outline" type="button" data-close-board-modal>취소</button>
+          <button class="button button-primary" type="submit">저장하기</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="detailModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+    <div class="modal-backdrop" data-close-board-modal></div>
+    <article class="modal-panel board-detail-panel">
+      <button class="modal-close" type="button" aria-label="닫기" data-close-board-modal>×</button>
+      <div class="board-detail-meta"><span id="detailCategory"></span><time id="detailDate"></time></div>
+      <h2 id="detailTitle">게시글 제목</h2>
+      <p class="board-detail-author" id="detailAuthor"></p>
+      <div class="board-detail-body" id="detailBody"></div>
+      <div class="class-helper-detail" id="detailPackage" hidden></div>
+      <div class="board-detail-attachments" id="detailAttachments" hidden></div>
+      <button class="button button-dark" type="button" data-close-board-modal>목록으로</button>
+    </article>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="config.js"></script>
+  <script src="board.js"></script>
+</body>
+</html>

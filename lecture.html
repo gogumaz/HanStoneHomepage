@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="구독 기간 동안 모든 바둑 강의를 수강하는 계정 구독형 강의 서비스">
+  <meta name="theme-color" content="#f6f0e2">
+  <title>바둑 강의영상 | 바둑타고 한국사 여행</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="lecture-page">
+  <a class="skip-link" href="#lectureMain">본문 바로가기</a>
+
+  <div class="announcement">
+    <div class="container announcement-inner">
+      <p><span class="announcement-badge">CLASS</span> 구독 기간에는 공개된 모든 강의영상을 자유롭게 시청할 수 있습니다.</p>
+      <a href="#subscriptionPlans">구독 플랜 보기 <span aria-hidden="true">→</span></a>
+    </div>
+  </div>
+
+  <header class="site-header">
+    <div class="container header-inner board-header-inner">
+      <a class="brand" href="index.html" aria-label="바둑타고 한국사 여행 홈">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><b>史</b></span>
+        <span class="brand-copy"><strong>바둑타고</strong><small>한국사 여행</small></span>
+      </a>
+      <nav class="board-top-nav" aria-label="바로가기">
+        <a href="index.html#journey">시대여행</a>
+        <a href="lecture.html" aria-current="page">강의영상</a>
+        <a href="board.html?type=classHelper">수업도우미</a>
+        <a href="board.html?type=resource">교재·자료실</a>
+        <a href="board.html?type=notice">커뮤니티</a>
+      </nav>
+      <div class="board-user-area">
+        <span id="currentRoleBadge">비회원</span>
+        <a class="button button-small button-dark" href="index.html">홈으로</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="lectureMain">
+    <section class="lecture-hero">
+      <div class="container lecture-hero-inner">
+        <div>
+          <p class="eyebrow"><span></span> BADUK VIDEO CLASS</p>
+          <h1>바둑 강의영상</h1>
+          <p>한 번의 계정 구독으로 구독 기간 동안 공개된 모든 강의를 시청하고 단계별 학습을 이어가세요.</p>
+        </div>
+        <div class="role-preview" id="lectureRolePreview" hidden>
+          <label for="lectureRoleSelect">개발용 권한 미리보기</label>
+          <select id="lectureRoleSelect">
+            <option value="guest">비회원</option>
+            <option value="student">학생</option>
+            <option value="guardian">학부모</option>
+            <option value="teacher">지도자</option>
+            <option value="operator">운영자</option>
+            <option value="admin">관리자</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="lecture-summary" aria-label="강의 현황">
+      <div class="container lecture-summary-grid">
+        <div><span aria-hidden="true">▶</span><small>공개 강의</small><strong id="publishedLessonCount">0개</strong></div>
+        <div><span aria-hidden="true">◷</span><small>전체 시청 시간</small><strong id="totalDuration">0분</strong></div>
+        <div><span aria-hidden="true">✓</span><small>내 구독 상태</small><strong id="subscriptionSummary">구독 필요</strong></div>
+      </div>
+    </section>
+
+    <section class="lecture-catalog-section">
+      <div class="container lecture-shell">
+        <aside class="lecture-sidebar" aria-label="강의 메뉴">
+          <nav id="lectureViewNav">
+            <button class="active" type="button" data-view="all"><span>▦</span>전체 강의</button>
+            <button type="button" data-view="popular"><span>★</span>인기 강의</button>
+            <button type="button" data-view="recent"><span>◷</span>최근 시청</button>
+            <button type="button" data-view="bookmarked"><span>♧</span>찜한 강의</button>
+            <button type="button" data-view="subscription"><span>✓</span>내 구독 내역</button>
+          </nav>
+          <div class="lecture-guide-card">
+            <strong>계정 구독 안내</strong>
+            <p>결제 승인 시점부터 구독이 시작됩니다. 마지막 이용일의 다음 날 00:00:00에 종료되며, 구독이 끝나면 다시 구독해야 영상을 볼 수 있습니다.</p>
+          </div>
+          <div class="lecture-manager-card" id="lectureManagerCard" hidden>
+            <span>CONTENT CMS</span>
+            <strong>강의 운영 관리</strong>
+            <p>강의 영상과 학습자료를 등록하고 구독 전용·무료 샘플 공개 여부를 관리하세요.</p>
+            <button class="button button-primary" id="newLectureButton" type="button">새 강의 등록</button>
+          </div>
+        </aside>
+
+        <div class="lecture-content">
+          <section class="subscription-plans" id="subscriptionPlans" aria-labelledby="subscriptionPlansTitle">
+            <div class="subscription-plans-head">
+              <div>
+                <p class="eyebrow"><span></span> ACCOUNT SUBSCRIPTION</p>
+                <h2 id="subscriptionPlansTitle">구독 플랜</h2>
+              </div>
+              <p>구독은 결제 승인 시점에 시작하며, 유효 기간에는 모든 공개 영상을 시청할 수 있습니다.</p>
+            </div>
+            <div class="subscription-status-card" id="subscriptionStatusCard" role="status"></div>
+            <div class="subscription-plan-grid" id="subscriptionPlanGrid"></div>
+          </section>
+
+          <div class="lecture-content-head">
+            <div>
+              <p class="eyebrow"><span></span> CURRICULUM</p>
+              <h2 id="lectureListTitle">전체 강의</h2>
+            </div>
+            <div class="lecture-search">
+              <label class="sr-only" for="lectureSearch">강의 검색</label>
+              <input id="lectureSearch" type="search" placeholder="강의명·시대·강사 검색">
+              <label class="sr-only" for="lectureLevelFilter">과정 선택</label>
+              <select id="lectureLevelFilter">
+                <option value="">전체 과정</option>
+                <option value="입문">입문</option>
+                <option value="기초">기초</option>
+                <option value="기본">기본</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="permission-banner" id="lecturePermissionBanner" role="status"></div>
+          <div class="lecture-grid" id="lectureGrid" aria-live="polite"></div>
+
+          <section class="purchase-section" id="subscriptionHistory" aria-labelledby="subscriptionHistoryTitle">
+            <div class="purchase-section-head">
+              <div>
+                <p class="eyebrow"><span></span> MY SUBSCRIPTIONS</p>
+                <h2 id="subscriptionHistoryTitle">내 구독 내역</h2>
+              </div>
+              <p>종료된 구독도 목록에 남으며, 각 구독의 결제일과 이용 종료시각을 확인할 수 있습니다.</p>
+            </div>
+            <div class="purchase-list" id="subscriptionList"></div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer board-footer">
+    <div class="container footer-bottom">
+      <p>바둑타고 한국사 여행 · 계정 구독형 강의영상</p>
+      <div><a href="index.html">홈</a><a href="lecture.html">강의영상</a><a href="board.html?type=inquiry">1:1 문의</a></div>
+      <p>© <span id="year"></span> Baduk History Journey.</p>
+    </div>
+  </footer>
+
+  <div class="modal" id="lectureFormModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="lectureFormTitle">
+    <div class="modal-backdrop" data-close-lecture-modal></div>
+    <div class="modal-panel lecture-form-panel">
+      <button class="modal-close" type="button" aria-label="닫기" data-close-lecture-modal>×</button>
+      <p class="eyebrow">LECTURE CMS</p>
+      <h2 id="lectureFormTitle">새 강의 등록</h2>
+      <p>관리자와 운영자가 영상·강의정보·학습자료를 등록하고 무료 샘플 공개 여부를 선택합니다. 가격과 구독기간은 강의가 아니라 계정 구독 플랜에서 관리합니다.</p>
+      <form id="lectureForm">
+        <input type="hidden" name="id">
+        <div class="dynamic-form">
+          <label class="dynamic-field"><span>과정 *</span><select name="level" required><option value="">선택하세요</option><option>입문</option><option>기초</option><option>기본</option></select></label>
+          <label class="dynamic-field"><span>과정 묶음 *</span><input name="course" type="text" placeholder="예: 입문 1권" required></label>
+          <label class="dynamic-field"><span>연결 시대 *</span><select name="era" required><option value="">선택하세요</option><option>선사시대</option><option>고조선</option><option>삼국시대</option><option>고려</option><option>조선</option><option>근현대</option></select></label>
+          <label class="dynamic-field"><span>정렬 순서 *</span><input name="order" type="number" min="1" value="1" required></label>
+          <label class="dynamic-field full"><span>강의명 *</span><input name="title" type="text" required></label>
+          <label class="dynamic-field full"><span>강의 소개 *</span><textarea name="summary" rows="4" required></textarea></label>
+          <label class="dynamic-field"><span>강사명 *</span><input name="instructor" type="text" required></label>
+          <label class="dynamic-field"><span>재생 시간(분) *</span><input name="durationMinutes" type="number" min="1" required></label>
+          <label class="dynamic-field"><span>공개 상태 *</span><select name="status" required><option value="draft">임시저장</option><option value="published">공개</option><option value="archived">보관</option></select></label>
+          <label class="dynamic-field"><span>무료 공개 여부 *</span><select name="isFreeSample" required><option value="false">아니오 · 구독 회원만 시청</option><option value="true">예 · 무료 샘플로 전체 공개</option></select></label>
+          <label class="dynamic-field"><span>난이도 표시</span><input name="difficulty" type="text" placeholder="예: 처음 시작"></label>
+          <label class="dynamic-field full"><span>영상 URL</span><input name="videoUrl" type="url" placeholder="https://cdn.example.com/video.mp4"></label>
+          <label class="dynamic-field full"><span>영상 파일</span><input name="videoFile" type="file" accept="video/mp4,video/webm,video/ogg"></label>
+          <label class="dynamic-field"><span>썸네일</span><input name="thumbnailFile" type="file" accept="image/jpeg,image/png,image/webp"></label>
+          <label class="dynamic-field"><span>첨부 학습자료</span><input name="materials" type="file" multiple accept=".pdf,.ppt,.pptx,.doc,.docx,.hwp,.hwpx"></label>
+        </div>
+        <p class="lecture-existing-files" id="lectureExistingFiles"></p>
+        <div class="form-actions">
+          <button class="button button-outline" type="button" data-close-lecture-modal>취소</button>
+          <button class="button button-primary" type="submit">저장하기</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="lecturePlayerModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="playerTitle">
+    <div class="modal-backdrop" data-close-lecture-modal></div>
+    <article class="modal-panel lecture-player-panel">
+      <button class="modal-close" type="button" aria-label="닫기" data-close-lecture-modal>×</button>
+      <div class="lecture-player-head">
+        <div><span id="playerCourse"></span><h2 id="playerTitle">강의명</h2></div>
+        <strong id="playerAccessEnd">구독 종료</strong>
+      </div>
+      <div class="lecture-video-host" id="lectureVideoHost"></div>
+      <div class="lecture-player-progress">
+        <div><span>학습 진행</span><strong id="playerProgressText">0 / 6</strong></div>
+        <progress id="playerProgress" value="0" max="6">0%</progress>
+      </div>
+      <ol class="lecture-step-list" id="lectureStepList"></ol>
+      <div class="lecture-player-actions">
+        <button class="button button-outline" type="button" data-close-lecture-modal>목록으로</button>
+        <button class="button button-primary" id="completeLectureStep" type="button">현재 단계 완료</button>
+      </div>
+    </article>
+  </div>
+
+  <div class="modal" id="subscriptionPaymentModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="subscriptionPaymentTitle">
+    <div class="modal-backdrop" data-close-lecture-modal></div>
+    <div class="modal-panel payment-panel lecture-payment-panel">
+      <button class="modal-close" type="button" aria-label="닫기" data-close-lecture-modal>×</button>
+      <p class="eyebrow">ACCOUNT SUBSCRIPTION</p>
+      <h2 id="subscriptionPaymentTitle">구독 결제</h2>
+      <div class="payment-product">
+        <div><span>구독 플랜</span><strong id="subscriptionPaymentName">-</strong></div>
+        <div><span>구독 시작</span><strong id="subscriptionPaymentStart">-</strong></div>
+        <div><span>구독 종료</span><strong id="subscriptionPaymentEnd">-</strong></div>
+        <div><span>결제 금액</span><strong id="subscriptionPaymentPrice">-</strong></div>
+      </div>
+      <div id="subscription-payment-method"></div>
+      <div id="subscription-agreement"></div>
+      <p class="payment-status" id="subscriptionPaymentStatus" role="status">결제할 구독 플랜을 확인해 주세요.</p>
+      <button class="button button-primary" id="requestSubscriptionPayment" type="button" disabled>토스로 결제하기</button>
+      <button class="button button-outline demo-payment-button" id="completeDemoSubscriptionPayment" type="button" hidden>개발용 결제 완료 처리</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="https://js.tosspayments.com/v2/standard"></script>
+  <script src="config.js"></script>
+  <script src="lecture.js"></script>
+</body>
+</html>
