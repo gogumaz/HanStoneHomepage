@@ -181,7 +181,7 @@ const BOARD_CONFIG = {
 const SEED_RECORDS = {
   notice: [
     { id: 'notice-1', category: '서비스', title: '선사시대 첫 여행 무료 체험 오픈', content: '회원가입 없이 역사 이야기와 바둑 미션을 체험할 수 있습니다.', authorLabel: '운영자', publishedAt: '2026-08-18', isPinned: true, status: 'published' },
-    { id: 'notice-2', category: '콘텐츠', title: '고조선 바둑 미션 업데이트 안내', content: '영역을 지키는 포석 미션과 청동검 유물 카드가 추가되었습니다.', authorLabel: '운영자', publishedAt: '2026-08-11', status: 'published' }
+    { id: 'notice-2', category: '콘텐츠', title: '강의 콘텐츠 등록 기능 안내', content: '선사시대 2강 이후 강의는 관리자·운영자가 강의 CMS에서 순차적으로 등록하고 공개합니다.', authorLabel: '운영자', publishedAt: '2026-08-11', status: 'published' }
   ],
   classTip: [
     { id: 'tip-1', category: '바둑활동', title: '활로 개념을 역사 수업과 연결하는 방법', content: '구석기인의 환경 관찰과 바둑돌의 활로 탐색을 연결하는 25분 수업 활동입니다.', authorId: 'demo-teacher', authorLabel: '김바둑 지도자', publishedAt: '2026-08-12', targetGrade: '초등 3~4학년', era: '선사시대', badukLevel: '입문', status: 'published' },
@@ -226,7 +226,7 @@ const SEED_RECORDS = {
   ],
   resource: [
     { id: 'resource-1', category: '활동지', title: '선사시대 1강 관찰 활동지', content: '주변 환경을 관찰하고 바둑돌의 활로를 표시하는 인쇄용 활동지입니다.', authorLabel: '운영자', publishedAt: '2026-08-15', lessonId: 'PRE-01', version: '1.0', accessLevel: '전체 공개', attachment: 'prehistoric-lesson-01.pdf', status: 'published' },
-    { id: 'resource-2', category: '수업 PPT', title: '고조선 2강 수업용 PPT', content: '단군 이야기와 포석 활동을 연결한 지도자용 수업 자료입니다.', authorLabel: '운영자', publishedAt: '2026-08-10', lessonId: 'GOJ-02', version: '1.1', accessLevel: '지도자', attachment: 'gojoseon-lesson-02.pptx', status: 'published' }
+    { id: 'resource-2', category: '수업 PPT', title: '선사시대 1강 수업용 PPT', content: '구석기인의 환경 관찰과 바둑돌의 활로를 연결한 지도자용 수업 자료입니다.', authorLabel: '운영자', publishedAt: '2026-08-10', lessonId: 'PRE-01', version: '1.1', accessLevel: '지도자', attachment: 'prehistoric-lesson-01.pptx', status: 'published' }
   ]
 };
 
@@ -263,8 +263,9 @@ async function resolveCurrentUser() {
       const response = await fetch(apiUrl('/me'), { credentials: 'include' });
       if (response.ok) {
         const payload = await response.json();
-        const user = payload.data || payload;
-        return { id: user.id, role: user.role, name: user.name || ROLE_LABELS[user.role] };
+        const user = payload.data?.user || payload.data || payload;
+        const role = user.role || (Array.isArray(user.roles) ? user.roles[0] : null) || 'guest';
+        return { id: user.id, role, name: user.displayName || user.name || ROLE_LABELS[role] };
       }
     } catch {}
   }

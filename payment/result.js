@@ -29,21 +29,19 @@ function addDetail(label, value) {
 }
 
 async function confirmPayment() {
-  const paymentKey = params.get('paymentKey');
-  const orderId = params.get('orderId');
-  const amount = Number(params.get('amount'));
+  const paymentId = params.get('imp_uid');
+  const orderId = params.get('merchant_uid');
   addDetail('주문번호', orderId);
-  addDetail('결제 금액', Number.isFinite(amount) ? `${amount.toLocaleString('ko-KR')}원` : '-');
 
-  if (!paymentKey || !orderId || !Number.isFinite(amount) || amount <= 0) {
+  if (!paymentId || !orderId) {
     throw new Error('결제 승인 정보가 올바르지 않습니다.');
   }
 
-  const response = await fetch(apiUrl('/payments/toss/confirm'), {
+  const response = await fetch(apiUrl('/payments/portone/verify'), {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    body: JSON.stringify({ paymentKey, orderId, amount })
+    body: JSON.stringify({ paymentId, orderId })
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error?.message || '결제 승인에 실패했습니다.');
@@ -63,7 +61,7 @@ async function confirmPayment() {
 
 function showFailure() {
   addDetail('오류 코드', params.get('code'));
-  addDetail('주문번호', params.get('orderId'));
+  addDetail('주문번호', params.get('merchant_uid'));
   const providerMessage = params.get('message');
   if (providerMessage) message.textContent = providerMessage;
 }

@@ -14,7 +14,7 @@ const ROLE_LABELS = {
 const MANAGE_ROLES = new Set(['operator', 'admin']);
 const SUBSCRIBE_ROLES = new Set(['student', 'guardian', 'teacher']);
 const LESSON_STEPS = ['역사 이야기', '오늘의 바둑', '바둑판 미션', '역사 미션', '생각 나눔', '보상'];
-const LESSON_STORAGE_KEY = 'bhj_lesson_catalog_v3';
+const LESSON_STORAGE_KEY = 'bhj_lesson_catalog_v4';
 const SUBSCRIPTION_STORAGE_KEY = 'bhj_account_subscriptions_v1';
 const PROGRESS_STORAGE_KEY = 'bhj_lesson_progress_v2';
 const BOOKMARK_STORAGE_KEY = 'bhj_lesson_bookmarks_v2';
@@ -34,41 +34,6 @@ const SEED_LESSONS = [
     instructor: '김바둑 선생님', durationMinutes: 8, difficulty: '처음 시작', status: 'published', isFreeSample: true,
     videoUrl: '', videoFileName: '', thumbnailFileName: '', materials: ['선사시대-1강-활동지.pdf'], popularity: 96,
     createdAt: '2026-08-01T09:00:00+09:00', updatedAt: '2026-08-01T09:00:00+09:00'
-  },
-  {
-    id: 'PRE-02', level: '입문', course: '입문 1권', era: '선사시대', order: 2,
-    title: '돌을 연결하면 길이 생겨요', summary: '신석기 마을의 협력 이야기를 통해 바둑돌 연결의 기초를 익힙니다.',
-    instructor: '김바둑 선생님', durationMinutes: 10, difficulty: '입문', status: 'published', isFreeSample: false,
-    videoUrl: '', videoFileName: '', thumbnailFileName: '', materials: ['선사시대-2강-활동지.pdf'], popularity: 89,
-    createdAt: '2026-08-05T09:00:00+09:00', updatedAt: '2026-08-10T09:00:00+09:00'
-  },
-  {
-    id: 'GOJ-01', level: '기초', course: '기초 1권', era: '고조선', order: 1,
-    title: '좋은 자리를 먼저 차지해요', summary: '고조선 건국 이야기와 바둑의 요소를 함께 이해합니다.',
-    instructor: '이역사 선생님', durationMinutes: 12, difficulty: '기초', status: 'published', isFreeSample: false,
-    videoUrl: '', videoFileName: '', thumbnailFileName: '', materials: ['고조선-1강-해설.pdf'], popularity: 82,
-    createdAt: '2026-08-10T09:00:00+09:00', updatedAt: '2026-08-15T09:00:00+09:00'
-  },
-  {
-    id: 'GOJ-02', level: '기초', course: '기초 1권', era: '고조선', order: 2,
-    title: '우리 영역을 지켜라', summary: '나라의 영역과 바둑의 집을 비교하며 안전한 모양을 만들어 봅니다.',
-    instructor: '이역사 선생님', durationMinutes: 14, difficulty: '기초', status: 'published', isFreeSample: false,
-    videoUrl: '', videoFileName: '', thumbnailFileName: '', materials: ['고조선-2강-활동지.pdf', '고조선-2강-정답.pdf'], popularity: 74,
-    createdAt: '2026-08-15T09:00:00+09:00', updatedAt: '2026-08-15T09:00:00+09:00'
-  },
-  {
-    id: 'SAM-01', level: '기본', course: '기본 1권', era: '삼국시대', order: 1,
-    title: '연결할수록 강해져요', summary: '삼국의 성장과 교류를 돌의 연결과 끊기 문제로 학습합니다.',
-    instructor: '박한수 선생님', durationMinutes: 16, difficulty: '기본', status: 'published', isFreeSample: false,
-    videoUrl: '', videoFileName: '', thumbnailFileName: '', materials: [], popularity: 68,
-    createdAt: '2026-08-01T09:00:00+09:00', updatedAt: '2026-08-01T09:00:00+09:00'
-  },
-  {
-    id: 'GOR-01', level: '기본', course: '기본 2권', era: '고려', order: 1,
-    title: '균형을 읽는 힘', summary: '고려의 문화 교류와 바둑판 전체의 균형을 연결한 신규 강의입니다.',
-    instructor: '박한수 선생님', durationMinutes: 18, difficulty: '기본', status: 'draft', isFreeSample: false,
-    videoUrl: '', videoFileName: '', thumbnailFileName: '', materials: [], popularity: 0,
-    createdAt: '2026-08-18T09:00:00+09:00', updatedAt: '2026-08-18T09:00:00+09:00'
   }
 ];
 
@@ -119,8 +84,9 @@ async function resolveCurrentUser() {
       const response = await fetch(apiUrl('/me'), { credentials: 'include' });
       if (response.ok) {
         const payload = await response.json();
-        const user = payload.data || payload;
-        return { id: user.id, role: user.role, name: user.name || ROLE_LABELS[user.role] || '회원' };
+        const user = payload.data?.user || payload.data || payload;
+        const role = user.role || (Array.isArray(user.roles) ? user.roles[0] : null) || 'guest';
+        return { id: user.id, role, name: user.displayName || user.name || ROLE_LABELS[role] || '회원' };
       }
     } catch {}
   }
@@ -701,13 +667,13 @@ async function prepareSubscriptionPayment(planId) {
   setSubscriptionPaymentStatus('구독 플랜과 결제 금액을 확인하고 있습니다.');
   openModal($('#subscriptionPaymentModal'));
 
-  const tossConfig = config.tossPayments || {};
-  if (!config.lectureApiEnabled || !tossConfig.clientKey || typeof window.TossPayments !== 'function') {
+  const portOneConfig = config.portoneV1 || {};
+  if (!config.lectureApiEnabled || !portOneConfig.userCode || !portOneConfig.channelKey || !window.IMP) {
     if (config.demoRoleSwitcher) {
       $('#completeDemoSubscriptionPayment').hidden = false;
       setSubscriptionPaymentStatus('개발용 화면입니다. 실제 결제 없이 계정 구독 기록을 생성할 수 있습니다.');
     } else {
-      setSubscriptionPaymentStatus('토스페이먼츠 및 주문 서버 설정이 필요합니다.', true);
+      setSubscriptionPaymentStatus('PortOne 및 주문 서버 설정이 필요합니다.', true);
     }
     return;
   }
@@ -728,17 +694,9 @@ async function prepareSubscriptionPayment(planId) {
     }
     paymentState.order = order;
     sessionStorage.setItem('bhj_pending_subscription_checkout', JSON.stringify({ planId: plan.id, orderId: order.orderId }));
-    const tossPayments = window.TossPayments(tossConfig.clientKey);
-    const customerKey = order.customerKey || window.TossPayments.ANONYMOUS || 'ANONYMOUS';
-    const widgets = tossPayments.widgets({ customerKey });
-    await widgets.setAmount({ currency: 'KRW', value: Number(order.amount) });
-    await Promise.all([
-      widgets.renderPaymentMethods({ selector: '#subscription-payment-method', variantKey: tossConfig.paymentMethodVariantKey || 'DEFAULT' }),
-      widgets.renderAgreement({ selector: '#subscription-agreement', variantKey: tossConfig.agreementVariantKey || 'AGREEMENT' })
-    ]);
-    paymentState.widgets = widgets;
+    window.IMP.init(portOneConfig.userCode);
     $('#requestSubscriptionPayment').disabled = false;
-    setSubscriptionPaymentStatus('결제수단을 선택한 뒤 결제하기를 눌러 주세요.');
+    setSubscriptionPaymentStatus('결제하기를 누르면 PortOne 토스페이 결제창이 열립니다.');
   } catch (error) {
     setSubscriptionPaymentStatus(error.message || '결제 정보를 준비하지 못했습니다.', true);
   }
@@ -768,8 +726,8 @@ function completeDemoSubscription() {
   showToast(`${plan.label} 구독이 시작되었습니다. ${formatDateTime(endsAt, true)}에 종료됩니다.`);
 }
 
-async function requestTossPayment() {
-  if (!paymentState.widgets || !paymentState.order || !paymentState.plan) return;
+async function requestPortOnePayment() {
+  if (!paymentState.order || !paymentState.plan || !window.IMP) return;
   const { order, plan } = paymentState;
   const successUrl = new URL('payment/success.html', window.location.href);
   successUrl.searchParams.set('source', 'subscription');
@@ -777,18 +735,31 @@ async function requestTossPayment() {
   const failUrl = new URL('payment/fail.html', window.location.href);
   failUrl.searchParams.set('source', 'subscription');
   failUrl.searchParams.set('planId', plan.id);
-  const request = { orderId: order.orderId, orderName: order.orderName || `바둑타고 ${plan.label} 구독`, successUrl: successUrl.toString(), failUrl: failUrl.toString() };
-  if (order.customerEmail) request.customerEmail = order.customerEmail;
-  if (order.customerName) request.customerName = order.customerName;
-  if (order.customerMobilePhone) request.customerMobilePhone = order.customerMobilePhone;
-  try {
-    $('#requestSubscriptionPayment').disabled = true;
-    setSubscriptionPaymentStatus('토스페이먼츠 결제창을 여는 중입니다.');
-    await paymentState.widgets.requestPayment(request);
-  } catch (error) {
-    $('#requestSubscriptionPayment').disabled = false;
-    setSubscriptionPaymentStatus(error.message || '결제 요청이 취소되었습니다.', true);
-  }
+  const portOneConfig = config.portoneV1 || {};
+  $('#requestSubscriptionPayment').disabled = true;
+  setSubscriptionPaymentStatus('PortOne 토스페이 결제창을 여는 중입니다.');
+  window.IMP.request_pay({
+    channelKey: portOneConfig.channelKey,
+    pg: portOneConfig.pgProvider && portOneConfig.mid ? `${portOneConfig.pgProvider}.${portOneConfig.mid}` : undefined,
+    pay_method: 'card',
+    merchant_uid: order.orderId,
+    name: order.orderName || `바둑타고 ${plan.label} 구독`,
+    amount: Number(order.amount),
+    buyer_email: order.customerEmail || undefined,
+    buyer_name: order.customerName || undefined,
+    m_redirect_url: successUrl.toString()
+  }, response => {
+    if (response.imp_uid && response.merchant_uid) {
+      successUrl.searchParams.set('imp_uid', response.imp_uid);
+      successUrl.searchParams.set('merchant_uid', response.merchant_uid);
+      window.location.assign(successUrl.toString());
+      return;
+    }
+    failUrl.searchParams.set('code', response.error_code || 'PAYMENT_FAILED');
+    failUrl.searchParams.set('message', response.error_msg || '결제가 완료되지 않았습니다.');
+    failUrl.searchParams.set('merchant_uid', response.merchant_uid || order.orderId);
+    window.location.assign(failUrl.toString());
+  });
 }
 
 function handleDynamicAction(event) {
@@ -825,7 +796,7 @@ $('#newLectureButton').addEventListener('click', () => openLectureForm());
 $('#lectureForm').addEventListener('submit', submitLecture);
 $('#completeLectureStep').addEventListener('click', completeCurrentStep);
 $('#completeDemoSubscriptionPayment').addEventListener('click', completeDemoSubscription);
-$('#requestSubscriptionPayment').addEventListener('click', requestTossPayment);
+$('#requestSubscriptionPayment').addEventListener('click', requestPortOnePayment);
 $('#lectureStepList').addEventListener('click', event => {
   const button = event.target.closest('[data-step-index]');
   if (!button || button.disabled) return;

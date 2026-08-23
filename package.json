@@ -1,0 +1,44 @@
+{
+  "name": "baduk-history-journey",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:web": "vite --host 127.0.0.1",
+    "dev:api": "npm --prefix server run dev",
+    "build": "tsc -b && vite build",
+    "build:web": "tsc -b && vite build",
+    "build:api": "npm --prefix server run build",
+    "build:components": "npm --prefix server/src/components run build",
+    "pack:components": "npm --prefix server/src/components run pack:check",
+    "build:all": "npm run build:web && npm run build:api",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "test:api": "npm --prefix server test",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc -b --pretty false",
+    "typecheck:api": "npm --prefix server run typecheck",
+    "ci": "npm run typecheck && npm test && npm run build:web && npm run pack:components && npm run typecheck:api && npm run test:api && npm run build:api"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "hls.js": "^1.7.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "jsdom": "^29.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
+}

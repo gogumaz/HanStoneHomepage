@@ -1,0 +1,545 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum AccountTokenPurpose {
+  PASSWORD_RESET
+  EMAIL_VERIFICATION
+}
+
+enum RoleType {
+  STUDENT
+  GUARDIAN
+  INSTRUCTOR
+  ORGANIZATION_ADMIN
+  OPERATOR
+  ADMIN
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum GuardianLinkStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum ConsentStatus {
+  ACTIVE
+  WITHDRAWN
+}
+
+enum LessonStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum LessonAssetKind {
+  THUMBNAIL
+  MATERIAL
+}
+
+enum LessonAssetStatus {
+  QUARANTINED
+  READY
+  REJECTED
+}
+
+enum LessonVideoAssetStatus {
+  UPLOADING
+  QUARANTINED
+  SCANNING
+  READY
+  REJECTED
+  ERROR
+  PURGED
+}
+
+enum ObjectDeletionJobStatus {
+  PENDING
+  DELETING
+  COMPLETED
+  CANCELLED
+  ERROR
+}
+
+enum HlsTranscodeJobStatus {
+  PENDING
+  TRANSCODING
+  READY
+  SUPERSEDED
+  ERROR
+}
+
+enum LessonStepType {
+  HISTORY_STORY
+  BADUK_CONCEPT
+  BADUK_MISSION
+  HISTORY_MISSION
+  REFLECTION
+  REWARD
+}
+
+enum LessonProgressStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum SubscriptionPaymentStatus {
+  PAID
+  CANCELED
+  REFUNDED
+}
+
+enum SubscriptionOrderStatus {
+  PENDING
+  PAID
+  CANCELED
+  FAILED
+}
+
+enum SubscriptionRefundStatus {
+  COMPLETED
+}
+
+model User {
+  id                   String               @id @default(uuid()) @db.Uuid
+  email                String?              @unique
+  displayName          String
+  passwordHash         String?
+  emailVerifiedAt      DateTime?
+  status               AccountStatus        @default(ACTIVE)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  deletedAt            DateTime?
+  roles                UserRoleAssignment[]
+  oauthAccounts        OAuthAccount[]
+  sessions             Session[]
+  accountTokens        AccountToken[]
+  guardianInvitations  GuardianInvitation[] @relation("InvitationStudent")
+  studentLinks         GuardianLink[]       @relation("StudentGuardianLinks")
+  guardianLinks        GuardianLink[]       @relation("GuardianStudentLinks")
+  studentConsents      GuardianConsent[]    @relation("StudentGuardianConsents")
+  guardianConsents     GuardianConsent[]    @relation("GuardianUserConsents")
+  subscriptions        AccountSubscription[]
+  subscriptionOrders   SubscriptionOrder[]
+  requestedRefunds     SubscriptionRefund[] @relation("RefundRequester")
+  lessonProgress       LessonProgress[]
+  auditLogs            AuditLog[]           @relation("AuditActor")
+
+  @@index([status])
+}
+
+model AccountToken {
+  id         String              @id @default(uuid()) @db.Uuid
+  userId     String              @db.Uuid
+  purpose    AccountTokenPurpose
+  tokenHash  String              @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime            @default(now())
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, expiresAt])
+}
+
+model UserRoleAssignment {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  role      RoleType
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+  @@index([role])
+}
+
+model OAuthAccount {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  provider       String
+  providerUserId String
+  email          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+}
+
+model OAuthLoginAttempt {
+  id           String    @id @default(uuid()) @db.Uuid
+  provider     String
+  stateHash    String    @unique
+  nonce        String
+  codeVerifier String
+  returnTo     String
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([expiresAt, consumedAt])
+}
+
+model Session {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model GuardianInvitation {
+  id             String           @id @default(uuid()) @db.Uuid
+  studentId      String           @db.Uuid
+  inviteeEmail   String?
+  inviteePhone   String?
+  tokenHash      String           @unique
+  status         InvitationStatus @default(PENDING)
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  student        User             @relation("InvitationStudent", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, status])
+  @@index([expiresAt])
+}
+
+model GuardianLink {
+  id             String             @id @default(uuid()) @db.Uuid
+  studentId      String             @db.Uuid
+  guardianId     String             @db.Uuid
+  status         GuardianLinkStatus @default(ACTIVE)
+  consentVersion String?
+  consentedAt    DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  student        User               @relation("StudentGuardianLinks", fields: [studentId], references: [id], onDelete: Cascade)
+  guardian       User               @relation("GuardianStudentLinks", fields: [guardianId], references: [id], onDelete: Cascade)
+  consents       GuardianConsent[]
+
+  @@unique([studentId, guardianId])
+  @@index([guardianId, status])
+}
+
+model GuardianConsent {
+  id                 String        @id @default(uuid()) @db.Uuid
+  guardianLinkId     String        @db.Uuid
+  studentId          String        @db.Uuid
+  guardianId         String        @db.Uuid
+  consentType        String
+  policyVersion      String
+  scope              String[]
+  verificationMethod String
+  status             ConsentStatus @default(ACTIVE)
+  requestedAt        DateTime      @default(now())
+  consentedAt        DateTime
+  withdrawnAt        DateTime?
+  auditMetadata      Json?
+  guardianLink       GuardianLink  @relation(fields: [guardianLinkId], references: [id], onDelete: Cascade)
+  student            User          @relation("StudentGuardianConsents", fields: [studentId], references: [id], onDelete: Cascade)
+  guardian           User          @relation("GuardianUserConsents", fields: [guardianId], references: [id], onDelete: Cascade)
+
+  @@index([guardianLinkId, status])
+  @@index([studentId, guardianId])
+  @@index([guardianId, status])
+}
+
+model Era {
+  id          String   @id @db.VarChar(40)
+  order       Int      @unique
+  name        String
+  theme       String
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lessons     Lesson[]
+}
+
+model Lesson {
+  id              String       @id @db.VarChar(40)
+  eraId           String       @db.VarChar(40)
+  order           Int
+  level           String
+  course          String
+  title           String
+  summary         String
+  instructor      String
+  difficulty      String
+  durationMinutes Int
+  status          LessonStatus @default(DRAFT)
+  isFreeSample    Boolean      @default(false)
+  videoAssetKey   String?
+  thumbnailKey    String?
+  publishedAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  era             Era          @relation(fields: [eraId], references: [id], onDelete: Restrict)
+  steps           LessonStep[]
+  progress        LessonProgress[]
+  assets          LessonAsset[]
+  videoAssets     LessonVideoAsset[]
+  hlsTranscodeJobs HlsTranscodeJob[]
+
+  @@unique([eraId, order])
+  @@index([status, eraId, order])
+}
+
+model LessonAsset {
+  id           String            @id @default(uuid()) @db.Uuid
+  lessonId     String            @db.VarChar(40)
+  kind         LessonAssetKind
+  objectKey    String            @unique
+  originalName String
+  contentType  String
+  size         Int
+  status       LessonAssetStatus @default(QUARANTINED)
+  scanProvider String?
+  scanResult   String?
+  scannedAt    DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  lesson       Lesson            @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId, kind, status])
+  @@index([status, createdAt])
+}
+
+model LessonVideoAsset {
+  id               String                 @id @default(uuid()) @db.Uuid
+  lessonId         String                 @db.VarChar(40)
+  objectKey        String                 @unique
+  originalName     String
+  contentType      String
+  expectedSize     BigInt
+  actualSize       BigInt?
+  status           LessonVideoAssetStatus @default(UPLOADING)
+  scanProvider     String?
+  scanResult       String?
+  scannedAt        DateTime?
+  attachedAt       DateTime?
+  attempts         Int                    @default(0)
+  nextAttemptAt    DateTime?
+  lockedAt         DateTime?
+  lastError        String?
+  previousAssetKey String?
+  requestedById    String?                @db.Uuid
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  lesson           Lesson                 @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  hlsTranscodeJob  HlsTranscodeJob?
+
+  @@index([lessonId, createdAt])
+  @@index([status, nextAttemptAt, createdAt])
+}
+
+model HlsTranscodeJob {
+  id              String                @id @default(uuid()) @db.Uuid
+  lessonId        String                @db.VarChar(40)
+  sourceAssetId   String                @unique @db.Uuid
+  sourceObjectKey String
+  manifestKey     String?               @unique
+  status          HlsTranscodeJobStatus @default(PENDING)
+  attempts        Int                   @default(0)
+  nextAttemptAt   DateTime              @default(now())
+  lockedAt        DateTime?
+  completedAt     DateTime?
+  lastError       String?
+  requestedById   String?               @db.Uuid
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  lesson          Lesson                @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  sourceAsset     LessonVideoAsset      @relation(fields: [sourceAssetId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt, createdAt])
+  @@index([lessonId, createdAt])
+}
+
+model ObjectDeletionJob {
+  id            String                  @id @default(uuid()) @db.Uuid
+  objectKey     String                  @unique
+  reason        String
+  resourceType  String
+  resourceId    String
+  status        ObjectDeletionJobStatus @default(PENDING)
+  attempts      Int                     @default(0)
+  nextAttemptAt DateTime
+  lockedAt      DateTime?
+  completedAt   DateTime?
+  lastError     String?
+  requestedById String?                 @db.Uuid
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  @@index([status, nextAttemptAt, createdAt])
+}
+
+model LessonStep {
+  id          String         @id @db.VarChar(60)
+  lessonId    String         @db.VarChar(40)
+  order       Int
+  type        LessonStepType
+  title       String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  lesson      Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  completions LessonStepCompletion[]
+
+  @@unique([lessonId, order])
+  @@index([lessonId, order])
+}
+
+model LessonProgress {
+  id                  String               @id @default(uuid()) @db.Uuid
+  userId              String               @db.Uuid
+  lessonId            String               @db.VarChar(40)
+  status              LessonProgressStatus @default(IN_PROGRESS)
+  lastPositionSeconds Int                  @default(0)
+  startedAt           DateTime             @default(now())
+  completedAt         DateTime?
+  updatedAt           DateTime             @updatedAt
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson              Lesson               @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  stepCompletions     LessonStepCompletion[]
+
+  @@unique([userId, lessonId])
+  @@index([userId, status])
+  @@index([lessonId, status])
+}
+
+model LessonStepCompletion {
+  id          String         @id @default(uuid()) @db.Uuid
+  progressId  String         @db.Uuid
+  stepId      String         @db.VarChar(60)
+  completedAt DateTime       @default(now())
+  progress    LessonProgress @relation(fields: [progressId], references: [id], onDelete: Cascade)
+  step        LessonStep     @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@unique([progressId, stepId])
+  @@index([stepId])
+}
+
+model SubscriptionPlan {
+  id            String                @id @db.VarChar(40)
+  label         String
+  months        Int
+  price         Int
+  active        Boolean               @default(true)
+  recommended   Boolean               @default(false)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  subscriptions AccountSubscription[]
+  orders        SubscriptionOrder[]
+
+  @@index([active, months])
+}
+
+model SubscriptionOrder {
+  id                    String                  @id @db.VarChar(80)
+  userId                String                  @db.Uuid
+  planId                String                  @db.VarChar(40)
+  orderName             String
+  amount                Int
+  planLabelSnapshot     String
+  monthsSnapshot        Int
+  status                SubscriptionOrderStatus @default(PENDING)
+  provider              String                  @default("portone-v1")
+  providerPaymentId     String?                 @unique
+  paymentMethod         String?
+  paidAt                DateTime?
+  refundedAmount        Int                     @default(0)
+  refundedAt            DateTime?
+  expiresAt             DateTime
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  user                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                  SubscriptionPlan        @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status, createdAt])
+  @@index([expiresAt])
+}
+
+model AccountSubscription {
+  id                String                    @id @default(uuid()) @db.Uuid
+  userId            String                    @db.Uuid
+  planId            String                    @db.VarChar(40)
+  orderId           String                    @unique
+  paymentId         String?                   @unique
+  planLabelSnapshot String
+  monthsSnapshot    Int
+  amountSnapshot    Int
+  paymentStatus     SubscriptionPaymentStatus @default(PAID)
+  refundedAmount    Int                       @default(0)
+  refundedAt        DateTime?
+  paidAt            DateTime
+  startsAt          DateTime
+  endsAt            DateTime
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  user              User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan              SubscriptionPlan          @relation(fields: [planId], references: [id], onDelete: Restrict)
+  refunds           SubscriptionRefund[]
+
+  @@index([userId, paymentStatus, startsAt, endsAt])
+  @@index([endsAt])
+}
+
+model SubscriptionRefund {
+  id                     String                   @id @default(uuid()) @db.Uuid
+  subscriptionId         String                   @db.Uuid
+  requestedById          String?                  @db.Uuid
+  providerCancellationId String                   @unique
+  amount                 Int
+  cumulativeAmount       Int
+  reason                 String
+  status                 SubscriptionRefundStatus @default(COMPLETED)
+  requestedAt            DateTime                 @default(now())
+  completedAt            DateTime                 @default(now())
+  createdAt              DateTime                 @default(now())
+  subscription           AccountSubscription      @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  requestedBy            User?                    @relation("RefundRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@index([subscriptionId, completedAt])
+  @@index([requestedById, requestedAt])
+}
+
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  actorId      String?  @db.Uuid
+  action       String
+  resourceType String
+  resourceId   String?
+  requestId    String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  actor        User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+}

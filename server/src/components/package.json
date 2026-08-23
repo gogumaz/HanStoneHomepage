@@ -1,0 +1,50 @@
+{
+  "name": "@baduk-history/integration-components",
+  "version": "0.1.0",
+  "description": "Reusable NestJS OAuth and payment integration components",
+  "type": "module",
+  "license": "UNLICENSED",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./oauth": {
+      "types": "./dist/oauth/index.d.ts",
+      "import": "./dist/oauth/index.js"
+    },
+    "./payments": {
+      "types": "./dist/payments/index.d.ts",
+      "import": "./dist/payments/index.js"
+    }
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "build": "npm run clean && tsc -p tsconfig.package.json",
+    "verify": "node scripts/verify-package.mjs && npm run verify:types",
+    "verify:types": "tsc --noEmit --strict --skipLibCheck --module NodeNext --moduleResolution NodeNext --target ES2023 --types node scripts/consumer-smoke.ts",
+    "pack:check": "npm run build && npm run verify && npm pack --dry-run --ignore-scripts",
+    "prepack": "npm run build && npm run verify"
+  },
+  "dependencies": {
+    "jose": "^6.2.10"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^11.2.1"
+  },
+  "devDependencies": {
+    "@nestjs/common": "^11.2.1",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}
