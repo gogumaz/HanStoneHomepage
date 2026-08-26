@@ -11,7 +11,7 @@ const hlsState = vi.hoisted(() => ({
   }>,
 }));
 
-vi.mock('hls.js', () => {
+vi.mock('hls.js/light', () => {
   class MockHls {
     static isSupported() { return hlsState.supported; }
     loadSource = vi.fn();

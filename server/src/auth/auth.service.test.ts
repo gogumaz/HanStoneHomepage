@@ -6,6 +6,7 @@ import { AuthService } from "./auth.service.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { hashSessionToken } from "./session-cookie.js";
 import type { AccountMailService } from "../mail/account-mail.service.js";
+import { decryptAccountMailToken } from "../mail/account-mail-token-crypto.js";
 
 type StoredUser = {
   id: string;
@@ -146,6 +147,7 @@ describe("AuthService", () => {
     process.env.NODE_ENV = "test";
     process.env.DATABASE_URL = "postgresql://test:test@127.0.0.1:5432/test";
     process.env.SESSION_TTL_HOURS = "24";
+    delete process.env.ACCOUNT_MAIL_ENCRYPTION_KEY_BASE64;
   });
 
   it("creates a student account, hashes its password, and authenticates the session", async () => {
@@ -311,6 +313,33 @@ describe("AuthService", () => {
         metadata: expect.objectContaining({ messageId: "mail-signup-test", status: "sent" }),
       }),
     }));
+  });
+
+  it("stores an encrypted durable mail job when the queue key is configured", async () => {
+    const state = createPrismaMock();
+    const key = Buffer.alloc(32, 5).toString("base64");
+    process.env.ACCOUNT_MAIL_ENCRYPTION_KEY_BASE64 = key;
+    const sendEmailVerification = vi.fn();
+    const service = new AuthService(
+      state.prisma,
+      { sendEmailVerification } as unknown as AccountMailService,
+    );
+
+    const signup = await service.signup({
+      email: "durable-mail@example.com",
+      password: "safe-password-123",
+      displayName: "영속 메일 회원",
+      role: "student",
+    }, "req_durable_mail");
+
+    const createData = vi.mocked(state.prisma.accountToken.create).mock.calls[0]?.[0].data as {
+      mailJob: { create: { encryptedToken: string; requestId: string } };
+    };
+    expect(createData.mailJob.create.encryptedToken).not.toContain(signup.developmentVerificationToken as string);
+    expect(decryptAccountMailToken(createData.mailJob.create.encryptedToken, key))
+      .toBe(signup.developmentVerificationToken);
+    expect(createData.mailJob.create.requestId).toBe("req_durable_mail");
+    expect(sendEmailVerification).not.toHaveBeenCalled();
   });
 
   it("keeps signup successful and audits a background mail failure", async () => {

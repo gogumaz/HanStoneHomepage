@@ -66,6 +66,8 @@ export class ObjectStorageService {
   private readonly uploadTtlSeconds: number;
   private readonly maxVideoBytes: number;
   private readonly maxLessonAssetBytes: number;
+  private readonly maxInquiryAttachmentBytes: number;
+  private readonly maxCommunityAttachmentBytes: number;
   private readonly client: S3Client | null;
 
   constructor() {
@@ -75,6 +77,8 @@ export class ObjectStorageService {
     this.uploadTtlSeconds = config.videoUploadUrlTtlSeconds;
     this.maxVideoBytes = config.videoUploadMaxBytes;
     this.maxLessonAssetBytes = config.lessonAssetMaxBytes;
+    this.maxInquiryAttachmentBytes = config.inquiryAttachmentMaxBytes;
+    this.maxCommunityAttachmentBytes = config.communityAttachmentMaxBytes;
     const clientConfig: S3ClientConfig = {
       region: config.objectStorageRegion,
       forcePathStyle: config.objectStorageForcePathStyle,
@@ -101,6 +105,14 @@ export class ObjectStorageService {
 
   getLessonAssetMaxBytes(): number {
     return this.maxLessonAssetBytes;
+  }
+
+  getInquiryAttachmentMaxBytes(): number {
+    return this.maxInquiryAttachmentBytes;
+  }
+
+  getCommunityAttachmentMaxBytes(): number {
+    return this.maxCommunityAttachmentBytes;
   }
 
   getPlaybackExpiresAt(): Date {
@@ -201,6 +213,382 @@ export class ObjectStorageService {
         "업로드된 파일을 검사하지 못해 격리 상태로 유지합니다.",
         HttpStatus.SERVICE_UNAVAILABLE,
       );
+    }
+  }
+
+  async createInquiryAttachmentUpload(input: {
+    attachmentId: string;
+    ownerUserId: string;
+    contentType: string;
+    size: number;
+    extension: string;
+  }): Promise<{
+    method: "POST";
+    url: string;
+    fields: Record<string, string>;
+    objectKey: string;
+    expiresAt: Date;
+  }> {
+    if (!this.client || !this.bucket) {
+      throw new ApiError("OBJECT_STORAGE_NOT_CONFIGURED", "파일 저장소 연결이 필요합니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    const objectKey = `inquiry-attachments/${input.attachmentId}/source.${input.extension}`;
+    try {
+      const signed = await createPresignedPost(this.client, {
+        Bucket: this.bucket,
+        Key: objectKey,
+        Expires: this.uploadTtlSeconds,
+        Fields: {
+          "Content-Type": input.contentType,
+          "x-amz-meta-attachment-id": input.attachmentId,
+          "x-amz-meta-owner-user-id": input.ownerUserId,
+          "x-amz-meta-expected-size": String(input.size),
+        },
+        Conditions: [
+          ["content-length-range", 1, this.maxInquiryAttachmentBytes],
+          ["eq", "$Content-Type", input.contentType],
+          ["eq", "$x-amz-meta-attachment-id", input.attachmentId],
+          ["eq", "$x-amz-meta-owner-user-id", input.ownerUserId],
+          ["eq", "$x-amz-meta-expected-size", String(input.size)],
+        ],
+      });
+      return {
+        method: "POST",
+        url: signed.url,
+        fields: signed.fields,
+        objectKey,
+        expiresAt: new Date(Date.now() + this.uploadTtlSeconds * 1000),
+      };
+    } catch {
+      throw new ApiError("UPLOAD_URL_SIGNING_FAILED", "파일 업로드 URL을 발급하지 못했습니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+  }
+
+  async inspectInquiryAttachment(input: {
+    objectKey: string;
+    attachmentId: string;
+    ownerUserId: string;
+    contentType: string;
+    size: number;
+  }): Promise<Uint8Array> {
+    if (!this.client || !this.bucket) {
+      throw new ApiError("OBJECT_STORAGE_NOT_CONFIGURED", "파일 저장소 연결이 필요합니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    this.assertSafeKey(input.objectKey);
+    if (!input.objectKey.startsWith(`inquiry-attachments/${input.attachmentId}/`)) {
+      throw new ApiError("INVALID_INQUIRY_ATTACHMENT", "문의 첨부파일 저장 경로를 확인해 주세요.", HttpStatus.BAD_REQUEST);
+    }
+    let head: HeadObjectCommandOutput;
+    try {
+      head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: input.objectKey }));
+    } catch {
+      throw new ApiError("INQUIRY_ATTACHMENT_NOT_FOUND", "업로드된 첨부파일을 찾을 수 없습니다.", HttpStatus.CONFLICT);
+    }
+    if (
+      head.ContentType !== input.contentType
+      || head.ContentLength !== input.size
+      || head.Metadata?.["attachment-id"] !== input.attachmentId
+      || head.Metadata?.["owner-user-id"] !== input.ownerUserId
+      || head.Metadata?.["expected-size"] !== String(input.size)
+      || input.size <= 0
+      || input.size > this.maxInquiryAttachmentBytes
+    ) {
+      throw new ApiError(
+        "INQUIRY_ATTACHMENT_METADATA_INVALID",
+        "업로드된 파일의 형식·크기·소유자 정보가 요청과 일치하지 않습니다.",
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    try {
+      const object = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: input.objectKey }));
+      const bytes = object.Body ? await object.Body.transformToByteArray() : new Uint8Array();
+      if (bytes.length !== input.size) throw new Error("size mismatch");
+      return bytes;
+    } catch {
+      throw new ApiError(
+        "INQUIRY_ATTACHMENT_INSPECTION_FAILED",
+        "업로드된 파일을 검사하지 못해 격리 상태로 유지합니다.",
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+  }
+
+  async createCommunityAttachmentUpload(input: {
+    attachmentId: string;
+    ownerUserId: string;
+    kind: "material" | "photo";
+    contentType: string;
+    size: number;
+    extension: string;
+  }): Promise<{
+    method: "POST";
+    url: string;
+    fields: Record<string, string>;
+    objectKey: string;
+    expiresAt: Date;
+  }> {
+    if (!this.client || !this.bucket) {
+      throw new ApiError("OBJECT_STORAGE_NOT_CONFIGURED", "파일 저장소 연결이 필요합니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    const objectKey = `community-attachments/${input.attachmentId}/source.${input.extension}`;
+    try {
+      const signed = await createPresignedPost(this.client, {
+        Bucket: this.bucket,
+        Key: objectKey,
+        Expires: this.uploadTtlSeconds,
+        Fields: {
+          "Content-Type": input.contentType,
+          "x-amz-meta-attachment-id": input.attachmentId,
+          "x-amz-meta-owner-user-id": input.ownerUserId,
+          "x-amz-meta-kind": input.kind,
+          "x-amz-meta-expected-size": String(input.size),
+        },
+        Conditions: [
+          ["content-length-range", 1, this.maxCommunityAttachmentBytes],
+          ["eq", "$Content-Type", input.contentType],
+          ["eq", "$x-amz-meta-attachment-id", input.attachmentId],
+          ["eq", "$x-amz-meta-owner-user-id", input.ownerUserId],
+          ["eq", "$x-amz-meta-kind", input.kind],
+          ["eq", "$x-amz-meta-expected-size", String(input.size)],
+        ],
+      });
+      return {
+        method: "POST",
+        url: signed.url,
+        fields: signed.fields,
+        objectKey,
+        expiresAt: new Date(Date.now() + this.uploadTtlSeconds * 1000),
+      };
+    } catch {
+      throw new ApiError("UPLOAD_URL_SIGNING_FAILED", "파일 업로드 URL을 발급하지 못했습니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+  }
+
+  async inspectCommunityAttachment(input: {
+    objectKey: string;
+    attachmentId: string;
+    ownerUserId: string;
+    kind: "material" | "photo";
+    contentType: string;
+    size: number;
+  }): Promise<Uint8Array> {
+    if (!this.client || !this.bucket) {
+      throw new ApiError("OBJECT_STORAGE_NOT_CONFIGURED", "파일 저장소 연결이 필요합니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    this.assertSafeKey(input.objectKey);
+    if (!input.objectKey.startsWith(`community-attachments/${input.attachmentId}/`)) {
+      throw new ApiError("INVALID_COMMUNITY_ATTACHMENT", "커뮤니티 첨부파일 저장 경로를 확인해 주세요.", HttpStatus.BAD_REQUEST);
+    }
+    let head: HeadObjectCommandOutput;
+    try {
+      head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: input.objectKey }));
+    } catch {
+      throw new ApiError("COMMUNITY_ATTACHMENT_NOT_FOUND", "업로드된 첨부파일을 찾을 수 없습니다.", HttpStatus.CONFLICT);
+    }
+    if (
+      head.ContentType !== input.contentType
+      || head.ContentLength !== input.size
+      || head.Metadata?.["attachment-id"] !== input.attachmentId
+      || head.Metadata?.["owner-user-id"] !== input.ownerUserId
+      || head.Metadata?.kind !== input.kind
+      || head.Metadata?.["expected-size"] !== String(input.size)
+      || input.size <= 0
+      || input.size > this.maxCommunityAttachmentBytes
+    ) {
+      throw new ApiError(
+        "COMMUNITY_ATTACHMENT_METADATA_INVALID",
+        "업로드된 파일의 형식·크기·소유자 정보가 요청과 일치하지 않습니다.",
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    try {
+      const object = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: input.objectKey }));
+      const bytes = object.Body ? await object.Body.transformToByteArray() : new Uint8Array();
+      if (bytes.length !== input.size) throw new Error("size mismatch");
+      return bytes;
+    } catch {
+      throw new ApiError(
+        "COMMUNITY_ATTACHMENT_INSPECTION_FAILED",
+        "업로드된 파일을 검사하지 못해 격리 상태로 유지합니다.",
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+  }
+
+  async createTeachingMaterialUpload(input: {
+    assetId: string;
+    ownerUserId: string;
+    contentType: string;
+    size: number;
+    extension: string;
+  }): Promise<{
+    method: "POST";
+    url: string;
+    fields: Record<string, string>;
+    objectKey: string;
+    expiresAt: Date;
+  }> {
+    if (!this.client || !this.bucket) {
+      throw new ApiError("OBJECT_STORAGE_NOT_CONFIGURED", "파일 저장소 연결이 필요합니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    const objectKey = `teaching-material-assets/${input.assetId}/source.${input.extension}`;
+    try {
+      const signed = await createPresignedPost(this.client, {
+        Bucket: this.bucket,
+        Key: objectKey,
+        Expires: this.uploadTtlSeconds,
+        Fields: {
+          "Content-Type": input.contentType,
+          "x-amz-meta-asset-id": input.assetId,
+          "x-amz-meta-owner-user-id": input.ownerUserId,
+          "x-amz-meta-expected-size": String(input.size),
+        },
+        Conditions: [
+          ["content-length-range", 1, this.maxCommunityAttachmentBytes],
+          ["eq", "$Content-Type", input.contentType],
+          ["eq", "$x-amz-meta-asset-id", input.assetId],
+          ["eq", "$x-amz-meta-owner-user-id", input.ownerUserId],
+          ["eq", "$x-amz-meta-expected-size", String(input.size)],
+        ],
+      });
+      return {
+        method: "POST",
+        url: signed.url,
+        fields: signed.fields,
+        objectKey,
+        expiresAt: new Date(Date.now() + this.uploadTtlSeconds * 1000),
+      };
+    } catch {
+      throw new ApiError("UPLOAD_URL_SIGNING_FAILED", "파일 업로드 URL을 발급하지 못했습니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+  }
+
+  async createClassHelperAssetUpload(input: {
+    assetId: string;
+    ownerUserId: string;
+    kind: string;
+    contentType: string;
+    size: number;
+    extension: string;
+  }): Promise<{
+    method: "POST";
+    url: string;
+    fields: Record<string, string>;
+    objectKey: string;
+    expiresAt: Date;
+  }> {
+    if (!this.client || !this.bucket) {
+      throw new ApiError("OBJECT_STORAGE_NOT_CONFIGURED", "파일 저장소 연결이 필요합니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    const objectKey = `class-helper-assets/${input.assetId}/source.${input.extension}`;
+    try {
+      const signed = await createPresignedPost(this.client, {
+        Bucket: this.bucket,
+        Key: objectKey,
+        Expires: this.uploadTtlSeconds,
+        Fields: {
+          "Content-Type": input.contentType,
+          "x-amz-meta-asset-id": input.assetId,
+          "x-amz-meta-owner-user-id": input.ownerUserId,
+          "x-amz-meta-kind": input.kind,
+          "x-amz-meta-expected-size": String(input.size),
+        },
+        Conditions: [
+          ["content-length-range", 1, this.maxCommunityAttachmentBytes],
+          ["eq", "$Content-Type", input.contentType],
+          ["eq", "$x-amz-meta-asset-id", input.assetId],
+          ["eq", "$x-amz-meta-owner-user-id", input.ownerUserId],
+          ["eq", "$x-amz-meta-kind", input.kind],
+          ["eq", "$x-amz-meta-expected-size", String(input.size)],
+        ],
+      });
+      return { method: "POST", url: signed.url, fields: signed.fields, objectKey, expiresAt: new Date(Date.now() + this.uploadTtlSeconds * 1000) };
+    } catch {
+      throw new ApiError("UPLOAD_URL_SIGNING_FAILED", "수업자료 업로드 URL을 발급하지 못했습니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+  }
+
+  async inspectClassHelperAsset(input: {
+    objectKey: string;
+    assetId: string;
+    ownerUserId: string;
+    kind: string;
+    contentType: string;
+    size: number;
+  }): Promise<Uint8Array> {
+    if (!this.client || !this.bucket) {
+      throw new ApiError("OBJECT_STORAGE_NOT_CONFIGURED", "파일 저장소 연결이 필요합니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    this.assertSafeKey(input.objectKey);
+    if (!input.objectKey.startsWith(`class-helper-assets/${input.assetId}/`)) {
+      throw new ApiError("INVALID_CLASS_HELPER_ASSET", "수업자료 저장 경로를 확인해 주세요.", HttpStatus.BAD_REQUEST);
+    }
+    let head: HeadObjectCommandOutput;
+    try {
+      head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: input.objectKey }));
+    } catch {
+      throw new ApiError("CLASS_HELPER_ASSET_NOT_FOUND", "업로드된 수업자료를 찾을 수 없습니다.", HttpStatus.CONFLICT);
+    }
+    if (
+      head.ContentType !== input.contentType
+      || head.ContentLength !== input.size
+      || head.Metadata?.["asset-id"] !== input.assetId
+      || head.Metadata?.["owner-user-id"] !== input.ownerUserId
+      || head.Metadata?.kind !== input.kind
+      || head.Metadata?.["expected-size"] !== String(input.size)
+      || input.size <= 0
+      || input.size > this.maxCommunityAttachmentBytes
+    ) {
+      throw new ApiError("CLASS_HELPER_ASSET_METADATA_INVALID", "업로드된 수업자료 정보가 요청과 일치하지 않습니다.", HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+    try {
+      const object = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: input.objectKey }));
+      const bytes = object.Body ? await object.Body.transformToByteArray() : new Uint8Array();
+      if (bytes.length !== input.size) throw new Error("size mismatch");
+      return bytes;
+    } catch {
+      throw new ApiError("CLASS_HELPER_ASSET_INSPECTION_FAILED", "업로드된 수업자료를 검사하지 못했습니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+  }
+
+  async inspectTeachingMaterialAsset(input: {
+    objectKey: string;
+    assetId: string;
+    ownerUserId: string;
+    contentType: string;
+    size: number;
+  }): Promise<Uint8Array> {
+    if (!this.client || !this.bucket) {
+      throw new ApiError("OBJECT_STORAGE_NOT_CONFIGURED", "파일 저장소 연결이 필요합니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    this.assertSafeKey(input.objectKey);
+    if (!input.objectKey.startsWith(`teaching-material-assets/${input.assetId}/`)) {
+      throw new ApiError("INVALID_TEACHING_MATERIAL_ASSET", "교재자료 저장 경로를 확인해 주세요.", HttpStatus.BAD_REQUEST);
+    }
+    let head: HeadObjectCommandOutput;
+    try {
+      head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: input.objectKey }));
+    } catch {
+      throw new ApiError("TEACHING_MATERIAL_ASSET_NOT_FOUND", "업로드된 교재자료를 찾을 수 없습니다.", HttpStatus.CONFLICT);
+    }
+    if (
+      head.ContentType !== input.contentType
+      || head.ContentLength !== input.size
+      || head.Metadata?.["asset-id"] !== input.assetId
+      || head.Metadata?.["owner-user-id"] !== input.ownerUserId
+      || head.Metadata?.["expected-size"] !== String(input.size)
+      || input.size <= 0
+      || input.size > this.maxCommunityAttachmentBytes
+    ) {
+      throw new ApiError("TEACHING_MATERIAL_ASSET_METADATA_INVALID", "업로드된 파일 정보가 요청과 일치하지 않습니다.", HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+    try {
+      const object = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: input.objectKey }));
+      const bytes = object.Body ? await object.Body.transformToByteArray() : new Uint8Array();
+      if (bytes.length !== input.size) throw new Error("size mismatch");
+      return bytes;
+    } catch {
+      throw new ApiError("TEACHING_MATERIAL_ASSET_INSPECTION_FAILED", "업로드된 교재자료를 검사하지 못했습니다.", HttpStatus.SERVICE_UNAVAILABLE);
     }
   }
 
@@ -472,6 +860,78 @@ export class ObjectStorageService {
         "영상 객체를 정리하지 못했습니다.",
         HttpStatus.SERVICE_UNAVAILABLE,
       );
+    }
+  }
+
+  async deleteInquiryAttachmentObject(objectKey: string): Promise<void> {
+    if (!this.client || !this.bucket) {
+      throw new ApiError(
+        "OBJECT_STORAGE_NOT_CONFIGURED",
+        "파일 저장소 연결이 필요합니다.",
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    this.assertSafeKey(objectKey);
+    if (!/^inquiry-attachments\/[0-9a-f-]{36}\/source\.(?:jpe?g|png|webp|pdf)$/iu.test(objectKey)) {
+      throw new ApiError("INVALID_INQUIRY_ATTACHMENT", "문의 첨부파일 저장 경로를 확인해 주세요.", HttpStatus.BAD_REQUEST);
+    }
+    try {
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: objectKey }));
+    } catch {
+      throw new ApiError(
+        "INQUIRY_ATTACHMENT_DELETE_FAILED",
+        "문의 첨부파일 객체를 정리하지 못했습니다.",
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+  }
+
+  async deleteCommunityAttachmentObject(objectKey: string): Promise<void> {
+    if (!this.client || !this.bucket) {
+      throw new ApiError("OBJECT_STORAGE_NOT_CONFIGURED", "파일 저장소 연결이 필요합니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    this.assertSafeKey(objectKey);
+    if (!/^community-attachments\/[0-9a-f-]{36}\/source\.(?:jpe?g|png|webp|pdf|pptx|docx|hwpx)$/iu.test(objectKey)) {
+      throw new ApiError("INVALID_COMMUNITY_ATTACHMENT", "커뮤니티 첨부파일 저장 경로를 확인해 주세요.", HttpStatus.BAD_REQUEST);
+    }
+    try {
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: objectKey }));
+    } catch {
+      throw new ApiError(
+        "COMMUNITY_ATTACHMENT_DELETE_FAILED",
+        "커뮤니티 첨부파일 객체를 정리하지 못했습니다.",
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+  }
+
+  async deleteTeachingMaterialAssetObject(objectKey: string): Promise<void> {
+    if (!this.client || !this.bucket) {
+      throw new ApiError("OBJECT_STORAGE_NOT_CONFIGURED", "파일 저장소 연결이 필요합니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    this.assertSafeKey(objectKey);
+    if (!/^teaching-material-assets\/[0-9a-f-]{36}\/source\.(?:pdf|pptx|docx|hwpx)$/iu.test(objectKey)) {
+      throw new ApiError("INVALID_TEACHING_MATERIAL_ASSET", "교재자료 저장 경로를 확인해 주세요.", HttpStatus.BAD_REQUEST);
+    }
+    try {
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: objectKey }));
+    } catch {
+      throw new ApiError("TEACHING_MATERIAL_ASSET_DELETE_FAILED", "교재자료 파일을 정리하지 못했습니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+  }
+
+  async deleteClassHelperAssetObject(objectKey: string): Promise<void> {
+    if (!this.client || !this.bucket) {
+      throw new ApiError("OBJECT_STORAGE_NOT_CONFIGURED", "파일 저장소 연결이 필요합니다.", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    this.assertSafeKey(objectKey);
+    if (!/^class-helper-assets\/[0-9a-f-]{36}\/source\.(?:pdf|ppt|pptx|doc|docx|hwp|hwpx)$/iu.test(objectKey)) {
+      throw new ApiError("INVALID_CLASS_HELPER_ASSET", "수업자료 저장 경로를 확인해 주세요.", HttpStatus.BAD_REQUEST);
+    }
+    try {
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: objectKey }));
+    } catch {
+      throw new ApiError("CLASS_HELPER_ASSET_DELETE_FAILED", "수업자료 파일을 정리하지 못했습니다.", HttpStatus.SERVICE_UNAVAILABLE);
     }
   }
 

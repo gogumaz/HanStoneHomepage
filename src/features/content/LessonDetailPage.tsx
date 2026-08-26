@@ -16,6 +16,7 @@ import {
   type LessonProgress,
 } from './api';
 import { LessonVideoPlayer } from './LessonVideoPlayer';
+import { listMissions } from '../mission/api';
 
 export function LessonDetailPage() {
   const { lessonId = '' } = useParams();
@@ -24,6 +25,12 @@ export function LessonDetailPage() {
   const lessonQuery = useQuery({
     queryKey: ['lesson', lessonId],
     queryFn: () => getLesson(lessonId),
+    enabled: Boolean(lessonId),
+    retry: false,
+  });
+  const missionsQuery = useQuery({
+    queryKey: ['missions', { lessonId }],
+    queryFn: () => listMissions({ lessonId }),
     enabled: Boolean(lessonId),
     retry: false,
   });
@@ -78,6 +85,7 @@ export function LessonDetailPage() {
     stepMutation.error,
     completeMutation.error,
     uploadMutation.error,
+    missionsQuery.error,
   ];
   const error = errors.find((item): item is ApiClientError => item instanceof ApiClientError);
   const progress = progressQuery.data;
@@ -165,6 +173,25 @@ export function LessonDetailPage() {
                 ) : null}
               </div>
             ) : null}
+          </section>
+
+          <section className="lesson-materials lesson-missions" aria-labelledby="lesson-missions-title">
+            <p className="react-stack-eyebrow">BADUK MISSION</p>
+            <h2 id="lesson-missions-title">판 위의 미션</h2>
+            <p>강의에서 배운 개념을 바둑판에 직접 착수하며 확인합니다.</p>
+            {missionsQuery.isLoading ? <p role="status">연결된 바둑미션을 불러오고 있습니다.</p> : null}
+            {missionsQuery.data?.items.length ? (
+              <ul>
+                {missionsQuery.data.items.map((mission) => (
+                  <li key={mission.id}>
+                    <span><strong>{mission.title}</strong><small>{mission.boardSize}줄 · 난이도 {mission.difficulty} · {mission.problemGroup}</small></span>
+                    <Link to={`/missions?lessonId=${encodeURIComponent(lessonId)}&missionId=${encodeURIComponent(mission.id)}`}>
+                      {mission.progress?.status === 'in_progress' ? '이어 풀기' : '미션 풀기'}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : !missionsQuery.isLoading ? <p>이 강의에 연결된 공개 바둑미션이 없습니다.</p> : null}
           </section>
 
           {canManageVideo ? (

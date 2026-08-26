@@ -8,12 +8,14 @@ import {
   downloadAdminPaymentReconciliationCsv,
   reconcileSubscriptionOrder,
   refundAccountSubscription,
+  listAdminStoreOrders,
+  refundStoreOrder,
   type AdminPaymentReconciliationFilters,
 } from './api';
 
 const ISSUE_LABELS: Record<string, string> = {
   expired_pending_order: '결제 대기 시간이 만료됨',
-  paid_order_missing_payment_id: '결제 완료 주문에 PortOne 결제번호가 없음',
+  paid_order_missing_payment_id: '결제 완료 주문에 토스 결제키가 없음',
   paid_order_missing_subscription: '결제 완료 주문의 구독이 누락됨',
   subscription_user_mismatch: '주문자와 구독 사용자가 다름',
   subscription_amount_mismatch: '주문 금액과 구독 금액이 다름',
@@ -65,6 +67,8 @@ export function AdminPaymentsPage() {
   const [refundConfirmed, setRefundConfirmed] = useState(false);
   const [manualPaymentIds, setManualPaymentIds] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState('');
+  const [storeRefundTarget, setStoreRefundTarget] = useState<string | null>(null);
+  const [storeRefundReason, setStoreRefundReason] = useState('');
   const meQuery = useQuery({ queryKey: ['current-user'], queryFn: getCurrentUser, retry: false });
   const canManage = meQuery.data?.roles.some((role) => role === 'operator' || role === 'admin') ?? false;
   const reportQuery = useQuery({
@@ -73,11 +77,14 @@ export function AdminPaymentsPage() {
     enabled: canManage,
     retry: false,
   });
+  const storeOrdersQuery = useQuery({
+    queryKey: ['admin-store-orders'], queryFn: listAdminStoreOrders, enabled: canManage, retry: false,
+  });
   const reconcileMutation = useMutation({
     mutationFn: ({ orderId, paymentId }: { orderId: string; paymentId?: string }) =>
       reconcileSubscriptionOrder(orderId, paymentId),
     onSuccess: async (result) => {
-      setNotice(`${result.orderId} 주문을 PortOne 원본과 다시 동기화했습니다. (${result.action})`);
+      setNotice(`${result.orderId} 주문을 토스 원본과 다시 동기화했습니다. (${result.action})`);
       await queryClient.invalidateQueries({ queryKey: ['admin-payment-reconciliation'] });
     },
   });
@@ -106,8 +113,17 @@ export function AdminPaymentsPage() {
       setNotice('현재 조회 조건의 결제 대사 CSV를 내려받았습니다.');
     },
   });
+  const storeRefundMutation = useMutation({
+    mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) => refundStoreOrder(orderId, reason),
+    onSuccess: async (result) => {
+      setNotice(`${result.orderId} 교재 주문을 전액 환불했습니다.`);
+      setStoreRefundTarget(null);
+      setStoreRefundReason('');
+      await queryClient.invalidateQueries({ queryKey: ['admin-store-orders'] });
+    },
+  });
   const items = reportQuery.data?.items ?? [];
-  const errors = [meQuery.error, reportQuery.error, reconcileMutation.error, refundMutation.error, exportMutation.error];
+  const errors = [meQuery.error, reportQuery.error, storeOrdersQuery.error, reconcileMutation.error, refundMutation.error, exportMutation.error, storeRefundMutation.error];
   const error = errors.find((item): item is ApiClientError => item instanceof ApiClientError);
 
   return (
@@ -116,7 +132,7 @@ export function AdminPaymentsPage() {
         <Link className="back-link" to="/">← 개발 현황으로</Link>
         <p className="react-stack-eyebrow">PAYMENT RECONCILIATION</p>
         <h1>결제 대사 관리</h1>
-        <p>DB 주문·구독·환불 이력을 비교하고 PortOne 결제 원본으로 상태를 다시 확인합니다.</p>
+        <p>DB 주문·구독·환불 이력을 비교하고 토스페이먼츠 결제 원본으로 상태를 다시 확인합니다.</p>
       </header>
 
       {meQuery.isLoading ? <p role="status">운영 권한을 확인하고 있습니다.</p> : null}
@@ -223,7 +239,7 @@ export function AdminPaymentsPage() {
                   </div>
                   <dl className="payment-order-details">
                     <div><dt>주문번호</dt><dd>{item.order.id}</dd></div>
-                    <div><dt>PortOne 결제번호</dt><dd>{item.order.paymentId ?? '미수집'}</dd></div>
+                    <div><dt>토스 결제키</dt><dd>{item.order.paymentId ?? '미수집'}</dd></div>
                     <div><dt>구독</dt><dd>{subscription ? `${subscription.paymentStatus} · ${formatDate(subscription.endsAt)}까지` : '없음'}</dd></div>
                     <div><dt>누적 환불</dt><dd>{formatKrw(item.order.refundedAmount)}</dd></div>
                   </dl>
@@ -248,7 +264,7 @@ export function AdminPaymentsPage() {
                       type="button"
                       disabled={!item.reconciliation.canSync || reconcileMutation.isPending}
                       onClick={() => reconcileMutation.mutate({ orderId: item.order.id })}
-                    >PortOne 재조회·동기화</button>
+                    >토스 재조회·동기화</button>
                     {isRefundable ? (
                       <button type="button" className="danger" onClick={() => {
                         setRefundTarget(refundOpen ? null : subscription.id);
@@ -259,7 +275,7 @@ export function AdminPaymentsPage() {
                   </div>
                   {!item.reconciliation.canSync ? (
                     <div className="payment-manual-sync">
-                      <label>PortOne 결제번호
+                      <label>토스 결제키
                         <input
                           value={manualPaymentIds[item.order.id] ?? ''}
                           onChange={(event) => setManualPaymentIds({
@@ -310,6 +326,20 @@ export function AdminPaymentsPage() {
                 }}>다음</button>
               </nav>
             ) : null}
+          </section>
+          <section className="payment-reconciliation" aria-labelledby="store-orders-title">
+            <div className="payment-reconciliation-heading">
+              <div><h2 id="store-orders-title">교재 주문·토스 환불</h2><small>토스페이먼츠 직접 결제 주문 {storeOrdersQuery.data?.items.length ?? 0}건</small></div>
+              <button type="button" onClick={() => storeOrdersQuery.refetch()} disabled={storeOrdersQuery.isFetching}>새로고침</button>
+            </div>
+            {storeOrdersQuery.data?.items.length ? <div className="payment-order-list">{storeOrdersQuery.data.items.map((order) => (
+              <article key={order.orderId} className="payment-order-card" data-status={order.status === 'paid' ? 'matched' : 'attention'}>
+                <div className="payment-order-main"><div><h3>{order.orderName}</h3><p>{order.user.displayName} · {order.user.email ?? '이메일 없음'}</p></div><div><strong>{formatKrw(order.amount)}</strong><span>{ORDER_LABELS[order.status]}</span><small>{formatDate(order.createdAt)}</small></div></div>
+                <dl className="payment-order-details"><div><dt>주문번호</dt><dd>{order.orderId}</dd></div><div><dt>토스 결제키</dt><dd>{order.paymentId ?? '미수집'}</dd></div><div><dt>결제수단</dt><dd>{order.paymentMethod ?? '-'}</dd></div><div><dt>누적 환불</dt><dd>{formatKrw(order.refundedAmount)}</dd></div>{order.shipping ? <><div><dt>수령인</dt><dd>{order.shipping.recipientName} · {order.shipping.recipientPhone}</dd></div><div><dt>배송지</dt><dd>({order.shipping.postalCode}) {order.shipping.addressLine1} {order.shipping.addressLine2}</dd></div></> : null}</dl>
+                {order.status === 'paid' && order.refundedAmount < order.amount ? <div className="payment-order-actions"><button type="button" className="danger" onClick={() => setStoreRefundTarget(storeRefundTarget === order.orderId ? null : order.orderId)}>전액 환불</button></div> : null}
+                {storeRefundTarget === order.orderId ? <form className="payment-refund-form" onSubmit={(event) => { event.preventDefault(); storeRefundMutation.mutate({ orderId: order.orderId, reason: storeRefundReason.trim() }); }}><strong>토스 원본을 재조회한 뒤 남은 금액을 전액 환불합니다.</strong><label>환불 사유<textarea required minLength={5} maxLength={200} value={storeRefundReason} onChange={(event) => setStoreRefundReason(event.target.value)} /></label><button type="submit" className="danger" disabled={storeRefundReason.trim().length < 5 || storeRefundMutation.isPending}>{storeRefundMutation.isPending ? '환불 처리 중…' : '교재 주문 환불 확정'}</button></form> : null}
+              </article>
+            ))}</div> : <p className="payment-empty">교재 주문이 없습니다.</p>}
           </section>
         </>
       ) : null}

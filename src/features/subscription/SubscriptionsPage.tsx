@@ -4,11 +4,17 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { getCurrentUser } from '../auth/api';
 import { ApiClientError } from '../../lib/api-client';
 import {
+  clearTossConfirmationId,
+  resolveTossBrowserConfig,
+  stableTossConfirmationId,
+  tossPaymentReadyMessage,
+} from '../../payments/toss-browser';
+import {
   createSubscriptionCheckout,
   listMyOrders,
   listMySubscriptions,
   listSubscriptionPlans,
-  verifyPortOnePayment,
+  confirmTossSubscriptionPayment,
   type Checkout,
 } from './api';
 
@@ -45,28 +51,36 @@ export function SubscriptionsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectHandled = useRef(false);
+  const tossWidgets = useRef<TossPaymentWidgets | null>(null);
+  const [pendingCheckout, setPendingCheckout] = useState<Checkout | null>(null);
   const [notice, setNotice] = useState('');
   const userQuery = useQuery({ queryKey: ['current-user'], queryFn: getCurrentUser, retry: false });
   const plansQuery = useQuery({ queryKey: ['subscription-plans'], queryFn: listSubscriptionPlans, retry: false });
   const enabled = Boolean(userQuery.data);
   const subscriptionsQuery = useQuery({
-    queryKey: ['my-subscriptions'], queryFn: listMySubscriptions, enabled, retry: false,
+    queryKey: ['my-subscriptions'], queryFn: ({ signal }) => listMySubscriptions(signal), enabled, retry: false,
   });
   const ordersQuery = useQuery({
-    queryKey: ['my-orders'], queryFn: listMyOrders, enabled, retry: false,
+    queryKey: ['my-orders'], queryFn: ({ signal }) => listMyOrders(signal), enabled, retry: false,
   });
 
   const verifyMutation = useMutation({
-    mutationFn: ({ paymentId, orderId }: { paymentId: string; orderId: string }) =>
-      verifyPortOnePayment(paymentId, orderId),
-    onSuccess: async (result) => {
+    mutationFn: ({ paymentId, orderId, amount, confirmationId }: {
+      paymentId: string; orderId: string; amount: number; confirmationId: string;
+    }) => confirmTossSubscriptionPayment(paymentId, orderId, amount, confirmationId),
+    onSuccess: async (result, variables) => {
+      clearTossConfirmationId(variables.orderId);
       setNotice(`${formatDate(result.subscription.endsAt)}까지 구독을 이용할 수 있습니다.`);
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['my-subscriptions'] }),
+        queryClient.cancelQueries({ queryKey: ['my-orders'] }),
+      ]);
+      navigate('/subscriptions', { replace: true });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['my-subscriptions'] }),
         queryClient.invalidateQueries({ queryKey: ['my-orders'] }),
         queryClient.invalidateQueries({ queryKey: ['lesson-progress'] }),
       ]);
-      navigate('/subscriptions', { replace: true });
     },
   });
 
@@ -75,43 +89,52 @@ export function SubscriptionsPage() {
     onSuccess: (checkout) => requestPayment(checkout),
   });
 
-  function requestPayment(checkout: Checkout) {
-    const config = window.APP_CONFIG?.portoneV1;
-    const portOne = window.IMP;
-    if (!config?.userCode || !config.channelKey || !portOne) {
-      setNotice('PortOne 브라우저 설정이 필요합니다. 생성된 주문은 주문 내역에서 확인할 수 있습니다.');
+  async function requestPayment(checkout: Checkout) {
+    let config;
+    try {
+      config = resolveTossBrowserConfig(window.APP_CONFIG?.tossPayments);
+    } catch {
+      setNotice('토스페이먼츠 테스트·라이브 클라이언트 키와 결제 모드가 일치하지 않습니다.');
+      return;
+    }
+    if (!config || !window.TossPayments) {
+      setNotice('토스페이먼츠 브라우저 설정이 필요합니다. 생성된 주문은 주문 내역에서 확인할 수 있습니다.');
       void queryClient.invalidateQueries({ queryKey: ['my-orders'] });
       return;
     }
-    portOne.init(config.userCode);
-    portOne.request_pay({
-      channelKey: config.channelKey,
-      pg: config.pgProvider && config.mid ? `${config.pgProvider}.${config.mid}` : undefined,
-      pay_method: 'card',
-      merchant_uid: checkout.orderId,
-      name: checkout.orderName,
-      amount: checkout.amount,
-      buyer_email: checkout.customerEmail ?? undefined,
-      buyer_name: checkout.customerName,
-      m_redirect_url: `${window.location.origin}/subscriptions`,
-    }, (response) => {
-      const paymentId = response.imp_uid;
-      const orderId = response.merchant_uid;
-      if (paymentId && orderId) {
-        verifyMutation.mutate({ paymentId, orderId });
-      } else {
-        setNotice(response.error_msg || '결제가 완료되지 않았습니다.');
-      }
+    const toss = window.TossPayments(config.clientKey);
+    const widgets = toss.widgets({ customerKey: checkout.customerKey || window.TossPayments.ANONYMOUS || 'ANONYMOUS' });
+    await widgets.setAmount({ currency: 'KRW', value: checkout.amount });
+    setPendingCheckout(checkout);
+    tossWidgets.current = widgets;
+    queueMicrotask(() => {
+      void Promise.all([
+        widgets.renderPaymentMethods({ selector: '#subscription-payment-method', variantKey: config.paymentMethodVariantKey }),
+        widgets.renderAgreement({ selector: '#subscription-agreement', variantKey: config.agreementVariantKey }),
+      ]).then(() => setNotice(tossPaymentReadyMessage(config.mode)));
+    });
+  }
+
+  async function openTossPayment() {
+    if (!pendingCheckout || !tossWidgets.current) return;
+    await tossWidgets.current.requestPayment({
+      orderId: pendingCheckout.orderId,
+      orderName: pendingCheckout.orderName,
+      successUrl: `${window.location.origin}/subscriptions`,
+      failUrl: `${window.location.origin}/subscriptions?paymentFailed=true`,
+      customerEmail: pendingCheckout.customerEmail ?? undefined,
+      customerName: pendingCheckout.customerName,
     });
   }
 
   useEffect(() => {
     if (redirectHandled.current || !userQuery.data) return;
-    const paymentId = searchParams.get('imp_uid');
-    const orderId = searchParams.get('merchant_uid');
-    if (!paymentId || !orderId) return;
+    const paymentId = searchParams.get('paymentKey');
+    const orderId = searchParams.get('orderId');
+    const amount = Number(searchParams.get('amount'));
+    if (!paymentId || !orderId || !Number.isInteger(amount) || amount < 1) return;
     redirectHandled.current = true;
-    verifyMutation.mutate({ paymentId, orderId });
+    verifyMutation.mutate({ paymentId, orderId, amount, confirmationId: stableTossConfirmationId(orderId) });
   }, [searchParams, userQuery.data, verifyMutation]);
 
   const activeSubscription = subscriptionsQuery.data?.items.find((item) => item.active);
@@ -150,6 +173,14 @@ export function SubscriptionsPage() {
               ? `${formatDate(activeSubscription.endsAt)}에 종료됩니다.`
               : '원하는 기간을 선택하면 결제 검증 후 즉시 이용할 수 있습니다.'}</p>
           </section>
+
+          {pendingCheckout ? (
+            <section className="subscription-payment-widget" aria-label="토스페이먼츠 결제">
+              <div id="subscription-payment-method" />
+              <div id="subscription-agreement" />
+              <button type="button" onClick={() => void openTossPayment()}>토스로 {formatKrw(pendingCheckout.amount)} 결제</button>
+            </section>
+          ) : null}
 
           <section className="subscription-plans" aria-labelledby="plan-title">
             <h2 id="plan-title">구독 플랜</h2>

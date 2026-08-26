@@ -1,3 +1,5 @@
+import { resolveTossBrowserConfig, tossPaymentReadyMessage } from './src/payments/toss-browser.ts';
+
 const $ = (selector, scope = document) => scope.querySelector(selector);
 const $$ = (selector, scope = document) => [...scope.querySelectorAll(selector)];
 const appConfig = window.APP_CONFIG || {};
@@ -137,7 +139,7 @@ $$('.quiz-options button').forEach(button => button.addEventListener('click', ()
   }
 }));
 
-const paymentState = { product: null, order: null, widgets: null };
+const paymentState = { product: null, order: null, widgets: null, clientConfig: null };
 
 function formatKrw(value) {
   return `${Number(value).toLocaleString('ko-KR')}원`;
@@ -153,33 +155,82 @@ async function prepareTossPayment(button) {
   const product = {
     id: button.dataset.productId,
     name: button.dataset.productName,
-    price: Number(button.dataset.productPrice)
+    price: Number(button.dataset.productPrice),
+    requiresShipping: button.dataset.requiresShipping === 'true'
   };
   paymentState.product = product;
   paymentState.order = null;
   paymentState.widgets = null;
+  paymentState.clientConfig = null;
 
   $('#paymentProductName').textContent = product.name;
   $('#paymentProductPrice').textContent = formatKrw(product.price);
   $('#tossPaymentAmount').textContent = formatKrw(product.price);
-  $('#tossPaymentButton').disabled = true;
+  $('#paymentButtonLabel').textContent = product.requiresShipping ? '배송정보 확인' : '결제 준비';
   $('#payment-method').replaceChildren();
   $('#agreement').replaceChildren();
-  setPaymentStatus('결제 정보를 준비하고 있습니다.');
+  const shippingPanel = $('#paymentShipping');
+  shippingPanel.hidden = !product.requiresShipping;
+  $$('#paymentShipping input').forEach(input => {
+    input.required = product.requiresShipping && input.id !== 'shippingAddressLine2';
+    input.value = '';
+  });
   openModal('#paymentModal');
 
-  const tossConfig = appConfig.tossPayments || {};
-  if (!tossConfig.clientKey || typeof window.TossPayments !== 'function') {
+  let tossConfig;
+  try {
+    tossConfig = resolveTossBrowserConfig(appConfig.tossPayments);
+  } catch {
+    $('#tossPaymentButton').disabled = true;
+    setPaymentStatus('토스페이먼츠 테스트·라이브 클라이언트 키와 결제 모드가 일치하지 않습니다.', true);
+    return;
+  }
+  if (!tossConfig || typeof window.TossPayments !== 'function') {
+    $('#tossPaymentButton').disabled = true;
     setPaymentStatus('토스페이먼츠 클라이언트 키와 SDK 설정이 필요합니다.', true);
     return;
   }
+  paymentState.clientConfig = tossConfig;
+  $('#tossPaymentButton').disabled = false;
+  setPaymentStatus(product.requiresShipping
+    ? '배송 정보를 입력한 뒤 확인 버튼을 눌러 주세요.'
+    : '결제 준비 버튼을 눌러 주세요.');
+}
 
+function readShippingInformation() {
+  const fields = $$('#paymentShipping input');
+  const invalid = fields.find(input => input.required && !input.reportValidity());
+  if (invalid) {
+    invalid.focus();
+    return null;
+  }
+  return {
+    recipientName: $('#shippingRecipientName').value.trim(),
+    recipientPhone: $('#shippingRecipientPhone').value.trim(),
+    postalCode: $('#shippingPostalCode').value.trim(),
+    addressLine1: $('#shippingAddressLine1').value.trim(),
+    addressLine2: $('#shippingAddressLine2').value.trim()
+  };
+}
+
+async function createStoreCheckoutAndRender() {
+  const product = paymentState.product;
+  if (!product) return false;
+  const tossConfig = paymentState.clientConfig;
+  if (!tossConfig) return false;
+  const shipping = product.requiresShipping ? readShippingInformation() : null;
+  if (product.requiresShipping && !shipping) return false;
+  const button = $('#tossPaymentButton');
+  button.disabled = true;
+  setPaymentStatus('서버에서 주문 금액과 배송 정보를 확인하고 있습니다.');
   try {
-    const response = await fetch(apiUrl('/orders/checkout'), {
+    const request = { items: [{ productId: product.id, quantity: 1 }] };
+    if (shipping) request.shipping = shipping;
+    const response = await fetch(apiUrl('/store/orders/checkout'), {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-      body: JSON.stringify({ items: [{ productId: product.id, quantity: 1 }] })
+      body: JSON.stringify(request)
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error?.message || '주문을 생성하지 못했습니다.');
@@ -195,30 +246,45 @@ async function prepareTossPayment(button) {
     const widgets = tossPayments.widgets({ customerKey: order.customerKey || anonymousKey });
     await widgets.setAmount({ currency: 'KRW', value: Number(order.amount) });
     await Promise.all([
-      widgets.renderPaymentMethods({ selector: '#payment-method', variantKey: tossConfig.paymentMethodVariantKey || 'DEFAULT' }),
-      widgets.renderAgreement({ selector: '#agreement', variantKey: tossConfig.agreementVariantKey || 'AGREEMENT' })
+      widgets.renderPaymentMethods({ selector: '#payment-method', variantKey: tossConfig.paymentMethodVariantKey }),
+      widgets.renderAgreement({ selector: '#agreement', variantKey: tossConfig.agreementVariantKey })
     ]);
     paymentState.widgets = widgets;
-    $('#tossPaymentButton').disabled = false;
-    setPaymentStatus('결제수단을 선택한 뒤 결제하기를 눌러 주세요.');
+    button.disabled = false;
+    $('#paymentButtonLabel').textContent = '결제하기';
+    setPaymentStatus(tossPaymentReadyMessage(tossConfig.mode));
+    return true;
   } catch (error) {
+    button.disabled = false;
     setPaymentStatus(error.message || '결제 정보를 불러오지 못했습니다.', true);
+    return false;
   }
 }
 
 $$('.payment-open').forEach(button => button.addEventListener('click', () => prepareTossPayment(button)));
 
 $('#tossPaymentButton')?.addEventListener('click', async event => {
-  if (!paymentState.widgets || !paymentState.order) return;
   const button = event.currentTarget;
+  if (!paymentState.widgets || !paymentState.order) {
+    await createStoreCheckoutAndRender();
+    return;
+  }
   button.disabled = true;
   setPaymentStatus('토스페이먼츠 결제창을 여는 중입니다.');
   const order = paymentState.order;
   const paymentRequest = {
     orderId: order.orderId,
     orderName: order.orderName || paymentState.product.name,
-    successUrl: new URL('payment/success.html', window.location.href).toString(),
-    failUrl: new URL('payment/fail.html', window.location.href).toString()
+    successUrl: (() => {
+      const url = new URL('payment/success.html', window.location.href);
+      url.searchParams.set('source', 'store');
+      return url.toString();
+    })(),
+    failUrl: (() => {
+      const url = new URL('payment/fail.html', window.location.href);
+      url.searchParams.set('source', 'store');
+      return url.toString();
+    })()
   };
   if (order.customerEmail) paymentRequest.customerEmail = order.customerEmail;
   if (order.customerName) paymentRequest.customerName = order.customerName;
@@ -245,6 +311,47 @@ $$('[data-toast]').forEach(element => element.addEventListener('click', event =>
 }));
 
 $('#loginForm')?.addEventListener('submit', event => { event.preventDefault(); closeModal($('#loginModal')); showToast('데모 로그인 화면입니다. 계정 연동은 백엔드 구축 시 활성화됩니다.'); });
-$('#consultForm')?.addEventListener('submit', event => { event.preventDefault(); closeModal($('#consultModal')); event.currentTarget.reset(); showToast('상담 신청이 접수되었습니다. 빠르게 연락드릴게요.'); });
+$('#consultForm')?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = $('button[type="submit"]', form);
+  if (!appConfig.boardApiEnabled) {
+    closeModal($('#consultModal'));
+    form.reset();
+    showToast('상담 신청 데모가 완료되었습니다. API를 활성화하면 서버에 접수됩니다.');
+    return;
+  }
+
+  const values = new FormData(form);
+  const request = {
+    category: String(values.get('category') || ''),
+    organizationName: String(values.get('organizationName') || ''),
+    contactName: String(values.get('contactName') || ''),
+    phone: String(values.get('phone') || ''),
+    email: String(values.get('email') || ''),
+    expectedStudents: Number(values.get('expectedStudents')),
+    title: String(values.get('title') || ''),
+    content: String(values.get('content') || ''),
+    privacyConsent: values.get('privacyConsent') === 'on'
+  };
+  button.disabled = true;
+  try {
+    const response = await fetch(apiUrl('/consultations'), {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify(request)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error?.message || '상담 신청을 접수하지 못했습니다.');
+    closeModal($('#consultModal'));
+    form.reset();
+    showToast('상담 신청이 접수되었습니다. 빠르게 연락드릴게요.');
+  } catch (error) {
+    showToast(error.message || '상담 신청 중 오류가 발생했습니다.');
+  } finally {
+    button.disabled = false;
+  }
+});
 
 $('#year').textContent = new Date().getFullYear();

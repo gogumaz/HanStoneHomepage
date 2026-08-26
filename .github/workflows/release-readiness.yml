@@ -1,0 +1,46 @@
+name: Release readiness audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  deployments: read
+
+jobs:
+  audit-release-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: server
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_READINESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Audit candidate and GitHub release prerequisites
+        id: release_readiness
+        continue-on-error: true
+        run: npm run audit:release-readiness > release-readiness.json 2>&1
+      - name: Print sanitized readiness report
+        if: always()
+        run: test -f release-readiness.json && cat release-readiness.json
+      - name: Upload release readiness evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-readiness-${{ github.sha }}-${{ github.run_id }}
+          path: server/release-readiness.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce release readiness decision
+        if: steps.release_readiness.outcome != 'success'
+        run: exit 1

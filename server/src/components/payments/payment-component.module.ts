@@ -1,10 +1,10 @@
 import { type DynamicModule, type FactoryProvider, Module } from "@nestjs/common";
 import { PAYMENT_PROVIDER, type PaymentProvider } from "./payment-provider.js";
-import { PortOneV1PaymentProvider, type PortOneV1Options } from "./portone-v1.provider.js";
+import { TossPaymentsProvider, type TossPaymentsOptions } from "./toss-payments.provider.js";
 
 export type PaymentComponentOptions = {
-  provider: "portone-v1";
-  portoneV1: PortOneV1Options;
+  provider: "toss-payments";
+  tossPayments: TossPaymentsOptions;
 };
 
 export type PaymentComponentAsyncOptions = {
@@ -14,8 +14,8 @@ export type PaymentComponentAsyncOptions = {
 };
 
 function createProvider(options: PaymentComponentOptions): PaymentProvider {
-  if (options.provider === "portone-v1") return new PortOneV1PaymentProvider(options.portoneV1);
-  throw new Error(`Unsupported payment provider: ${String(options.provider)}`);
+  if (options.provider === "toss-payments") return new TossPaymentsProvider(options.tossPayments);
+  throw new Error("Unsupported payment provider.");
 }
 
 @Module({})

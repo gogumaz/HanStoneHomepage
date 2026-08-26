@@ -1,12 +1,96 @@
+import { Component, lazy, Suspense, type ReactNode } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
-import { AuthPage } from '../features/auth/AuthPage';
-import { GuardianPage } from '../features/guardian/GuardianPage';
-import { LessonDetailPage } from '../features/content/LessonDetailPage';
-import { LessonsPage } from '../features/content/LessonsPage';
-import { AdminLessonsPage } from '../features/content/AdminLessonsPage';
-import { SubscriptionsPage } from '../features/subscription/SubscriptionsPage';
-import { AdminPaymentsPage } from '../features/subscription/AdminPaymentsPage';
-import { DashboardPage } from '../features/dashboard/DashboardPage';
+
+const AuthPage = lazy(async () => ({
+  default: (await import('../features/auth/AuthPage')).AuthPage,
+}));
+const GuardianPage = lazy(async () => ({
+  default: (await import('../features/guardian/GuardianPage')).GuardianPage,
+}));
+const LessonDetailPage = lazy(async () => ({
+  default: (await import('../features/content/LessonDetailPage')).LessonDetailPage,
+}));
+const LessonsPage = lazy(async () => ({
+  default: (await import('../features/content/LessonsPage')).LessonsPage,
+}));
+const AdminLessonsPage = lazy(async () => ({
+  default: (await import('../features/content/AdminLessonsPage')).AdminLessonsPage,
+}));
+const SubscriptionsPage = lazy(async () => ({
+  default: (await import('../features/subscription/SubscriptionsPage')).SubscriptionsPage,
+}));
+const AdminPaymentsPage = lazy(async () => ({
+  default: (await import('../features/subscription/AdminPaymentsPage')).AdminPaymentsPage,
+}));
+const DashboardPage = lazy(async () => ({
+  default: (await import('../features/dashboard/DashboardPage')).DashboardPage,
+}));
+const MissionPage = lazy(async () => ({
+  default: (await import('../features/mission/MissionPage')).MissionPage,
+}));
+const AdminMissionPage = lazy(async () => ({
+  default: (await import('../features/mission/AdminMissionPage')).AdminMissionPage,
+}));
+const AdminConsultationsPage = lazy(async () => ({
+  default: (await import('../features/consultation/AdminConsultationsPage')).AdminConsultationsPage,
+}));
+const AdminInquiriesPage = lazy(async () => ({
+  default: (await import('../features/inquiry/AdminInquiriesPage')).AdminInquiriesPage,
+}));
+const AdminCommunityReportsPage = lazy(async () => ({
+  default: (await import('../features/community/AdminCommunityReportsPage')).AdminCommunityReportsPage,
+}));
+const NotificationsPage = lazy(async () => ({ default: (await import('../features/notification/NotificationsPage')).NotificationsPage }));
+const AdminOperationsPage = lazy(async () => ({ default: (await import('../features/operations/AdminOperationsPage')).AdminOperationsPage }));
+
+type RouteErrorBoundaryProps = {
+  children: ReactNode;
+};
+
+type RouteErrorBoundaryState = {
+  failed: boolean;
+};
+
+export class RouteErrorBoundary extends Component<
+  RouteErrorBoundaryProps,
+  RouteErrorBoundaryState
+> {
+  state: RouteErrorBoundaryState = { failed: false };
+
+  static getDerivedStateFromError(): RouteErrorBoundaryState {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <main className="route-error-page">
+          <section className="route-error-card" role="alert" aria-labelledby="route-error-title">
+            <p className="route-error-eyebrow">CONNECTION ERROR</p>
+            <h1 id="route-error-title">화면을 불러오지 못했습니다.</h1>
+            <p>네트워크 상태를 확인한 뒤 최신 화면을 다시 불러와 주세요.</p>
+            <button type="button" onClick={() => window.location.reload()}>
+              새로고침
+            </button>
+          </section>
+        </main>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export function RouteLoading() {
+  return (
+    <main className="route-loading-page">
+      <div className="route-loading-card" role="status" aria-live="polite" aria-busy="true">
+        <span className="route-loading-spinner" aria-hidden="true" />
+        <p>화면을 불러오고 있습니다…</p>
+      </div>
+    </main>
+  );
+}
 
 export function StackStatus() {
   return (
@@ -29,6 +113,13 @@ export function StackStatus() {
           <Link to="/dashboard">나의 여행지도</Link>
           <Link to="/admin/lessons">강의 CMS</Link>
           <Link to="/admin/payments">결제 대사 관리</Link>
+          <Link to="/missions">바둑미션</Link>
+          <Link to="/admin/missions">바둑문제 입력기</Link>
+          <Link to="/admin/consultations">기관 상담 관리</Link>
+          <Link to="/admin/inquiries">1:1 문의 관리</Link>
+          <Link to="/admin/community-reports">커뮤니티 신고함</Link>
+          <Link to="/admin/operations">운영 워커 상태</Link>
+          <Link to="/notifications">알림함</Link>
           <Link to="/subscriptions">계정 구독</Link>
           <Link to="/account">계정 API 확인</Link>
           <Link to="/index.html">기존 홈페이지</Link>
@@ -42,16 +133,27 @@ export function StackStatus() {
 
 export function App() {
   return (
-    <Routes>
-      <Route path="/account" element={<AuthPage />} />
-      <Route path="/guardian" element={<GuardianPage />} />
-      <Route path="/lessons" element={<LessonsPage />} />
-      <Route path="/lessons/:lessonId" element={<LessonDetailPage />} />
-      <Route path="/dashboard" element={<DashboardPage />} />
-      <Route path="/admin/lessons" element={<AdminLessonsPage />} />
-      <Route path="/admin/payments" element={<AdminPaymentsPage />} />
-      <Route path="/subscriptions" element={<SubscriptionsPage />} />
-      <Route path="*" element={<StackStatus />} />
-    </Routes>
+    <RouteErrorBoundary>
+      <Suspense fallback={<RouteLoading />}>
+        <Routes>
+          <Route path="/account" element={<AuthPage />} />
+          <Route path="/guardian" element={<GuardianPage />} />
+          <Route path="/lessons" element={<LessonsPage />} />
+          <Route path="/lessons/:lessonId" element={<LessonDetailPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/admin/lessons" element={<AdminLessonsPage />} />
+          <Route path="/admin/payments" element={<AdminPaymentsPage />} />
+          <Route path="/subscriptions" element={<SubscriptionsPage />} />
+          <Route path="/missions" element={<MissionPage />} />
+          <Route path="/admin/missions" element={<AdminMissionPage />} />
+          <Route path="/admin/consultations" element={<AdminConsultationsPage />} />
+          <Route path="/admin/inquiries" element={<AdminInquiriesPage />} />
+          <Route path="/admin/community-reports" element={<AdminCommunityReportsPage />} />
+          <Route path="/admin/operations" element={<AdminOperationsPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="*" element={<StackStatus />} />
+        </Routes>
+      </Suspense>
+    </RouteErrorBoundary>
   );
 }

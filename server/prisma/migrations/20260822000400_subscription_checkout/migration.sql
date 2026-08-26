@@ -9,7 +9,7 @@ CREATE TABLE "SubscriptionOrder" (
     "planLabelSnapshot" TEXT NOT NULL,
     "monthsSnapshot" INTEGER NOT NULL,
     "status" "SubscriptionOrderStatus" NOT NULL DEFAULT 'PENDING',
-    "provider" TEXT NOT NULL DEFAULT 'portone-v1',
+    "provider" TEXT NOT NULL DEFAULT 'toss-payments',
     "providerPaymentId" TEXT,
     "paymentMethod" TEXT,
     "paidAt" TIMESTAMP(3),

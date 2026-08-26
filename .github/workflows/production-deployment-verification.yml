@@ -1,0 +1,79 @@
+name: Production deployment verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_commit_sha:
+        description: Accepted candidate Git commit SHA
+        required: true
+        type: string
+      expected_image_digest:
+        description: Deployed image digest in sha256:<64 hex> format
+        required: true
+        type: string
+      expected_web_manifest_sha256:
+        description: SHA-256 of the accepted web deployment manifest
+        required: true
+        type: string
+      samples:
+        description: Number of repeated deployment probes
+        required: true
+        default: "3"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify-deployment:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: server
+    env:
+      DEPLOY_VERIFY_BASE_URL: ${{ secrets.PRODUCTION_API_BASE_URL }}
+      DEPLOY_VERIFY_WEB_BASE_URL: ${{ secrets.PRODUCTION_WEB_BASE_URL }}
+      OPERATIONS_METRICS_TOKEN: ${{ secrets.PRODUCTION_OPERATIONS_METRICS_TOKEN }}
+      DEPLOY_VERIFY_EXPECTED_COMMIT_SHA: ${{ inputs.expected_commit_sha }}
+      DEPLOY_VERIFY_EXPECTED_IMAGE_DIGEST: ${{ inputs.expected_image_digest }}
+      DEPLOY_VERIFY_EXPECTED_WEB_MANIFEST_SHA256: ${{ inputs.expected_web_manifest_sha256 }}
+      DEPLOY_VERIFY_SAMPLES: ${{ inputs.samples }}
+      DEPLOY_VERIFY_INTERVAL_MS: "2000"
+      DEPLOY_VERIFY_TIMEOUT_MS: "5000"
+      DEPLOY_VERIFY_MAX_P95_MS: "1000"
+    steps:
+      - name: Validate immutable deployment identities
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_VERIFY_EXPECTED_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$DEPLOY_VERIFY_EXPECTED_IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          [[ "$DEPLOY_VERIFY_EXPECTED_WEB_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.expected_commit_sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Verify deployed API, web artifact, CDN policy, and health
+        id: deployment_verification
+        continue-on-error: true
+        run: node dist/deployment-verification.js > production-deployment-verification.json 2>&1
+      - name: Upload deployment verification evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-deployment-verification-${{ github.run_id }}
+          path: server/production-deployment-verification.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce rollback decision
+        if: steps.deployment_verification.outcome != 'success'
+        run: exit 1

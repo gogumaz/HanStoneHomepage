@@ -13,13 +13,17 @@
     "build:components": "npm --prefix server/src/components run build",
     "pack:components": "npm --prefix server/src/components run pack:check",
     "build:all": "npm run build:web && npm run build:api",
+    "verify:web-artifacts": "node server/scripts/verify-release-artifacts.mjs --profile web dist",
+    "manifest:web-deployment": "node server/scripts/create-web-deployment-manifest.mjs dist dist/web-deployment-manifest.json",
+    "verify:toss-test-readiness": "node server/scripts/verify-toss-test-readiness.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "test:api": "npm --prefix server test",
     "test:e2e": "playwright test",
+    "test:e2e:field": "playwright test e2e/field-validation.spec.ts",
     "typecheck": "tsc -b --pretty false",
     "typecheck:api": "npm --prefix server run typecheck",
-    "ci": "npm run typecheck && npm test && npm run build:web && npm run pack:components && npm run typecheck:api && npm run test:api && npm run build:api"
+    "ci": "npm run typecheck && npm test && npm run build:web && npm run verify:web-artifacts && npm run pack:components && npm run typecheck:api && npm run test:api && npm run build:api && npm --prefix server run verify:runtime-artifacts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

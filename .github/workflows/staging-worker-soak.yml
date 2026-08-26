@@ -1,0 +1,70 @@
+name: Staging worker queue soak
+
+on:
+  workflow_dispatch:
+    inputs:
+      samples:
+        description: Number of worker metric samples
+        required: true
+        default: "60"
+        type: string
+      interval_ms:
+        description: Interval between samples in milliseconds
+        required: true
+        default: "10000"
+        type: string
+      maximum_p95_ms:
+        description: Maximum acceptable metrics endpoint p95 latency
+        required: true
+        default: "500"
+        type: string
+      maximum_backlog_growth:
+        description: Maximum allowed due-job growth per queue
+        required: true
+        default: "0"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  worker-soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: server
+    env:
+      WORKER_SOAK_BASE_URL: ${{ secrets.STAGING_API_BASE_URL }}
+      OPERATIONS_METRICS_TOKEN: ${{ secrets.STAGING_OPERATIONS_METRICS_TOKEN }}
+      WORKER_SOAK_SAMPLES: ${{ inputs.samples }}
+      WORKER_SOAK_INTERVAL_MS: ${{ inputs.interval_ms }}
+      WORKER_SOAK_MAX_P95_MS: ${{ inputs.maximum_p95_ms }}
+      WORKER_SOAK_MAX_BACKLOG_GROWTH: ${{ inputs.maximum_backlog_growth }}
+      WORKER_SOAK_MAX_CRITICAL_SAMPLES: "0"
+      WORKER_SOAK_MAX_TERMINAL_ERROR_GROWTH: "0"
+      WORKER_SOAK_TIMEOUT_MS: "5000"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Observe worker queues under controlled staging workload
+        id: worker_soak
+        continue-on-error: true
+        run: node dist/worker-soak.js > staging-worker-soak-report.json 2>&1
+      - name: Upload worker-soak evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-worker-soak-report-${{ github.run_id }}
+          path: server/staging-worker-soak-report.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce worker-soak thresholds
+        if: steps.worker_soak.outcome != 'success'
+        run: exit 1

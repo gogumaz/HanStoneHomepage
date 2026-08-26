@@ -26,7 +26,7 @@ function wait(milliseconds: number, signal: AbortSignal): Promise<void> {
 function errorCode(error: unknown): string {
   if (error instanceof ApiError) return error.code;
   if (error instanceof Error && error.name) return error.name.slice(0, 100);
-  return "VIDEO_CLEANUP_FAILED";
+  return "OBJECT_CLEANUP_FAILED";
 }
 
 @Injectable()
@@ -36,6 +36,8 @@ export class LessonVideoCleanupWorkerService {
   private readonly maxAttempts: number;
   private readonly lockTimeoutMs: number;
   private readonly abandonedAfterMs: number;
+  private readonly inquiryAttachmentRetentionMs: number;
+  private readonly communityAttachmentRetentionMs: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -46,21 +48,29 @@ export class LessonVideoCleanupWorkerService {
     this.maxAttempts = config.videoCleanupMaxAttempts;
     this.lockTimeoutMs = config.videoCleanupLockTimeoutMs;
     this.abandonedAfterMs = config.videoUploadAbandonedAfterHours * 60 * 60_000;
+    this.inquiryAttachmentRetentionMs = config.inquiryAttachmentRetentionHours * 60 * 60_000;
+    this.communityAttachmentRetentionMs = config.communityAttachmentRetentionHours * 60 * 60_000;
   }
 
   async runForever(signal: AbortSignal): Promise<void> {
-    this.logger.log("Lesson video object cleanup worker started");
+    this.logger.log("Managed object cleanup worker started");
     while (!signal.aborted) {
       try {
-        const scheduled = await this.scheduleAbandonedUploads();
+        const scheduledVideos = await this.scheduleAbandonedUploads();
+        const scheduledAttachments = await this.scheduleAbandonedInquiryAttachments();
+        const scheduledCommunityAttachments = await this.scheduleAbandonedCommunityAttachments();
+        const scheduledTeachingMaterialAssets = await this.scheduleAbandonedTeachingMaterialAssets();
+        const scheduledClassHelperAssets = await this.scheduleAbandonedClassHelperAssets();
         const processed = await this.processNextDeletion();
-        if (scheduled === 0 && !processed) await wait(this.pollIntervalMs, signal);
+        if (scheduledVideos === 0 && scheduledAttachments === 0 && scheduledCommunityAttachments === 0 && scheduledTeachingMaterialAssets === 0 && scheduledClassHelperAssets === 0 && !processed) {
+          await wait(this.pollIntervalMs, signal);
+        }
       } catch (error) {
-        this.logger.error(`Lesson video cleanup polling failed: ${errorCode(error)}`);
+        this.logger.error(`Managed object cleanup polling failed: ${errorCode(error)}`);
         await wait(this.pollIntervalMs, signal);
       }
     }
-    this.logger.log("Lesson video object cleanup worker stopped");
+    this.logger.log("Managed object cleanup worker stopped");
   }
 
   async scheduleAbandonedUploads(now = new Date()): Promise<number> {
@@ -129,6 +139,230 @@ export class LessonVideoCleanupWorkerService {
     return scheduled;
   }
 
+  async scheduleAbandonedInquiryAttachments(now = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - this.inquiryAttachmentRetentionMs);
+    const candidates = await this.prisma.inquiryAttachment.findMany({
+      where: { inquiryId: null, createdAt: { lte: cutoff } },
+      orderBy: { createdAt: "asc" },
+      take: 20,
+    });
+    let scheduled = 0;
+    for (const candidate of candidates) {
+      const claimed = await this.prisma.$transaction(async (transaction) => {
+        const deleted = await transaction.inquiryAttachment.deleteMany({
+          where: { id: candidate.id, inquiryId: null, createdAt: { lte: cutoff } },
+        });
+        if (deleted.count !== 1) return false;
+        await transaction.objectDeletionJob.upsert({
+          where: { objectKey: candidate.objectKey },
+          create: {
+            objectKey: candidate.objectKey,
+            reason: "INQUIRY_ATTACHMENT_UNATTACHED_EXPIRED",
+            resourceType: "InquiryAttachment",
+            resourceId: candidate.id,
+            nextAttemptAt: now,
+            requestedById: candidate.ownerUserId,
+          },
+          update: {
+            reason: "INQUIRY_ATTACHMENT_UNATTACHED_EXPIRED",
+            resourceType: "InquiryAttachment",
+            resourceId: candidate.id,
+            status: ObjectDeletionJobStatus.PENDING,
+            attempts: 0,
+            nextAttemptAt: now,
+            lockedAt: null,
+            completedAt: null,
+            lastError: null,
+            requestedById: candidate.ownerUserId,
+          },
+        });
+        await transaction.auditLog.create({
+          data: {
+            actorId: candidate.ownerUserId,
+            action: "inquiry.attachment.cleanup_scheduled",
+            resourceType: "InquiryAttachment",
+            resourceId: candidate.id,
+            metadata: { reason: "unattached_expired", status: candidate.status.toLowerCase() },
+          },
+        });
+        return true;
+      });
+      if (claimed) scheduled += 1;
+    }
+    return scheduled;
+  }
+
+  async scheduleAbandonedCommunityAttachments(now = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - this.communityAttachmentRetentionMs);
+    const candidates = await this.prisma.communityAttachment.findMany({
+      where: { postId: null, createdAt: { lte: cutoff } },
+      orderBy: { createdAt: "asc" },
+      take: 20,
+    });
+    let scheduled = 0;
+    for (const candidate of candidates) {
+      const claimed = await this.prisma.$transaction(async (transaction) => {
+        const deleted = await transaction.communityAttachment.deleteMany({
+          where: { id: candidate.id, postId: null, createdAt: { lte: cutoff } },
+        });
+        if (deleted.count !== 1) return false;
+        await transaction.objectDeletionJob.upsert({
+          where: { objectKey: candidate.objectKey },
+          create: {
+            objectKey: candidate.objectKey,
+            reason: "COMMUNITY_ATTACHMENT_UNATTACHED_EXPIRED",
+            resourceType: "CommunityAttachment",
+            resourceId: candidate.id,
+            nextAttemptAt: now,
+            requestedById: candidate.ownerUserId,
+          },
+          update: {
+            reason: "COMMUNITY_ATTACHMENT_UNATTACHED_EXPIRED",
+            resourceType: "CommunityAttachment",
+            resourceId: candidate.id,
+            status: ObjectDeletionJobStatus.PENDING,
+            attempts: 0,
+            nextAttemptAt: now,
+            lockedAt: null,
+            completedAt: null,
+            lastError: null,
+            requestedById: candidate.ownerUserId,
+          },
+        });
+        await transaction.auditLog.create({
+          data: {
+            actorId: candidate.ownerUserId,
+            action: "community.attachment.cleanup_scheduled",
+            resourceType: "CommunityAttachment",
+            resourceId: candidate.id,
+            metadata: { reason: "unattached_expired", status: candidate.status.toLowerCase() },
+          },
+        });
+        return true;
+      });
+      if (claimed) scheduled += 1;
+    }
+    return scheduled;
+  }
+
+  async scheduleAbandonedTeachingMaterialAssets(now = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - this.communityAttachmentRetentionMs);
+    const candidates = await this.prisma.teachingMaterialAsset.findMany({
+      where: {
+        materialId: null,
+        OR: [{ detachedAt: { lte: cutoff } }, { detachedAt: null, createdAt: { lte: cutoff } }],
+      },
+      orderBy: { createdAt: "asc" },
+      take: 20,
+    });
+    let scheduled = 0;
+    for (const candidate of candidates) {
+      const claimed = await this.prisma.$transaction(async (transaction) => {
+        const deleted = await transaction.teachingMaterialAsset.deleteMany({
+          where: {
+            id: candidate.id,
+            materialId: null,
+            OR: [{ detachedAt: { lte: cutoff } }, { detachedAt: null, createdAt: { lte: cutoff } }],
+          },
+        });
+        if (deleted.count !== 1) return false;
+        await transaction.objectDeletionJob.upsert({
+          where: { objectKey: candidate.objectKey },
+          create: {
+            objectKey: candidate.objectKey,
+            reason: "TEACHING_MATERIAL_ASSET_UNATTACHED_EXPIRED",
+            resourceType: "TeachingMaterialAsset",
+            resourceId: candidate.id,
+            nextAttemptAt: now,
+            requestedById: candidate.ownerUserId,
+          },
+          update: {
+            reason: "TEACHING_MATERIAL_ASSET_UNATTACHED_EXPIRED",
+            resourceType: "TeachingMaterialAsset",
+            resourceId: candidate.id,
+            status: ObjectDeletionJobStatus.PENDING,
+            attempts: 0,
+            nextAttemptAt: now,
+            lockedAt: null,
+            completedAt: null,
+            lastError: null,
+            requestedById: candidate.ownerUserId,
+          },
+        });
+        await transaction.auditLog.create({
+          data: {
+            actorId: candidate.ownerUserId,
+            action: "teaching_material.asset.cleanup_scheduled",
+            resourceType: "TeachingMaterialAsset",
+            resourceId: candidate.id,
+            metadata: { reason: candidate.detachedAt ? "replaced_expired" : "unattached_expired", status: candidate.status.toLowerCase() },
+          },
+        });
+        return true;
+      });
+      if (claimed) scheduled += 1;
+    }
+    return scheduled;
+  }
+
+  async scheduleAbandonedClassHelperAssets(now = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - this.communityAttachmentRetentionMs);
+    const candidates = await this.prisma.classHelperAsset.findMany({
+      where: {
+        classHelperId: null,
+        OR: [{ detachedAt: { lte: cutoff } }, { detachedAt: null, createdAt: { lte: cutoff } }],
+      },
+      orderBy: { createdAt: "asc" },
+      take: 20,
+    });
+    let scheduled = 0;
+    for (const candidate of candidates) {
+      const claimed = await this.prisma.$transaction(async (transaction) => {
+        const deleted = await transaction.classHelperAsset.deleteMany({
+          where: {
+            id: candidate.id,
+            classHelperId: null,
+            OR: [{ detachedAt: { lte: cutoff } }, { detachedAt: null, createdAt: { lte: cutoff } }],
+          },
+        });
+        if (deleted.count !== 1) return false;
+        await transaction.objectDeletionJob.upsert({
+          where: { objectKey: candidate.objectKey },
+          create: {
+            objectKey: candidate.objectKey,
+            reason: "CLASS_HELPER_ASSET_UNATTACHED_EXPIRED",
+            resourceType: "ClassHelperAsset",
+            resourceId: candidate.id,
+            nextAttemptAt: now,
+            requestedById: candidate.ownerUserId,
+          },
+          update: {
+            reason: "CLASS_HELPER_ASSET_UNATTACHED_EXPIRED",
+            resourceType: "ClassHelperAsset",
+            resourceId: candidate.id,
+            status: ObjectDeletionJobStatus.PENDING,
+            attempts: 0,
+            nextAttemptAt: now,
+            lockedAt: null,
+            completedAt: null,
+            lastError: null,
+            requestedById: candidate.ownerUserId,
+          },
+        });
+        await transaction.auditLog.create({ data: {
+          actorId: candidate.ownerUserId,
+          action: "class_helper.asset.cleanup_scheduled",
+          resourceType: "ClassHelperAsset",
+          resourceId: candidate.id,
+          metadata: { reason: candidate.detachedAt ? "replaced_expired" : "unattached_expired", status: candidate.status.toLowerCase() },
+        } });
+        return true;
+      });
+      if (claimed) scheduled += 1;
+    }
+    return scheduled;
+  }
+
   async processNextDeletion(now = new Date()): Promise<boolean> {
     const staleLock = new Date(now.getTime() - this.lockTimeoutMs);
     const candidate = await this.prisma.objectDeletionJob.findFirst({
@@ -167,10 +401,30 @@ export class LessonVideoCleanupWorkerService {
     if (claimed.count !== 1) return true;
 
     const attempt = candidate.attempts + 1;
+    const isInquiryAttachment = candidate.resourceType === "InquiryAttachment";
+    const isCommunityAttachment = candidate.resourceType === "CommunityAttachment";
+    const isTeachingMaterialAsset = candidate.resourceType === "TeachingMaterialAsset";
+    const isClassHelperAsset = candidate.resourceType === "ClassHelperAsset";
+    const isManagedAttachment = isInquiryAttachment || isCommunityAttachment || isTeachingMaterialAsset || isClassHelperAsset;
+    const auditPrefix = isInquiryAttachment
+      ? "inquiry.attachment"
+      : isCommunityAttachment
+        ? "community.attachment"
+        : isTeachingMaterialAsset
+          ? "teaching_material.asset"
+          : isClassHelperAsset
+            ? "class_helper.asset"
+            : "lesson.video";
     try {
-      const referenceCount = await this.prisma.lesson.count({
-        where: { videoAssetKey: candidate.objectKey },
-      });
+      const referenceCount = isInquiryAttachment
+        ? await this.prisma.inquiryAttachment.count({ where: { objectKey: candidate.objectKey } })
+        : isCommunityAttachment
+          ? await this.prisma.communityAttachment.count({ where: { objectKey: candidate.objectKey } })
+          : isTeachingMaterialAsset
+            ? await this.prisma.teachingMaterialAsset.count({ where: { objectKey: candidate.objectKey } })
+            : isClassHelperAsset
+              ? await this.prisma.classHelperAsset.count({ where: { objectKey: candidate.objectKey } })
+              : await this.prisma.lesson.count({ where: { videoAssetKey: candidate.objectKey } });
       if (referenceCount > 0) {
         await this.prisma.$transaction(async (transaction) => {
           await transaction.objectDeletionJob.update({
@@ -185,7 +439,7 @@ export class LessonVideoCleanupWorkerService {
           await transaction.auditLog.create({
             data: {
               actorId: candidate.requestedById,
-              action: "lesson.video.cleanup_cancelled_referenced",
+              action: `${auditPrefix}.cleanup_cancelled_referenced`,
               resourceType: candidate.resourceType,
               resourceId: candidate.resourceId,
               metadata: { objectKey: candidate.objectKey, reason: candidate.reason },
@@ -195,15 +449,21 @@ export class LessonVideoCleanupWorkerService {
         return true;
       }
 
-      await this.storage.deleteVideoObject(candidate.objectKey);
+      if (isInquiryAttachment) await this.storage.deleteInquiryAttachmentObject(candidate.objectKey);
+      else if (isCommunityAttachment) await this.storage.deleteCommunityAttachmentObject(candidate.objectKey);
+      else if (isTeachingMaterialAsset) await this.storage.deleteTeachingMaterialAssetObject(candidate.objectKey);
+      else if (isClassHelperAsset) await this.storage.deleteClassHelperAssetObject(candidate.objectKey);
+      else await this.storage.deleteVideoObject(candidate.objectKey);
       await this.prisma.$transaction(async (transaction) => {
-        await transaction.lessonVideoAsset.updateMany({
-          where: {
-            objectKey: candidate.objectKey,
-            status: LessonVideoAssetStatus.READY,
-          },
-          data: { status: LessonVideoAssetStatus.PURGED },
-        });
+        if (!isManagedAttachment) {
+          await transaction.lessonVideoAsset.updateMany({
+            where: {
+              objectKey: candidate.objectKey,
+              status: LessonVideoAssetStatus.READY,
+            },
+            data: { status: LessonVideoAssetStatus.PURGED },
+          });
+        }
         await transaction.objectDeletionJob.update({
           where: { id: candidate.id },
           data: {
@@ -216,7 +476,7 @@ export class LessonVideoCleanupWorkerService {
         await transaction.auditLog.create({
           data: {
             actorId: candidate.requestedById,
-            action: "lesson.video.cleanup_completed",
+            action: `${auditPrefix}.cleanup_completed`,
             resourceType: candidate.resourceType,
             resourceId: candidate.resourceId,
             metadata: { objectKey: candidate.objectKey, reason: candidate.reason, attempt },
@@ -239,7 +499,7 @@ export class LessonVideoCleanupWorkerService {
         await transaction.auditLog.create({
           data: {
             actorId: candidate.requestedById,
-            action: "lesson.video.cleanup_failed",
+            action: `${auditPrefix}.cleanup_failed`,
             resourceType: candidate.resourceType,
             resourceId: candidate.resourceId,
             metadata: {
@@ -252,7 +512,7 @@ export class LessonVideoCleanupWorkerService {
           },
         });
       });
-      this.logger.warn(`Lesson video cleanup failed: ${candidate.id} (${code}, attempt ${attempt})`);
+      this.logger.warn(`Managed object cleanup failed: ${candidate.id} (${code}, attempt ${attempt})`);
     }
     return true;
   }

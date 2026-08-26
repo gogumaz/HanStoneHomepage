@@ -12,6 +12,29 @@ export type Checkout = {
   customerName: string;
 };
 
+export type AdminStoreOrder = {
+  orderId: string;
+  orderName: string;
+  amount: number;
+  status: 'pending' | 'paid' | 'canceled' | 'failed';
+  provider: string;
+  paymentId: string | null;
+  paymentMethod: string | null;
+  paidAt: string | null;
+  refundedAmount: number;
+  refundedAt: string | null;
+  shipping: null | {
+    recipientName: string;
+    recipientPhone: string | null;
+    postalCode: string | null;
+    addressLine1: string | null;
+    addressLine2: string | null;
+  };
+  createdAt: string;
+  user: { id: string; email: string | null; displayName: string };
+  items: Array<{ productId: string; name: string; quantity: number; unitPrice: number; amount: number }>;
+};
+
 export type AccountSubscription = {
   id: string;
   orderId: string;
@@ -150,19 +173,25 @@ export function createSubscriptionCheckout(planId: string) {
   });
 }
 
-export function verifyPortOnePayment(paymentId: string, orderId: string) {
-  return apiRequest<PaymentResult>('/payments/portone/verify', {
+export function confirmTossSubscriptionPayment(
+  paymentKey: string,
+  orderId: string,
+  amount: number,
+  confirmationId?: string,
+) {
+  return apiRequest<PaymentResult>('/payments/toss/subscriptions/confirm', {
     method: 'POST',
-    body: JSON.stringify({ paymentId, orderId }),
+    headers: confirmationId ? { 'X-Request-Id': confirmationId } : undefined,
+    body: JSON.stringify({ paymentKey, orderId, amount }),
   });
 }
 
-export function listMySubscriptions() {
-  return apiRequest<{ items: AccountSubscription[] }>('/me/subscriptions');
+export function listMySubscriptions(signal?: AbortSignal) {
+  return apiRequest<{ items: AccountSubscription[] }>('/me/subscriptions', { signal });
 }
 
-export function listMyOrders() {
-  return apiRequest<{ items: SubscriptionOrder[] }>('/me/orders');
+export function listMyOrders(signal?: AbortSignal) {
+  return apiRequest<{ items: SubscriptionOrder[] }>('/me/orders', { signal });
 }
 
 export function listAdminPaymentReconciliation(filters: AdminPaymentReconciliationFilters = {}) {
@@ -197,6 +226,17 @@ export function refundAccountSubscription(subscriptionId: string, reason: string
     refundedAt: string;
     accessRevoked: boolean;
   }>(`/admin/subscriptions/${encodeURIComponent(subscriptionId)}/refund`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function listAdminStoreOrders() {
+  return apiRequest<{ items: AdminStoreOrder[] }>('/admin/store-orders');
+}
+
+export function refundStoreOrder(orderId: string, reason: string) {
+  return apiRequest<AdminStoreOrder>(`/admin/store-orders/${encodeURIComponent(orderId)}/refund`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
   });

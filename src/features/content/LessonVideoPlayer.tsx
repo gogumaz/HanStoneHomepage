@@ -26,7 +26,7 @@ export function LessonVideoPlayer({ src, format }: LessonVideoPlayerProps) {
     let disposed = false;
     let hls: Hls | null = null;
     let removeHlsErrorListener: (() => void) | null = null;
-    void import('hls.js').then(({ default: HlsPlayer, ErrorTypes, Events }) => {
+    void import('hls.js/light').then(({ default: HlsPlayer, ErrorTypes, Events }) => {
       if (disposed) return;
       if (HlsPlayer.isSupported()) {
         hls = new HlsPlayer({ enableWorker: true });

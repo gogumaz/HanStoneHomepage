@@ -5,14 +5,20 @@ import { ApiClientError } from '../../lib/api-client';
 import {
   confirmEmailVerification,
   confirmPasswordReset,
+  deleteAccount,
   getCurrentUser,
   login,
+  listOAuthAccounts,
   logout,
+  oauthAccountDeletionStartUrl,
+  oauthLinkStartUrl,
   oauthStartUrl,
   requestEmailVerification,
   requestPasswordReset,
   signup,
+  unlinkOAuthAccount,
   type AuthResponse,
+  type OAuthProviderName,
 } from './api';
 
 const roleLabels: Record<string, string> = {
@@ -32,6 +38,11 @@ export function AuthPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialResetToken = searchParams.get('resetToken') ?? '';
   const initialVerificationToken = searchParams.get('verifyEmailToken') ?? '';
+  const oauthLinked = searchParams.get('oauthLinked');
+  const accountDeleted = searchParams.get('accountDeleted') === '1';
+  const initialLinkedProvider = oauthLinked && oauthLinked in oauthLabels
+    ? oauthLinked as OAuthProviderName
+    : null;
   const [mode, setMode] = useState<AuthMode>(initialResetToken ? 'reset' : 'login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -39,11 +50,25 @@ export function AuthPage() {
   const [role, setRole] = useState<'student' | 'guardian'>('student');
   const [resetToken, setResetToken] = useState(initialResetToken);
   const [verificationToken, setVerificationToken] = useState(initialVerificationToken);
-  const [notice, setNotice] = useState('');
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [deletePassword, setDeletePassword] = useState('');
+  const [notice, setNotice] = useState(
+    accountDeleted
+      ? '계정 탈퇴와 개인정보 익명화를 완료했습니다.'
+      : initialLinkedProvider
+        ? `${oauthLabels[initialLinkedProvider]} 계정 연결을 완료했습니다.`
+        : '',
+  );
 
   const meQuery = useQuery({
     queryKey: ['current-user'],
     queryFn: getCurrentUser,
+    retry: false,
+  });
+  const oauthAccountsQuery = useQuery({
+    queryKey: ['oauth-accounts'],
+    queryFn: listOAuthAccounts,
+    enabled: Boolean(meQuery.data),
     retry: false,
   });
   const authMutation = useMutation({
@@ -63,6 +88,23 @@ export function AuthPage() {
       queryClient.setQueryData(['current-user'], null);
       setVerificationToken('');
       setNotice('로그아웃했습니다.');
+    },
+  });
+  const unlinkOAuthMutation = useMutation({
+    mutationFn: unlinkOAuthAccount,
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ['oauth-accounts'] });
+      setNotice(`${oauthLabels[result.provider]} 계정 연결을 해제했습니다.`);
+    },
+  });
+  const deleteAccountMutation = useMutation({
+    mutationFn: deleteAccount,
+    onSuccess: () => {
+      queryClient.setQueryData(['current-user'], null);
+      queryClient.removeQueries({ queryKey: ['oauth-accounts'] });
+      setDeleteConfirmation('');
+      setDeletePassword('');
+      setNotice('계정 탈퇴와 개인정보 익명화를 완료했습니다.');
     },
   });
   const resetRequestMutation = useMutation({
@@ -125,9 +167,16 @@ export function AuthPage() {
     verificationRequestMutation.error,
     verificationConfirmMutation.error,
     logoutMutation.error,
+    oauthAccountsQuery.error,
+    unlinkOAuthMutation.error,
+    deleteAccountMutation.error,
   ];
   const error = mutationErrors.find((item) => item instanceof ApiClientError)
     ?? (meQuery.error instanceof ApiClientError ? meQuery.error : null);
+  const linkedProviders = new Set(oauthAccountsQuery.data?.items?.map((item) => item.provider) ?? []);
+  const enabledProviders = new Set(window.APP_CONFIG?.oauthProviders ?? []);
+  const visibleProviders = (['naver', 'kakao', 'google'] as OAuthProviderName[])
+    .filter((provider) => linkedProviders.has(provider) || enabledProviders.has(provider));
 
   return (
     <main className="auth-page">
@@ -172,6 +221,97 @@ export function AuthPage() {
                     <Link to={`/account?verifyEmailToken=${encodeURIComponent(verificationToken)}`}>개발용 인증 링크 열기</Link>
                   </form>
                 ) : null}
+              </section>
+            ) : null}
+            {visibleProviders.length > 0 ? (
+              <section className="account-security oauth-account-links" aria-labelledby="oauth-account-links-title">
+                <h2 id="oauth-account-links-title">소셜 계정 연결</h2>
+                <p>연결 과정은 현재 로그인 계정과 일회성 OAuth 요청에 묶입니다. 마지막 로그인 수단은 해제할 수 없습니다.</p>
+                {oauthAccountsQuery.isLoading ? <p role="status">소셜 계정 연결 상태를 확인하고 있습니다.</p> : null}
+                <ul>
+                  {visibleProviders.map((provider) => {
+                    const account = oauthAccountsQuery.data?.items?.find((item) => item.provider === provider);
+                    return (
+                      <li key={provider}>
+                        <span>
+                          <strong>{oauthLabels[provider]}</strong>
+                          <small>{account ? account.email ?? '이메일 비공개' : '연결되지 않음'}</small>
+                        </span>
+                        {account ? (
+                          <button
+                            type="button"
+                            disabled={unlinkOAuthMutation.isPending}
+                            onClick={() => {
+                              if (window.confirm(`${oauthLabels[provider]} 계정 연결을 해제하시겠습니까?`)) {
+                                unlinkOAuthMutation.mutate(provider);
+                              }
+                            }}
+                          >연결 해제</button>
+                        ) : enabledProviders.has(provider) ? (
+                          <a href={oauthLinkStartUrl(provider)}>{oauthLabels[provider]} 연결</a>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ) : null}
+            {oauthAccountsQuery.data?.items ? (
+              <section className="account-security account-deletion" aria-labelledby="account-deletion-title">
+                <h2 id="account-deletion-title">계정 탈퇴</h2>
+                <p>로그인 수단과 학습 진도는 삭제하고 계정을 익명화합니다. 탈퇴 즉시 남은 구독 이용 권한도 종료되며, 결제·환불·감사 기록은 관련 보존 정책에 따라 분리 보관될 수 있습니다.</p>
+                {oauthAccountsQuery.data.hasPassword ? (
+                  <form
+                    className="auth-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (window.confirm('계정을 탈퇴하면 되돌릴 수 없습니다. 계속하시겠습니까?')) {
+                        deleteAccountMutation.mutate({
+                          confirmation: deleteConfirmation,
+                          password: deletePassword,
+                        });
+                      }
+                    }}
+                  >
+                    <label>확인 문구
+                      <input
+                        value={deleteConfirmation}
+                        onChange={(event) => setDeleteConfirmation(event.target.value)}
+                        placeholder="회원탈퇴"
+                        autoComplete="off"
+                        required
+                      />
+                    </label>
+                    <label>현재 비밀번호
+                      <input
+                        type="password"
+                        value={deletePassword}
+                        onChange={(event) => setDeletePassword(event.target.value)}
+                        autoComplete="current-password"
+                        maxLength={128}
+                        required
+                      />
+                    </label>
+                    <button type="submit" className="danger-button" disabled={deleteAccountMutation.isPending}>
+                      {deleteAccountMutation.isPending ? '탈퇴 처리 중…' : '계정 탈퇴'}
+                    </button>
+                  </form>
+                ) : (
+                  <div className="oauth-deletion-options">
+                    <p>연결된 소셜 계정으로 다시 인증하면 탈퇴가 완료됩니다.</p>
+                    {oauthAccountsQuery.data.items.map((account) => (
+                      <a
+                        key={account.provider}
+                        href={oauthAccountDeletionStartUrl(account.provider)}
+                        onClick={(event) => {
+                          if (!window.confirm('소셜 계정 재인증 후 즉시 탈퇴됩니다. 계속하시겠습니까?')) {
+                            event.preventDefault();
+                          }
+                        }}
+                      >{oauthLabels[account.provider]}로 확인하고 탈퇴</a>
+                    ))}
+                  </div>
+                )}
               </section>
             ) : null}
             {meQuery.data.roles.some((item) => item === 'student' || item === 'guardian') ? (

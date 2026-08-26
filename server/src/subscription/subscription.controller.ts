@@ -26,7 +26,7 @@ export class SubscriptionController {
     return this.subscriptionService.createCheckout(user, body, request.requestId);
   }
 
-  @Post("payments/portone/verify")
+  @Post("payments/toss/subscriptions/confirm")
   verifyPayment(
     @CurrentUser() user: CurrentUserValue,
     @Body() body: unknown,

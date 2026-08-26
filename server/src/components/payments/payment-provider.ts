@@ -19,10 +19,19 @@ export type CancelPaymentInput = {
   amount: number;
   checksum: number;
   reason: string;
+  idempotencyKey?: string;
+};
+
+export type ConfirmPaymentInput = {
+  paymentId: string;
+  orderId: string;
+  amount: number;
+  idempotencyKey?: string;
 };
 
 export interface PaymentProvider {
   readonly providerId: string;
+  confirmPayment?(input: ConfirmPaymentInput): Promise<PaymentRecord>;
   getPayment(paymentId: string): Promise<PaymentRecord>;
   cancelPayment(input: CancelPaymentInput): Promise<PaymentRecord>;
 }

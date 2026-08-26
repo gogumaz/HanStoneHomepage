@@ -16,6 +16,9 @@ const STORAGE_KEYS = [
   "PLAYBACK_URL_TTL_SECONDS",
   "VIDEO_UPLOAD_URL_TTL_SECONDS",
   "VIDEO_UPLOAD_MAX_BYTES",
+  "LESSON_ASSET_MAX_BYTES",
+  "INQUIRY_ATTACHMENT_MAX_BYTES",
+  "COMMUNITY_ATTACHMENT_MAX_BYTES",
 ] as const;
 
 describe("ObjectStorageService", () => {
@@ -179,6 +182,126 @@ describe("ObjectStorageService", () => {
     };
     expect(policy.conditions).toContainEqual(["content-length-range", 1, 10485760]);
     expect(policy.conditions).toContainEqual(["eq", "$Content-Type", "video/mp4"]);
+  });
+
+  it("binds a private inquiry upload to its owner, id, type, and size", async () => {
+    process.env.OBJECT_STORAGE_ENDPOINT = "https://storage.example.test";
+    process.env.OBJECT_STORAGE_BUCKET = "private-media";
+    process.env.OBJECT_STORAGE_ACCESS_KEY_ID = "test-access-key";
+    process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY = "test-secret-key";
+    process.env.OBJECT_STORAGE_FORCE_PATH_STYLE = "true";
+    process.env.INQUIRY_ATTACHMENT_MAX_BYTES = "10485760";
+    const attachmentId = "00000000-0000-4000-8000-000000000701";
+    const ownerUserId = "00000000-0000-4000-8000-000000000401";
+
+    const upload = await new ObjectStorageService().createInquiryAttachmentUpload({
+      attachmentId,
+      ownerUserId,
+      contentType: "application/pdf",
+      size: 4096,
+      extension: "pdf",
+    });
+
+    expect(upload.objectKey).toBe(`inquiry-attachments/${attachmentId}/source.pdf`);
+    expect(upload.fields).toMatchObject({
+      key: upload.objectKey,
+      "Content-Type": "application/pdf",
+      "x-amz-meta-attachment-id": attachmentId,
+      "x-amz-meta-owner-user-id": ownerUserId,
+      "x-amz-meta-expected-size": "4096",
+    });
+    const encodedPolicy = upload.fields.Policy ?? upload.fields.policy;
+    if (!encodedPolicy) throw new Error("presigned POST policy is missing");
+    const policy = JSON.parse(Buffer.from(encodedPolicy, "base64").toString("utf8")) as { conditions: unknown[] };
+    expect(policy.conditions).toContainEqual(["content-length-range", 1, 10485760]);
+  });
+
+  it("verifies inquiry attachment metadata before returning bytes for scanning", async () => {
+    process.env.OBJECT_STORAGE_BUCKET = "private-media";
+    process.env.OBJECT_STORAGE_ACCESS_KEY_ID = "test-access-key";
+    process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY = "test-secret-key";
+    const attachmentId = "00000000-0000-4000-8000-000000000701";
+    const ownerUserId = "00000000-0000-4000-8000-000000000401";
+    const bytes = Uint8Array.from(Buffer.from("%PDF-1.7 ok"));
+    const storage = new ObjectStorageService();
+    const send = vi.fn()
+      .mockResolvedValueOnce({
+        ContentType: "application/pdf",
+        ContentLength: bytes.length,
+        Metadata: {
+          "attachment-id": attachmentId,
+          "owner-user-id": ownerUserId,
+          "expected-size": String(bytes.length),
+        },
+      })
+      .mockResolvedValueOnce({ Body: { transformToByteArray: async () => bytes } });
+    Object.assign(storage as object, { client: { send } });
+
+    await expect(storage.inspectInquiryAttachment({
+      objectKey: `inquiry-attachments/${attachmentId}/source.pdf`,
+      attachmentId,
+      ownerUserId,
+      contentType: "application/pdf",
+      size: bytes.length,
+    })).resolves.toEqual(bytes);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("deletes only server-generated inquiry attachment paths", async () => {
+    process.env.OBJECT_STORAGE_BUCKET = "private-media";
+    process.env.OBJECT_STORAGE_ACCESS_KEY_ID = "test-access-key";
+    process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY = "test-secret-key";
+    const storage = new ObjectStorageService();
+    const send = vi.fn(async () => ({}));
+    Object.assign(storage as object, { client: { send } });
+    const objectKey = "inquiry-attachments/00000000-0000-4000-8000-000000000701/source.pdf";
+
+    await expect(storage.deleteInquiryAttachmentObject(objectKey)).resolves.toBeUndefined();
+    expect(send).toHaveBeenCalledOnce();
+    await expect(storage.deleteInquiryAttachmentObject("lesson-assets/not-an-inquiry/source.pdf"))
+      .rejects.toMatchObject({ code: "INVALID_INQUIRY_ATTACHMENT" } satisfies Partial<ApiError>);
+    expect(send).toHaveBeenCalledOnce();
+  });
+
+  it("binds and verifies a community attachment with its kind and owner", async () => {
+    process.env.OBJECT_STORAGE_ENDPOINT = "https://storage.example.test";
+    process.env.OBJECT_STORAGE_BUCKET = "private-media";
+    process.env.OBJECT_STORAGE_ACCESS_KEY_ID = "test-access-key";
+    process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY = "test-secret-key";
+    process.env.OBJECT_STORAGE_FORCE_PATH_STYLE = "true";
+    process.env.COMMUNITY_ATTACHMENT_MAX_BYTES = "20971520";
+    const attachmentId = "00000000-0000-4000-8000-000000000702";
+    const ownerUserId = "00000000-0000-4000-8000-000000000402";
+    const upload = await new ObjectStorageService().createCommunityAttachmentUpload({
+      attachmentId, ownerUserId, kind: "photo", contentType: "image/webp", size: 4096, extension: "webp",
+    });
+    expect(upload.objectKey).toBe(`community-attachments/${attachmentId}/source.webp`);
+    expect(upload.fields).toMatchObject({
+      "x-amz-meta-attachment-id": attachmentId,
+      "x-amz-meta-owner-user-id": ownerUserId,
+      "x-amz-meta-kind": "photo",
+      "x-amz-meta-expected-size": "4096",
+    });
+
+    const bytes = Uint8Array.from(Buffer.from("RIFF....WEBPVP8 "));
+    const storage = new ObjectStorageService();
+    const send = vi.fn()
+      .mockResolvedValueOnce({
+        ContentType: "image/webp",
+        ContentLength: bytes.length,
+        Metadata: {
+          "attachment-id": attachmentId,
+          "owner-user-id": ownerUserId,
+          kind: "photo",
+          "expected-size": String(bytes.length),
+        },
+      })
+      .mockResolvedValueOnce({ Body: { transformToByteArray: async () => bytes } });
+    Object.assign(storage as object, { client: { send } });
+    await expect(storage.inspectCommunityAttachment({
+      objectKey: `community-attachments/${attachmentId}/source.webp`,
+      attachmentId, ownerUserId, kind: "photo", contentType: "image/webp", size: bytes.length,
+    })).resolves.toEqual(bytes);
   });
 
   it("verifies object metadata and the MP4 ftyp signature before attachment", async () => {

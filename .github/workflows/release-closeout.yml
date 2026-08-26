@@ -1,0 +1,157 @@
+name: Release closeout
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: Accepted immutable release identifier
+        required: true
+        type: string
+      candidate_commit_sha:
+        description: Full 40-character accepted Git commit SHA
+        required: true
+        type: string
+      image_reference:
+        description: Accepted repository@sha256 image reference
+        required: true
+        type: string
+      registry_host:
+        description: Container registry host
+        required: true
+        default: ghcr.io
+        type: string
+      acceptance_run_id:
+        description: Successful release candidate acceptance workflow run ID
+        required: true
+        type: string
+      deployment_verification_run_id:
+        description: Successful production deployment verification workflow run ID
+        required: true
+        type: string
+      maximum_verification_delay_hours:
+        description: Maximum delay between acceptance and deployment verification
+        required: true
+        default: "24"
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+
+concurrency:
+  group: release-closeout-${{ inputs.release_id }}
+  cancel-in-progress: false
+
+jobs:
+  close-release:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    env:
+      RELEASE_ID: ${{ inputs.release_id }}
+      CANDIDATE_COMMIT_SHA: ${{ inputs.candidate_commit_sha }}
+      IMAGE_REFERENCE: ${{ inputs.image_reference }}
+      REGISTRY_HOST: ${{ inputs.registry_host }}
+      REGISTRY_USERNAME: ${{ secrets.CONTAINER_REGISTRY_USERNAME || github.actor }}
+      REGISTRY_PASSWORD: ${{ secrets.CONTAINER_REGISTRY_PASSWORD || github.token }}
+      MAXIMUM_VERIFICATION_DELAY_HOURS: ${{ inputs.maximum_verification_delay_hours }}
+    steps:
+      - name: Validate immutable closeout inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_ID" =~ ^[A-Za-z0-9._-]{1,80}$ ]]
+          [[ "$CANDIDATE_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$IMAGE_REFERENCE" =~ @sha256:[a-f0-9]{64}$ ]]
+          [[ "$REGISTRY_HOST" =~ ^[A-Za-z0-9.-]+(:[0-9]+)?$ ]]
+          [[ "${{ inputs.acceptance_run_id }}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${{ inputs.deployment_verification_run_id }}" =~ ^[1-9][0-9]*$ ]]
+          [[ "$MAXIMUM_VERIFICATION_DELAY_HOURS" =~ ^[0-9]+$ ]]
+          maximum_delay=$((10#$MAXIMUM_VERIFICATION_DELAY_HOURS))
+          (( maximum_delay >= 1 && maximum_delay <= 168 ))
+          image_digest="${IMAGE_REFERENCE##*@}"
+          printf 'IMAGE_DIGEST=%s\n' "${image_digest,,}" >> "$GITHUB_ENV"
+
+      - name: Authenticate to the accepted registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" --username "$REGISTRY_USERNAME" --password-stdin
+
+      - name: Pull accepted immutable image
+        run: docker pull "$IMAGE_REFERENCE"
+
+      - name: Download release acceptance record
+        uses: actions/download-artifact@v8
+        with:
+          name: release-acceptance-${{ inputs.release_id }}-${{ inputs.acceptance_run_id }}
+          path: evidence/acceptance
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.acceptance_run_id }}
+
+      - name: Download production deployment verification
+        uses: actions/download-artifact@v8
+        with:
+          name: production-deployment-verification-${{ inputs.deployment_verification_run_id }}
+          path: evidence/deployment
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.deployment_verification_run_id }}
+
+      - name: Verify downloaded candidate identity
+        id: artifact_identity
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e \
+            --arg releaseId "$RELEASE_ID" \
+            --arg commitSha "$CANDIDATE_COMMIT_SHA" \
+            --arg imageReference "$IMAGE_REFERENCE" \
+            '.ok == true and .releaseId == $releaseId and .commitSha == $commitSha and .imageReference == $imageReference' \
+            evidence/acceptance/release-acceptance.json > /dev/null
+          WEB_MANIFEST_SHA256="$(jq -er '.evidence[] | select(.name == "webDeployment" and .status == "pass") | .sha256' \
+            evidence/acceptance/release-acceptance.json)"
+          [[ "$WEB_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          jq -e \
+            --arg commitSha "$CANDIDATE_COMMIT_SHA" \
+            --arg imageDigest "$IMAGE_DIGEST" \
+            --arg webManifestSha256 "$WEB_MANIFEST_SHA256" \
+            '.ok == true and .rollbackRecommended == false and .expected.commitSha == $commitSha and .expected.imageDigest == $imageDigest and .web.ok == true and .web.expected.commitSha == $commitSha and .web.expected.manifestSha256 == $webManifestSha256' \
+            evidence/deployment/production-deployment-verification.json > /dev/null
+
+      - name: Generate final closeout record from the accepted image
+        id: closeout
+        continue-on-error: true
+        shell: bash
+        run: |
+          docker run --rm \
+            --mount type=bind,source="$GITHUB_WORKSPACE/evidence",target=/evidence,readonly \
+            -e RELEASE_CLOSEOUT_ACCEPTANCE_REPORT=/evidence/acceptance/release-acceptance.json \
+            -e RELEASE_CLOSEOUT_DEPLOYMENT_REPORT=/evidence/deployment/production-deployment-verification.json \
+            -e RELEASE_CLOSEOUT_MAX_DELAY_HOURS="$MAXIMUM_VERIFICATION_DELAY_HOURS" \
+            "$IMAGE_REFERENCE" node dist/release-closeout.js \
+            > release-closeout.json
+
+      - name: Upload final release closeout record
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-closeout-${{ inputs.release_id }}-${{ github.run_id }}
+          path: |
+            release-closeout.json
+            evidence/acceptance/release-acceptance.json
+            evidence/deployment/production-deployment-verification.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: End registry session
+        if: always()
+        continue-on-error: true
+        run: docker logout "$REGISTRY_HOST"
+
+      - name: Enforce final closeout decision
+        if: >-
+          steps.artifact_identity.outcome != 'success' ||
+          steps.closeout.outcome != 'success'
+        run: exit 1

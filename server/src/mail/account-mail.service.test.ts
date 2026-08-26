@@ -61,6 +61,25 @@ describe("AccountMailService", () => {
     })).resolves.toEqual({ status: "skipped" });
   });
 
+  it("notifies a member without copying private inquiry content into the message", async () => {
+    const sendMail = vi.fn(async () => ({ messageId: "message-inquiry" }));
+    const service = new AccountMailService({ sendMail } as unknown as Transporter);
+
+    await expect(service.sendInquiryAnswered({
+      email: "member@example.com",
+      displayName: "<문의 회원>",
+      inquiryId: "00000000-0000-0000-0000-000000000501",
+    })).resolves.toEqual({ status: "sent", messageId: "message-inquiry" });
+
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({
+      to: "member@example.com",
+      subject: "[바둑타고] 1:1 문의에 답변이 등록되었습니다",
+      text: expect.stringContaining("https://learn.example.com/board.html?type=inquiry&id=00000000-0000-0000-0000-000000000501"),
+      html: expect.stringContaining("&lt;문의 회원&gt;"),
+    }));
+    expect(JSON.stringify(sendMail.mock.calls)).not.toContain("문의 본문 비밀값");
+  });
+
   it("verifies SMTP connectivity without sending a message", async () => {
     const verify = vi.fn(async () => true);
     const sendMail = vi.fn();

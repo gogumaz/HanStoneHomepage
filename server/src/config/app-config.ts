@@ -1,6 +1,11 @@
 export type AppConfig = {
   nodeEnv: "development" | "test" | "production";
   port: number;
+  trustProxyHops: number;
+  requestBodyMaxBytes: number;
+  rateLimitRedisUrl: string | null;
+  rateLimitKeyPrefix: string;
+  rateLimitConnectTimeoutMs: number;
   databaseUrl: string;
   corsOrigins: string[];
   sessionCookieName: string;
@@ -17,9 +22,17 @@ export type AppConfig = {
   smtpPassword: string | null;
   smtpFrom: string | null;
   smtpConnectionTimeoutMs: number;
+  accountMailEncryptionKeyBase64: string | null;
+  accountMailPollIntervalMs: number;
+  accountMailMaxAttempts: number;
+  accountMailLockTimeoutMs: number;
+  workerHealthBacklogMinutes: number;
+  operationsMetricsToken: string | null;
+  inquiryNotificationPollIntervalMs: number;
+  inquiryNotificationMaxAttempts: number;
+  inquiryNotificationLockTimeoutMs: number;
   guardianInvitationTtlHours: number;
-  portoneV1ApiKey: string | null;
-  portoneV1ApiSecret: string | null;
+  tossPaymentsSecretKey: string | null;
   objectStorageEndpoint: string | null;
   objectStorageRegion: string;
   objectStorageBucket: string | null;
@@ -31,10 +44,21 @@ export type AppConfig = {
   playbackCdnKeyPairId: string | null;
   playbackCdnPrivateKeyBase64: string | null;
   preflightRequireCdn: boolean;
+  databasePitrEnabled: boolean;
+  backupRetentionDays: number;
+  objectStorageVersioningEnabled: boolean;
+  recoveryRpoMinutes: number;
+  recoveryRtoMinutes: number;
+  recoveryDrillLastCompletedAt: string | null;
+  recoveryDrillMaxAgeDays: number;
   playbackUrlTtlSeconds: number;
   videoUploadUrlTtlSeconds: number;
   videoUploadMaxBytes: number;
   lessonAssetMaxBytes: number;
+  inquiryAttachmentMaxBytes: number;
+  inquiryAttachmentRetentionHours: number;
+  communityAttachmentMaxBytes: number;
+  communityAttachmentRetentionHours: number;
   malwareScannerHost: string | null;
   malwareScannerPort: number;
   malwareScannerTimeoutMs: number;
@@ -72,6 +96,14 @@ function positiveInteger(value: string | undefined, fallback: number, key: strin
   return parsed;
 }
 
+function nonNegativeInteger(value: string | undefined, fallback: number, key: string): number {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${key} must be a non-negative integer.`);
+  }
+  return parsed;
+}
+
 function booleanValue(value: string | undefined, fallback: boolean, key: string): boolean {
   if (value === undefined || value.trim() === "") return fallback;
   if (value === "true") return true;
@@ -89,6 +121,47 @@ function optionalUrl(value: string | undefined, key: string): string | null {
   } catch {
     throw new Error(`${key}는 올바른 HTTP(S) URL이어야 합니다.`);
   }
+}
+
+function optionalRedisUrl(value: string | undefined): string | null {
+  if (!value?.trim()) return null;
+  const candidate = value.trim();
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "redis:" && url.protocol !== "rediss:") throw new Error();
+    if (!url.hostname || url.search || url.hash) throw new Error();
+    return url.toString();
+  } catch {
+    throw new Error("RATE_LIMIT_REDIS_URL은 올바른 redis:// 또는 rediss:// URL이어야 합니다.");
+  }
+}
+
+function optionalIsoTimestamp(value: string | undefined, key: string): string | null {
+  if (!value?.trim()) return null;
+  const candidate = value.trim();
+  const timestamp = Date.parse(candidate);
+  if (!Number.isFinite(timestamp)) {
+    throw new Error(`${key}는 ISO 8601 날짜·시간이어야 합니다.`);
+  }
+  return new Date(timestamp).toISOString();
+}
+
+function optionalEncryptionKey(value: string | undefined): string | null {
+  if (!value?.trim()) return null;
+  const candidate = value.trim();
+  if (!/^[A-Za-z0-9+/]{43}=$/.test(candidate) || Buffer.from(candidate, "base64").byteLength !== 32) {
+    throw new Error("ACCOUNT_MAIL_ENCRYPTION_KEY_BASE64는 32바이트 키의 base64 값이어야 합니다.");
+  }
+  return candidate;
+}
+
+function optionalMetricsToken(value: string | undefined): string | null {
+  if (!value?.trim()) return null;
+  const candidate = value.trim();
+  if (!/^[A-Za-z0-9_-]{32,200}$/.test(candidate)) {
+    throw new Error("OPERATIONS_METRICS_TOKEN은 영문·숫자·_·- 조합의 32~200자 값이어야 합니다.");
+  }
+  return candidate;
 }
 
 export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -114,6 +187,8 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const smtpUser = env.SMTP_USER?.trim() || null;
   const smtpPassword = env.SMTP_PASSWORD?.trim() || null;
   const smtpFrom = env.MAIL_FROM?.trim() || null;
+  const accountMailEncryptionKeyBase64 = optionalEncryptionKey(env.ACCOUNT_MAIL_ENCRYPTION_KEY_BASE64);
+  const operationsMetricsToken = optionalMetricsToken(env.OPERATIONS_METRICS_TOKEN);
   if (Boolean(smtpUser) !== Boolean(smtpPassword)) {
     throw new Error("SMTP_USER와 SMTP_PASSWORD는 함께 설정해야 합니다.");
   }
@@ -145,6 +220,24 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const playbackCdnKeyPairId = env.PLAYBACK_CDN_KEY_PAIR_ID?.trim() || null;
   const playbackCdnPrivateKeyBase64 = env.PLAYBACK_CDN_PRIVATE_KEY_BASE64?.trim() || null;
   const preflightRequireCdn = booleanValue(env.PREFLIGHT_REQUIRE_CDN, false, "PREFLIGHT_REQUIRE_CDN");
+  const databasePitrEnabled = booleanValue(env.DATABASE_PITR_ENABLED, false, "DATABASE_PITR_ENABLED");
+  const backupRetentionDays = positiveInteger(env.BACKUP_RETENTION_DAYS, 30, "BACKUP_RETENTION_DAYS");
+  const objectStorageVersioningEnabled = booleanValue(
+    env.OBJECT_STORAGE_VERSIONING_ENABLED,
+    false,
+    "OBJECT_STORAGE_VERSIONING_ENABLED",
+  );
+  const recoveryRpoMinutes = positiveInteger(env.RECOVERY_RPO_MINUTES, 15, "RECOVERY_RPO_MINUTES");
+  const recoveryRtoMinutes = positiveInteger(env.RECOVERY_RTO_MINUTES, 240, "RECOVERY_RTO_MINUTES");
+  const recoveryDrillLastCompletedAt = optionalIsoTimestamp(
+    env.RECOVERY_DRILL_LAST_COMPLETED_AT,
+    "RECOVERY_DRILL_LAST_COMPLETED_AT",
+  );
+  const recoveryDrillMaxAgeDays = positiveInteger(
+    env.RECOVERY_DRILL_MAX_AGE_DAYS,
+    100,
+    "RECOVERY_DRILL_MAX_AGE_DAYS",
+  );
   const cdnValuesPresent = Boolean(
     cdnProviderValue || playbackCdnBaseUrl || playbackCdnKeyPairId || playbackCdnPrivateKeyBase64,
   );
@@ -197,6 +290,32 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     20_971_520,
     "LESSON_ASSET_MAX_BYTES",
   );
+  const inquiryAttachmentMaxBytes = positiveInteger(
+    env.INQUIRY_ATTACHMENT_MAX_BYTES,
+    10 * 1024 * 1024,
+    "INQUIRY_ATTACHMENT_MAX_BYTES",
+  );
+  const inquiryAttachmentRetentionHours = positiveInteger(
+    env.INQUIRY_ATTACHMENT_RETENTION_HOURS,
+    24,
+    "INQUIRY_ATTACHMENT_RETENTION_HOURS",
+  );
+  if (inquiryAttachmentRetentionHours > 24 * 30) {
+    throw new Error("INQUIRY_ATTACHMENT_RETENTION_HOURS는 720시간 이하여야 합니다.");
+  }
+  const communityAttachmentMaxBytes = positiveInteger(
+    env.COMMUNITY_ATTACHMENT_MAX_BYTES,
+    20 * 1024 * 1024,
+    "COMMUNITY_ATTACHMENT_MAX_BYTES",
+  );
+  const communityAttachmentRetentionHours = positiveInteger(
+    env.COMMUNITY_ATTACHMENT_RETENTION_HOURS,
+    24,
+    "COMMUNITY_ATTACHMENT_RETENTION_HOURS",
+  );
+  if (communityAttachmentRetentionHours > 24 * 30) {
+    throw new Error("COMMUNITY_ATTACHMENT_RETENTION_HOURS는 720시간 이하여야 합니다.");
+  }
   const videoScanPollIntervalMs = positiveInteger(
     env.VIDEO_SCAN_POLL_INTERVAL_MS,
     5_000,
@@ -244,6 +363,30 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   );
   if (videoCleanupLockTimeoutMs < 60_000) {
     throw new Error("VIDEO_CLEANUP_LOCK_TIMEOUT_MS는 60000ms 이상이어야 합니다.");
+  }
+  const inquiryNotificationPollIntervalMs = positiveInteger(
+    env.INQUIRY_NOTIFICATION_POLL_INTERVAL_MS,
+    5_000,
+    "INQUIRY_NOTIFICATION_POLL_INTERVAL_MS",
+  );
+  if (inquiryNotificationPollIntervalMs < 1_000 || inquiryNotificationPollIntervalMs > 60_000) {
+    throw new Error("INQUIRY_NOTIFICATION_POLL_INTERVAL_MS는 1000~60000ms여야 합니다.");
+  }
+  const inquiryNotificationMaxAttempts = positiveInteger(
+    env.INQUIRY_NOTIFICATION_MAX_ATTEMPTS,
+    5,
+    "INQUIRY_NOTIFICATION_MAX_ATTEMPTS",
+  );
+  if (inquiryNotificationMaxAttempts > 10) {
+    throw new Error("INQUIRY_NOTIFICATION_MAX_ATTEMPTS는 10 이하여야 합니다.");
+  }
+  const inquiryNotificationLockTimeoutMs = positiveInteger(
+    env.INQUIRY_NOTIFICATION_LOCK_TIMEOUT_MS,
+    60_000,
+    "INQUIRY_NOTIFICATION_LOCK_TIMEOUT_MS",
+  );
+  if (inquiryNotificationLockTimeoutMs < 60_000) {
+    throw new Error("INQUIRY_NOTIFICATION_LOCK_TIMEOUT_MS는 60000ms 이상이어야 합니다.");
   }
   const videoUploadAbandonedAfterHours = positiveInteger(
     env.VIDEO_UPLOAD_ABANDONED_AFTER_HOURS,
@@ -315,10 +458,36 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (emailVerificationTtlHours > 168) {
     throw new Error("EMAIL_VERIFICATION_TTL_HOURS는 168시간 이하여야 합니다.");
   }
+  const requestBodyMaxBytes = positiveInteger(
+    env.REQUEST_BODY_MAX_BYTES,
+    1_048_576,
+    "REQUEST_BODY_MAX_BYTES",
+  );
+  if (requestBodyMaxBytes < 1_024 || requestBodyMaxBytes > 10_485_760) {
+    throw new Error("REQUEST_BODY_MAX_BYTES는 1024~10485760바이트여야 합니다.");
+  }
+  const rateLimitRedisUrl = optionalRedisUrl(env.RATE_LIMIT_REDIS_URL);
+  const rateLimitKeyPrefix = env.RATE_LIMIT_KEY_PREFIX?.trim() || "baduk-history:rate-limit:";
+  if (!/^[A-Za-z0-9:_-]{1,80}$/u.test(rateLimitKeyPrefix)) {
+    throw new Error("RATE_LIMIT_KEY_PREFIX는 영문, 숫자, :, _, - 조합의 1~80자여야 합니다.");
+  }
+  const rateLimitConnectTimeoutMs = positiveInteger(
+    env.RATE_LIMIT_CONNECT_TIMEOUT_MS,
+    3_000,
+    "RATE_LIMIT_CONNECT_TIMEOUT_MS",
+  );
+  if (rateLimitConnectTimeoutMs < 500 || rateLimitConnectTimeoutMs > 30_000) {
+    throw new Error("RATE_LIMIT_CONNECT_TIMEOUT_MS는 500~30000ms여야 합니다.");
+  }
 
   return {
     nodeEnv: nodeEnv as AppConfig["nodeEnv"],
     port: positiveInteger(env.PORT, 3000, "PORT"),
+    trustProxyHops: nonNegativeInteger(env.TRUST_PROXY_HOPS, 0, "TRUST_PROXY_HOPS"),
+    requestBodyMaxBytes,
+    rateLimitRedisUrl,
+    rateLimitKeyPrefix,
+    rateLimitConnectTimeoutMs,
     databaseUrl: required(env.DATABASE_URL, "DATABASE_URL"),
     corsOrigins,
     sessionCookieName: env.SESSION_COOKIE_NAME?.trim() || "baduk_session",
@@ -343,13 +512,37 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       10_000,
       "SMTP_CONNECTION_TIMEOUT_MS",
     ),
+    accountMailEncryptionKeyBase64,
+    accountMailPollIntervalMs: positiveInteger(
+      env.ACCOUNT_MAIL_POLL_INTERVAL_MS,
+      5_000,
+      "ACCOUNT_MAIL_POLL_INTERVAL_MS",
+    ),
+    accountMailMaxAttempts: positiveInteger(
+      env.ACCOUNT_MAIL_MAX_ATTEMPTS,
+      5,
+      "ACCOUNT_MAIL_MAX_ATTEMPTS",
+    ),
+    accountMailLockTimeoutMs: positiveInteger(
+      env.ACCOUNT_MAIL_LOCK_TIMEOUT_MS,
+      60_000,
+      "ACCOUNT_MAIL_LOCK_TIMEOUT_MS",
+    ),
+    workerHealthBacklogMinutes: positiveInteger(
+      env.WORKER_HEALTH_BACKLOG_MINUTES,
+      15,
+      "WORKER_HEALTH_BACKLOG_MINUTES",
+    ),
+    operationsMetricsToken,
+    inquiryNotificationPollIntervalMs,
+    inquiryNotificationMaxAttempts,
+    inquiryNotificationLockTimeoutMs,
     guardianInvitationTtlHours: positiveInteger(
       env.GUARDIAN_INVITATION_TTL_HOURS,
       72,
       "GUARDIAN_INVITATION_TTL_HOURS",
     ),
-    portoneV1ApiKey: env.PORTONE_V1_REST_API_KEY?.trim() || null,
-    portoneV1ApiSecret: env.PORTONE_V1_REST_API_SECRET?.trim() || null,
+    tossPaymentsSecretKey: env.TOSS_PAYMENTS_SECRET_KEY?.trim() || null,
     objectStorageEndpoint,
     objectStorageRegion: env.OBJECT_STORAGE_REGION?.trim() || "ap-northeast-2",
     objectStorageBucket,
@@ -365,10 +558,21 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     playbackCdnKeyPairId,
     playbackCdnPrivateKeyBase64,
     preflightRequireCdn,
+    databasePitrEnabled,
+    backupRetentionDays,
+    objectStorageVersioningEnabled,
+    recoveryRpoMinutes,
+    recoveryRtoMinutes,
+    recoveryDrillLastCompletedAt,
+    recoveryDrillMaxAgeDays,
     playbackUrlTtlSeconds,
     videoUploadUrlTtlSeconds,
     videoUploadMaxBytes,
     lessonAssetMaxBytes,
+    inquiryAttachmentMaxBytes,
+    inquiryAttachmentRetentionHours,
+    communityAttachmentMaxBytes,
+    communityAttachmentRetentionHours,
     malwareScannerHost: env.MALWARE_SCANNER_HOST?.trim() || null,
     malwareScannerPort: positiveInteger(env.MALWARE_SCANNER_PORT, 3310, "MALWARE_SCANNER_PORT"),
     malwareScannerTimeoutMs: positiveInteger(

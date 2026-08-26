@@ -2,8 +2,8 @@ import { Body, Controller, HttpCode, Post, Req } from "@nestjs/common";
 import type { ApiRequest } from "../common/http-types.js";
 import { SubscriptionService } from "./subscription.service.js";
 
-@Controller("payments/portone")
-export class PortOneWebhookController {
+@Controller("payments/toss/subscriptions")
+export class TossSubscriptionWebhookController {
   constructor(private readonly subscriptionService: SubscriptionService) {}
 
   @Post("webhook")

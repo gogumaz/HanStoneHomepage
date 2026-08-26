@@ -7,9 +7,12 @@ import { CloudFrontPlaybackProvider } from "./storage/cloudfront-playback.provid
 import { MediaDeliveryService } from "./storage/media-delivery.service.js";
 import { HlsTranscoderService } from "./content/hls-transcoder.service.js";
 import { ObjectStorageService } from "./storage/object-storage.service.js";
+import { createRateLimitStore } from "./common/rate-limit.store.js";
+import { withEvidenceCommitSha } from "./operations/evidence-metadata.js";
 
 async function bootstrap(): Promise<void> {
   const prisma = new PrismaService();
+  const rateLimitStore = createRateLimitStore();
   try {
     const storage = new ObjectStorageService();
     const delivery = new MediaDeliveryService(storage, new CloudFrontPlaybackProvider());
@@ -20,11 +23,13 @@ async function bootstrap(): Promise<void> {
       new HlsTranscoderService(),
       new MalwareScannerService(),
       new AccountMailService(),
+      rateLimitStore,
     ).run();
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(withEvidenceCommitSha(report), null, 2)}\n`);
     if (!report.ok) process.exitCode = 1;
   } finally {
     await prisma.$disconnect();
+    await rateLimitStore.close();
   }
 }
 

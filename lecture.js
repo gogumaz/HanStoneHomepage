@@ -1,3 +1,5 @@
+import { resolveTossBrowserConfig, tossPaymentReadyMessage } from './src/payments/toss-browser.ts';
+
 const $ = (selector, scope = document) => scope.querySelector(selector);
 const $$ = (selector, scope = document) => [...scope.querySelectorAll(selector)];
 const config = window.APP_CONFIG || {};
@@ -45,7 +47,7 @@ let activeView = 'all';
 let activeLessonId = null;
 let activeStepIndex = 0;
 let lastFocused = null;
-let paymentState = { plan: null, order: null, widgets: null };
+let paymentState = { plan: null, order: null, widgets: null, clientConfig: null };
 const sessionVideoUrls = new Map();
 
 function apiUrl(path) {
@@ -655,7 +657,7 @@ async function prepareSubscriptionPayment(planId) {
   }
   const startsAt = new Date();
   const endsAt = calculateSubscriptionEnd(startsAt, plan.months);
-  paymentState = { plan, order: null, widgets: null };
+  paymentState = { plan, order: null, widgets: null, clientConfig: null };
   $('#subscriptionPaymentName').textContent = plan.label;
   $('#subscriptionPaymentStart').textContent = `${formatDateTime(startsAt, true)} (결제 승인 시점)`;
   $('#subscriptionPaymentEnd').textContent = formatDateTime(endsAt, true);
@@ -667,16 +669,23 @@ async function prepareSubscriptionPayment(planId) {
   setSubscriptionPaymentStatus('구독 플랜과 결제 금액을 확인하고 있습니다.');
   openModal($('#subscriptionPaymentModal'));
 
-  const portOneConfig = config.portoneV1 || {};
-  if (!config.lectureApiEnabled || !portOneConfig.userCode || !portOneConfig.channelKey || !window.IMP) {
+  let tossConfig;
+  try {
+    tossConfig = resolveTossBrowserConfig(config.tossPayments);
+  } catch {
+    setSubscriptionPaymentStatus('토스페이먼츠 테스트·라이브 클라이언트 키와 결제 모드가 일치하지 않습니다.', true);
+    return;
+  }
+  if (!config.lectureApiEnabled || !tossConfig || !window.TossPayments) {
     if (config.demoRoleSwitcher) {
       $('#completeDemoSubscriptionPayment').hidden = false;
       setSubscriptionPaymentStatus('개발용 화면입니다. 실제 결제 없이 계정 구독 기록을 생성할 수 있습니다.');
     } else {
-      setSubscriptionPaymentStatus('PortOne 및 주문 서버 설정이 필요합니다.', true);
+      setSubscriptionPaymentStatus('토스페이먼츠 및 주문 서버 설정이 필요합니다.', true);
     }
     return;
   }
+  paymentState.clientConfig = tossConfig;
 
   try {
     const response = await fetch(apiUrl('/orders/checkout'), {
@@ -694,9 +703,16 @@ async function prepareSubscriptionPayment(planId) {
     }
     paymentState.order = order;
     sessionStorage.setItem('bhj_pending_subscription_checkout', JSON.stringify({ planId: plan.id, orderId: order.orderId }));
-    window.IMP.init(portOneConfig.userCode);
+    const toss = window.TossPayments(tossConfig.clientKey);
+    const widgets = toss.widgets({ customerKey: order.customerKey || window.TossPayments.ANONYMOUS || 'ANONYMOUS' });
+    await widgets.setAmount({ currency: 'KRW', value: Number(order.amount) });
+    await Promise.all([
+      widgets.renderPaymentMethods({ selector: '#subscription-payment-method', variantKey: tossConfig.paymentMethodVariantKey }),
+      widgets.renderAgreement({ selector: '#subscription-agreement', variantKey: tossConfig.agreementVariantKey })
+    ]);
+    paymentState.widgets = widgets;
     $('#requestSubscriptionPayment').disabled = false;
-    setSubscriptionPaymentStatus('결제하기를 누르면 PortOne 토스페이 결제창이 열립니다.');
+    setSubscriptionPaymentStatus(tossPaymentReadyMessage(tossConfig.mode));
   } catch (error) {
     setSubscriptionPaymentStatus(error.message || '결제 정보를 준비하지 못했습니다.', true);
   }
@@ -726,8 +742,8 @@ function completeDemoSubscription() {
   showToast(`${plan.label} 구독이 시작되었습니다. ${formatDateTime(endsAt, true)}에 종료됩니다.`);
 }
 
-async function requestPortOnePayment() {
-  if (!paymentState.order || !paymentState.plan || !window.IMP) return;
+async function requestTossSubscriptionPayment() {
+  if (!paymentState.order || !paymentState.plan || !paymentState.widgets) return;
   const { order, plan } = paymentState;
   const successUrl = new URL('payment/success.html', window.location.href);
   successUrl.searchParams.set('source', 'subscription');
@@ -735,31 +751,21 @@ async function requestPortOnePayment() {
   const failUrl = new URL('payment/fail.html', window.location.href);
   failUrl.searchParams.set('source', 'subscription');
   failUrl.searchParams.set('planId', plan.id);
-  const portOneConfig = config.portoneV1 || {};
   $('#requestSubscriptionPayment').disabled = true;
-  setSubscriptionPaymentStatus('PortOne 토스페이 결제창을 여는 중입니다.');
-  window.IMP.request_pay({
-    channelKey: portOneConfig.channelKey,
-    pg: portOneConfig.pgProvider && portOneConfig.mid ? `${portOneConfig.pgProvider}.${portOneConfig.mid}` : undefined,
-    pay_method: 'card',
-    merchant_uid: order.orderId,
-    name: order.orderName || `바둑타고 ${plan.label} 구독`,
-    amount: Number(order.amount),
-    buyer_email: order.customerEmail || undefined,
-    buyer_name: order.customerName || undefined,
-    m_redirect_url: successUrl.toString()
-  }, response => {
-    if (response.imp_uid && response.merchant_uid) {
-      successUrl.searchParams.set('imp_uid', response.imp_uid);
-      successUrl.searchParams.set('merchant_uid', response.merchant_uid);
-      window.location.assign(successUrl.toString());
-      return;
-    }
-    failUrl.searchParams.set('code', response.error_code || 'PAYMENT_FAILED');
-    failUrl.searchParams.set('message', response.error_msg || '결제가 완료되지 않았습니다.');
-    failUrl.searchParams.set('merchant_uid', response.merchant_uid || order.orderId);
-    window.location.assign(failUrl.toString());
-  });
+  setSubscriptionPaymentStatus('토스페이먼츠 결제창을 여는 중입니다.');
+  try {
+    await paymentState.widgets.requestPayment({
+      orderId: order.orderId,
+      orderName: order.orderName || `바둑타고 ${plan.label} 구독`,
+      successUrl: successUrl.toString(),
+      failUrl: failUrl.toString(),
+      customerEmail: order.customerEmail || undefined,
+      customerName: order.customerName || undefined
+    });
+  } catch (error) {
+    $('#requestSubscriptionPayment').disabled = false;
+    setSubscriptionPaymentStatus(error.message || '결제 요청이 취소되었습니다.', true);
+  }
 }
 
 function handleDynamicAction(event) {
@@ -796,7 +802,7 @@ $('#newLectureButton').addEventListener('click', () => openLectureForm());
 $('#lectureForm').addEventListener('submit', submitLecture);
 $('#completeLectureStep').addEventListener('click', completeCurrentStep);
 $('#completeDemoSubscriptionPayment').addEventListener('click', completeDemoSubscription);
-$('#requestSubscriptionPayment').addEventListener('click', requestPortOnePayment);
+$('#requestSubscriptionPayment').addEventListener('click', requestTossSubscriptionPayment);
 $('#lectureStepList').addEventListener('click', event => {
   const button = event.target.closest('[data-step-index]');
   if (!button || button.disabled) return;

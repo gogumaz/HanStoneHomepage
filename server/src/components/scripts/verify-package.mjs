@@ -27,7 +27,7 @@ assert.equal(root.OAuthClient, oauth.OAuthClient);
 assert.equal(root.PaymentComponentModule, payments.PaymentComponentModule);
 assert.equal(typeof oauth.OAuthComponentModule.register, "function");
 assert.equal(typeof oauth.GoogleOAuthProvider, "function");
-assert.equal(typeof payments.PortOneV1PaymentProvider, "function");
+assert.equal(typeof payments.TossPaymentsProvider, "function");
 assert.equal(typeof payments.PAYMENT_PROVIDER, "symbol");
 assert.ok(files.some((file) => file.endsWith("/index.js")));
 assert.ok(files.some((file) => file.endsWith("/index.d.ts")));

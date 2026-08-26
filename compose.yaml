@@ -15,12 +15,29 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - baduk-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build:
       context: ./server
     environment:
       NODE_ENV: development
       PORT: 3000
+      REQUEST_BODY_MAX_BYTES: ${REQUEST_BODY_MAX_BYTES:-1048576}
+      RATE_LIMIT_REDIS_URL: redis://redis:6379/0
+      RATE_LIMIT_KEY_PREFIX: ${RATE_LIMIT_KEY_PREFIX:-baduk-history:rate-limit:}
+      RATE_LIMIT_CONNECT_TIMEOUT_MS: ${RATE_LIMIT_CONNECT_TIMEOUT_MS:-3000}
       DATABASE_URL: postgresql://baduk:baduk-local-password@database:5432/baduk_history?schema=public
       CORS_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
       PUBLIC_APP_URL: http://127.0.0.1:5173
@@ -48,6 +65,7 @@ services:
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
       PREFLIGHT_REQUIRED_OAUTH_PROVIDERS: ${PREFLIGHT_REQUIRED_OAUTH_PROVIDERS:-}
       GUARDIAN_INVITATION_TTL_HOURS: 72
+      TOSS_PAYMENTS_SECRET_KEY: ${TOSS_PAYMENTS_SECRET_KEY:-}
       LOG_LEVEL: info
       MALWARE_SCANNER_HOST: ${MALWARE_SCANNER_HOST:-}
       MALWARE_SCANNER_PORT: ${MALWARE_SCANNER_PORT:-3310}
@@ -59,10 +77,16 @@ services:
       VIDEO_CLEANUP_LOCK_TIMEOUT_MS: ${VIDEO_CLEANUP_LOCK_TIMEOUT_MS:-600000}
       VIDEO_UPLOAD_ABANDONED_AFTER_HOURS: ${VIDEO_UPLOAD_ABANDONED_AFTER_HOURS:-24}
       VIDEO_REPLACED_RETENTION_HOURS: ${VIDEO_REPLACED_RETENTION_HOURS:-24}
+      INQUIRY_ATTACHMENT_MAX_BYTES: ${INQUIRY_ATTACHMENT_MAX_BYTES:-10485760}
+      INQUIRY_ATTACHMENT_RETENTION_HOURS: ${INQUIRY_ATTACHMENT_RETENTION_HOURS:-24}
+      COMMUNITY_ATTACHMENT_MAX_BYTES: ${COMMUNITY_ATTACHMENT_MAX_BYTES:-20971520}
+      COMMUNITY_ATTACHMENT_RETENTION_HOURS: ${COMMUNITY_ATTACHMENT_RETENTION_HOURS:-24}
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
       database:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/api/v1/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
@@ -99,6 +123,30 @@ services:
       clamav:
         condition: service_started
 
+  inquiry-notification-worker:
+    build:
+      context: ./server
+    command: ["node", "dist/inquiry-notification-worker.js"]
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://baduk:baduk-local-password@database:5432/baduk_history?schema=public
+      CORS_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
+      PUBLIC_APP_URL: http://127.0.0.1:5173
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      SMTP_CONNECTION_TIMEOUT_MS: ${SMTP_CONNECTION_TIMEOUT_MS:-10000}
+      INQUIRY_NOTIFICATION_POLL_INTERVAL_MS: ${INQUIRY_NOTIFICATION_POLL_INTERVAL_MS:-5000}
+      INQUIRY_NOTIFICATION_MAX_ATTEMPTS: ${INQUIRY_NOTIFICATION_MAX_ATTEMPTS:-5}
+      INQUIRY_NOTIFICATION_LOCK_TIMEOUT_MS: ${INQUIRY_NOTIFICATION_LOCK_TIMEOUT_MS:-60000}
+    depends_on:
+      database:
+        condition: service_healthy
+
   video-cleanup-worker:
     build:
       context: ./server
@@ -120,6 +168,7 @@ services:
       VIDEO_CLEANUP_LOCK_TIMEOUT_MS: ${VIDEO_CLEANUP_LOCK_TIMEOUT_MS:-600000}
       VIDEO_UPLOAD_ABANDONED_AFTER_HOURS: ${VIDEO_UPLOAD_ABANDONED_AFTER_HOURS:-24}
       VIDEO_REPLACED_RETENTION_HOURS: ${VIDEO_REPLACED_RETENTION_HOURS:-24}
+      INQUIRY_ATTACHMENT_RETENTION_HOURS: ${INQUIRY_ATTACHMENT_RETENTION_HOURS:-24}
     depends_on:
       database:
         condition: service_healthy
@@ -162,4 +211,5 @@ services:
 
 volumes:
   baduk-postgres-data:
+  baduk-redis-data:
   clamav-signatures:

@@ -36,6 +36,8 @@ function createPrismaMock() {
             id: `oauth-account-${oauthAccounts.length + 1}`,
             userId: user.id,
             ...oauthAccount,
+            createdAt: new Date(),
+            updatedAt: new Date(),
           });
         }
         return user;
@@ -72,6 +74,11 @@ function createPrismaMock() {
         matches.forEach((item) => Object.assign(item, data));
         return { count: matches.length };
       }),
+      deleteMany: vi.fn(async ({ where }: { where: { userId: string } }) => {
+        const matches = sessions.filter((item) => item.userId === where.userId);
+        matches.forEach((item) => sessions.splice(sessions.indexOf(item), 1));
+        return { count: matches.length };
+      }),
     },
     accountToken: {
       create: vi.fn(async ({ data }: { data: Record<string, any> }) => {
@@ -92,6 +99,11 @@ function createPrismaMock() {
           && (!('consumedAt' in where) || item.consumedAt === where.consumedAt)
           && (!where.expiresAt?.gt || item.expiresAt > where.expiresAt.gt));
         matches.forEach((item) => Object.assign(item, data));
+        return { count: matches.length };
+      }),
+      deleteMany: vi.fn(async ({ where }: { where: { userId: string } }) => {
+        const matches = accountTokens.filter((item) => item.userId === where.userId);
+        matches.forEach((item) => accountTokens.splice(accountTokens.indexOf(item), 1));
         return { count: matches.length };
       }),
     },
@@ -116,16 +128,57 @@ function createPrismaMock() {
         matches.forEach((item) => Object.assign(item, data));
         return { count: matches.length };
       }),
+      deleteMany: vi.fn(async ({ where }: { where: { userId: string } }) => {
+        const matches = oauthAttempts.filter((item) => item.userId === where.userId);
+        matches.forEach((item) => oauthAttempts.splice(oauthAttempts.indexOf(item), 1));
+        return { count: matches.length };
+      }),
     },
     oAuthAccount: {
       findUnique: vi.fn(async ({ where, include }: { where: Record<string, any>; include?: unknown }) => {
-        const key = where.provider_providerUserId;
-        const account = oauthAccounts.find((item) =>
-          item.provider === key.provider && item.providerUserId === key.providerUserId);
+        const subjectKey = where.provider_providerUserId;
+        const userKey = where.userId_provider;
+        const account = oauthAccounts.find((item) => subjectKey
+          ? item.provider === subjectKey.provider && item.providerUserId === subjectKey.providerUserId
+          : item.userId === userKey.userId && item.provider === userKey.provider);
         if (!account) return null;
         return include ? { ...account, user: users.find((user) => user.id === account.userId) } : account;
       }),
+      findMany: vi.fn(async ({ where }: { where: { userId: string } }) =>
+        oauthAccounts
+          .filter((item) => item.userId === where.userId)
+          .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())),
+      create: vi.fn(async ({ data }: { data: Record<string, any> }) => {
+        const account = {
+          id: `oauth-account-${oauthAccounts.length + 1}`,
+          ...data,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        oauthAccounts.push(account);
+        return account;
+      }),
+      delete: vi.fn(async ({ where }: { where: { id: string } }) => {
+        const index = oauthAccounts.findIndex((item) => item.id === where.id);
+        return oauthAccounts.splice(index, 1)[0];
+      }),
+      deleteMany: vi.fn(async ({ where }: { where: { userId: string } }) => {
+        const matches = oauthAccounts.filter((item) => item.userId === where.userId);
+        matches.forEach((item) => oauthAccounts.splice(oauthAccounts.indexOf(item), 1));
+        return { count: matches.length };
+      }),
     },
+    userRoleAssignment: {
+      deleteMany: vi.fn(async ({ where }: { where: { userId: string } }) => {
+        const user = users.find((item) => item.id === where.userId);
+        if (user) user.roles = [];
+        return { count: user?.roles.length ?? 0 };
+      }),
+    },
+    guardianInvitation: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    guardianLink: { updateMany: vi.fn(async () => ({ count: 0 })) },
+    guardianConsent: { updateMany: vi.fn(async () => ({ count: 0 })) },
+    lessonProgress: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     auditLog: { create: vi.fn(async () => ({ id: "audit" })) },
     isReady: vi.fn(async () => true),
     $transaction: vi.fn(async (input: unknown) => {
@@ -236,6 +289,23 @@ describe("authentication HTTP flow", () => {
     });
     expect(reusedVerificationResponse.status).toBe(400);
 
+    const rejectedLogoutResponse = await fetch(`${baseUrl}/api/v1/auth/logout`, {
+      method: "POST",
+      headers: {
+        cookie: cookie ?? "",
+        origin: "https://attacker.example",
+        "sec-fetch-site": "cross-site",
+      },
+    });
+    const rejectedLogout = await rejectedLogoutResponse.json() as { error: { code: string } };
+    expect(rejectedLogoutResponse.status).toBe(403);
+    expect(rejectedLogout.error.code).toBe("CSRF_ORIGIN_REJECTED");
+
+    const sessionAfterRejectedLogout = await fetch(`${baseUrl}/api/v1/me`, {
+      headers: { cookie: cookie ?? "" },
+    });
+    expect(sessionAfterRejectedLogout.status).toBe(200);
+
     const logoutResponse = await fetch(`${baseUrl}/api/v1/auth/logout`, {
       method: "POST",
       headers: { cookie: cookie ?? "" },
@@ -258,10 +328,16 @@ describe("authentication HTTP flow", () => {
     const loginCookie = loginResponse.headers.get("set-cookie")?.split(";", 1)[0];
     expect(loginResponse.status).toBe(200);
     expect(loginCookie).toMatch(/^baduk_session=/);
+    expect(loginResponse.headers.get("ratelimit-limit")).toBe("10");
+    expect(Number(loginResponse.headers.get("ratelimit-remaining"))).toBeGreaterThanOrEqual(0);
 
     const refreshResponse = await fetch(`${baseUrl}/api/v1/auth/refresh`, {
       method: "POST",
-      headers: { cookie: loginCookie ?? "" },
+      headers: {
+        cookie: loginCookie ?? "",
+        origin: "http://127.0.0.1:5173",
+        "sec-fetch-site": "same-site",
+      },
     });
     const refreshCookie = refreshResponse.headers.get("set-cookie")?.split(";", 1)[0];
     expect(refreshResponse.status).toBe(200);
@@ -365,5 +441,235 @@ describe("authentication HTTP flow", () => {
     const linkingError = await linkingCallback.json() as { error: { code: string } };
     expect(linkingCallback.status).toBe(409);
     expect(linkingError.error.code).toBe("OAUTH_ACCOUNT_LINK_REQUIRED");
+  });
+
+  it("links and unlinks an OAuth identity without replacing the active password session", async () => {
+    const signupResponse = await fetch(`${baseUrl}/api/v1/auth/signup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "oauth-link-owner@example.com",
+        password: "safe-password-789",
+        displayName: "OAuth Link Owner",
+        role: "student",
+      }),
+    });
+    const cookie = signupResponse.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+    expect(signupResponse.status).toBe(201);
+
+    oauthClient.exchangeCode.mockResolvedValueOnce({
+      provider: "google",
+      subject: "oauth-link-subject-1",
+      email: "linked-google@example.com",
+      emailVerified: true,
+      displayName: "Linked Google",
+    });
+    const startResponse = await fetch(
+      `${baseUrl}/api/v1/me/oauth-accounts/google/start?returnTo=${encodeURIComponent("/account?oauthLinked=google")}`,
+      { headers: { cookie }, redirect: "manual" },
+    );
+    expect(startResponse.status).toBe(302);
+    const state = new URL(startResponse.headers.get("location") ?? "").searchParams.get("state");
+
+    const callbackResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/google/callback?code=link-code&state=${state}`,
+      { redirect: "manual" },
+    );
+    expect(callbackResponse.status).toBe(302);
+    expect(callbackResponse.headers.get("location")).toBe("http://127.0.0.1:5173/account?oauthLinked=google");
+    expect(callbackResponse.headers.get("set-cookie")).toBeNull();
+
+    const linkedResponse = await fetch(`${baseUrl}/api/v1/me/oauth-accounts`, { headers: { cookie } });
+    const linked = await linkedResponse.json() as {
+      data: { items: Array<{ provider: string; email: string }>; hasPassword: boolean };
+    };
+    expect(linkedResponse.status).toBe(200);
+    expect(linked.data).toMatchObject({
+      hasPassword: true,
+      items: [{ provider: "google", email: "linked-google@example.com" }],
+    });
+
+    const unlinkResponse = await fetch(`${baseUrl}/api/v1/me/oauth-accounts/google`, {
+      method: "DELETE",
+      headers: { cookie },
+    });
+    const unlinked = await unlinkResponse.json() as { data: { unlinked: boolean; provider: string } };
+    expect(unlinkResponse.status).toBe(200);
+    expect(unlinked.data).toEqual({ unlinked: true, provider: "google" });
+
+    const emptyResponse = await fetch(`${baseUrl}/api/v1/me/oauth-accounts`, { headers: { cookie } });
+    const empty = await emptyResponse.json() as { data: { items: unknown[]; hasPassword: boolean } };
+    expect(empty.data).toEqual({ items: [], hasPassword: true });
+  });
+
+  it("rejects linking an OAuth identity owned by another user and protects the last sign-in method", async () => {
+    oauthClient.exchangeCode.mockResolvedValueOnce({
+      provider: "kakao",
+      subject: "oauth-only-subject",
+      email: "oauth-only@example.com",
+      emailVerified: true,
+      displayName: "OAuth Only",
+    });
+    const loginStart = await fetch(`${baseUrl}/api/v1/auth/oauth/kakao/start`, { redirect: "manual" });
+    const loginState = new URL(loginStart.headers.get("location") ?? "").searchParams.get("state");
+    const loginCallback = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/kakao/callback?code=oauth-login-code&state=${loginState}`,
+      { redirect: "manual" },
+    );
+    const oauthOnlyCookie = loginCallback.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+    expect(loginCallback.status).toBe(302);
+
+    const lastMethodResponse = await fetch(`${baseUrl}/api/v1/me/oauth-accounts/kakao`, {
+      method: "DELETE",
+      headers: { cookie: oauthOnlyCookie },
+    });
+    const lastMethodError = await lastMethodResponse.json() as { error: { code: string } };
+    expect(lastMethodResponse.status).toBe(409);
+    expect(lastMethodError.error.code).toBe("LAST_SIGN_IN_METHOD_REQUIRED");
+
+    const ownerSignup = await fetch(`${baseUrl}/api/v1/auth/signup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "oauth-conflict-owner@example.com",
+        password: "safe-password-987",
+        displayName: "OAuth Conflict Owner",
+        role: "student",
+      }),
+    });
+    const ownerCookie = ownerSignup.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+    const linkStart = await fetch(`${baseUrl}/api/v1/me/oauth-accounts/kakao/start`, {
+      headers: { cookie: ownerCookie },
+      redirect: "manual",
+    });
+    const linkState = new URL(linkStart.headers.get("location") ?? "").searchParams.get("state");
+    oauthClient.exchangeCode.mockResolvedValueOnce({
+      provider: "kakao",
+      subject: "oauth-only-subject",
+      email: "oauth-only@example.com",
+      emailVerified: true,
+      displayName: "OAuth Only",
+    });
+    const conflictResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/kakao/callback?code=conflict-code&state=${linkState}`,
+      { redirect: "manual" },
+    );
+    const conflict = await conflictResponse.json() as { error: { code: string } };
+    expect(conflictResponse.status).toBe(409);
+    expect(conflict.error.code).toBe("OAUTH_IDENTITY_ALREADY_LINKED");
+  });
+
+  it("requires the current password, anonymizes the account, and invalidates every session", async () => {
+    const signupResponse = await fetch(`${baseUrl}/api/v1/auth/signup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "delete-password@example.com",
+        password: "safe-password-delete",
+        displayName: "Delete Password User",
+        role: "student",
+      }),
+    });
+    const cookie = signupResponse.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+
+    const wrongPasswordResponse = await fetch(`${baseUrl}/api/v1/me`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ confirmation: "회원탈퇴", password: "wrong-password" }),
+    });
+    const wrongPassword = await wrongPasswordResponse.json() as { error: { code: string } };
+    expect(wrongPasswordResponse.status).toBe(401);
+    expect(wrongPassword.error.code).toBe("ACCOUNT_DELETE_REAUTHENTICATION_FAILED");
+
+    const invalidConfirmationResponse = await fetch(`${baseUrl}/api/v1/me`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ confirmation: "delete", password: "safe-password-delete" }),
+    });
+    expect(invalidConfirmationResponse.status).toBe(400);
+
+    const deleteResponse = await fetch(`${baseUrl}/api/v1/me`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ confirmation: "회원탈퇴", password: "safe-password-delete" }),
+    });
+    const deleted = await deleteResponse.json() as { data: { deleted: boolean } };
+    expect(deleteResponse.status).toBe(200);
+    expect(deleted.data).toEqual({ deleted: true });
+    expect(deleteResponse.headers.get("set-cookie")).toContain("baduk_session=");
+
+    const staleSessionResponse = await fetch(`${baseUrl}/api/v1/me`, { headers: { cookie } });
+    expect(staleSessionResponse.status).toBe(401);
+
+    const reusedEmailResponse = await fetch(`${baseUrl}/api/v1/auth/signup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "delete-password@example.com",
+        password: "new-password-after-delete",
+        displayName: "Recreated User",
+        role: "student",
+      }),
+    });
+    expect(reusedEmailResponse.status).toBe(201);
+  });
+
+  it("requires the exact linked OAuth identity before deleting an OAuth-only account", async () => {
+    oauthClient.exchangeCode.mockResolvedValueOnce({
+      provider: "naver",
+      subject: "oauth-delete-subject",
+      email: "delete-oauth@example.com",
+      emailVerified: true,
+      displayName: "Delete OAuth User",
+    });
+    const loginStart = await fetch(`${baseUrl}/api/v1/auth/oauth/naver/start`, { redirect: "manual" });
+    const loginState = new URL(loginStart.headers.get("location") ?? "").searchParams.get("state");
+    const loginCallback = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/naver/callback?code=oauth-delete-login&state=${loginState}`,
+      { redirect: "manual" },
+    );
+    const cookie = loginCallback.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+
+    const mismatchStart = await fetch(`${baseUrl}/api/v1/me/account-deletion/oauth/naver/start`, {
+      headers: { cookie },
+      redirect: "manual",
+    });
+    const mismatchState = new URL(mismatchStart.headers.get("location") ?? "").searchParams.get("state");
+    oauthClient.exchangeCode.mockResolvedValueOnce({
+      provider: "naver",
+      subject: "different-oauth-subject",
+      email: "different@example.com",
+      emailVerified: true,
+      displayName: "Different OAuth User",
+    });
+    const mismatchResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/naver/callback?code=oauth-delete-mismatch&state=${mismatchState}`,
+      { redirect: "manual" },
+    );
+    const mismatch = await mismatchResponse.json() as { error: { code: string } };
+    expect(mismatchResponse.status).toBe(401);
+    expect(mismatch.error.code).toBe("ACCOUNT_DELETE_REAUTHENTICATION_FAILED");
+    expect((await fetch(`${baseUrl}/api/v1/me`, { headers: { cookie } })).status).toBe(200);
+
+    const deleteStart = await fetch(
+      `${baseUrl}/api/v1/me/account-deletion/oauth/naver/start?returnTo=${encodeURIComponent("/account?accountDeleted=1")}`,
+      { headers: { cookie }, redirect: "manual" },
+    );
+    const deleteState = new URL(deleteStart.headers.get("location") ?? "").searchParams.get("state");
+    oauthClient.exchangeCode.mockResolvedValueOnce({
+      provider: "naver",
+      subject: "oauth-delete-subject",
+      email: "delete-oauth@example.com",
+      emailVerified: true,
+      displayName: "Delete OAuth User",
+    });
+    const deleteCallback = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/naver/callback?code=oauth-delete-confirm&state=${deleteState}`,
+      { redirect: "manual" },
+    );
+    expect(deleteCallback.status).toBe(302);
+    expect(deleteCallback.headers.get("location")).toBe("http://127.0.0.1:5173/account?accountDeleted=1");
+    expect(deleteCallback.headers.get("set-cookie")).toContain("baduk_session=");
+    expect((await fetch(`${baseUrl}/api/v1/me`, { headers: { cookie } })).status).toBe(401);
   });
 });

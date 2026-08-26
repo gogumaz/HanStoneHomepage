@@ -1,0 +1,3 @@
+ALTER TABLE "StoreOrder"
+ADD COLUMN "refundedAmount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "refundedAt" TIMESTAMP(3);

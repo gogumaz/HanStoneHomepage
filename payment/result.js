@@ -1,3 +1,5 @@
+import { clearTossConfirmationId, stableTossConfirmationId } from '../src/payments/toss-browser.ts';
+
 const config = window.APP_CONFIG || {};
 const params = new URLSearchParams(window.location.search);
 const resultType = document.body.dataset.paymentResult;
@@ -29,24 +31,36 @@ function addDetail(label, value) {
 }
 
 async function confirmPayment() {
-  const paymentId = params.get('imp_uid');
-  const orderId = params.get('merchant_uid');
+  const isStorePayment = source === 'store';
+  const paymentId = params.get('paymentKey');
+  const orderId = params.get('orderId');
   addDetail('주문번호', orderId);
 
   if (!paymentId || !orderId) {
     throw new Error('결제 승인 정보가 올바르지 않습니다.');
   }
 
-  const response = await fetch(apiUrl('/payments/portone/verify'), {
+  const amount = Number(params.get('amount'));
+  if (!Number.isInteger(amount) || amount < 1) {
+    throw new Error('결제 금액 정보가 올바르지 않습니다.');
+  }
+  const confirmationId = stableTossConfirmationId(orderId);
+
+  const response = await fetch(apiUrl(isStorePayment ? '/payments/toss/confirm' : '/payments/toss/subscriptions/confirm'), {
     method: 'POST',
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    body: JSON.stringify({ paymentId, orderId })
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+      'X-Request-Id': confirmationId
+    },
+    body: JSON.stringify({ paymentKey: paymentId, orderId, amount })
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error?.message || '결제 승인에 실패했습니다.');
 
   const payment = payload.data || payload;
+  clearTossConfirmationId(orderId);
   title.textContent = '결제가 완료되었습니다';
   message.textContent = '주문 내역에서 결제 결과를 확인할 수 있어요.';
   icon.textContent = '✓';
@@ -61,7 +75,7 @@ async function confirmPayment() {
 
 function showFailure() {
   addDetail('오류 코드', params.get('code'));
-  addDetail('주문번호', params.get('merchant_uid'));
+  addDetail('주문번호', params.get('orderId'));
   const providerMessage = params.get('message');
   if (providerMessage) message.textContent = providerMessage;
 }

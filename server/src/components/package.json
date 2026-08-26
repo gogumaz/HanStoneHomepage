@@ -1,6 +1,6 @@
 {
   "name": "@baduk-history/integration-components",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Reusable NestJS OAuth and payment integration components",
   "type": "module",
   "license": "UNLICENSED",

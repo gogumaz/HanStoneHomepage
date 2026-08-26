@@ -7,11 +7,13 @@ import { OptionalSessionGuard } from "./optional-session.guard.js";
 import { MailModule } from "../mail/mail.module.js";
 import { OAuthComponentModule } from "../components/oauth/index.js";
 import { loadOAuthComponentOptions } from "./oauth-options.js";
+import { RateLimitModule } from "../common/rate-limit.module.js";
 
 @Module({
   imports: [
     MailModule,
     OAuthComponentModule.registerAsync({ useFactory: () => loadOAuthComponentOptions() }),
+    RateLimitModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, SessionAuthGuard, OptionalSessionGuard, RolesGuard],

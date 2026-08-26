@@ -1,0 +1,231 @@
+name: Release candidate acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: Immutable release identifier
+        required: true
+        type: string
+      candidate_commit_sha:
+        description: Full 40-character candidate Git commit SHA
+        required: true
+        type: string
+      image_reference:
+        description: Immutable repository@sha256 image reference
+        required: true
+        type: string
+      registry_host:
+        description: Container registry host
+        required: true
+        default: ghcr.io
+        type: string
+      load_test_run_id:
+        description: Successful staging read-only load workflow run ID
+        required: true
+        type: string
+      worker_soak_run_id:
+        description: Successful staging worker soak workflow run ID
+        required: true
+        type: string
+      supply_chain_run_id:
+        description: Successful CI workflow run ID containing the candidate SBOM
+        required: true
+        type: string
+      backup_created_at:
+        description: Restored backup creation time in ISO 8601 format
+        required: true
+        type: string
+      restore_started_at:
+        description: Isolated restore start time in ISO 8601 format
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+
+concurrency:
+  group: release-candidate-acceptance-${{ inputs.release_id }}
+  cancel-in-progress: false
+
+jobs:
+  accept-release:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    env:
+      RELEASE_ID: ${{ inputs.release_id }}
+      CANDIDATE_COMMIT_SHA: ${{ inputs.candidate_commit_sha }}
+      IMAGE_REFERENCE: ${{ inputs.image_reference }}
+      REGISTRY_HOST: ${{ inputs.registry_host }}
+      REGISTRY_USERNAME: ${{ secrets.CONTAINER_REGISTRY_USERNAME || github.actor }}
+      REGISTRY_PASSWORD: ${{ secrets.CONTAINER_REGISTRY_PASSWORD || github.token }}
+      PREFLIGHT_ENV_BASE64: ${{ secrets.PRODUCTION_PREFLIGHT_ENV_FILE_BASE64 }}
+      PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+      RECOVERY_DATABASE_URL: ${{ secrets.RECOVERY_DATABASE_URL }}
+      RECOVERY_BACKUP_CREATED_AT: ${{ inputs.backup_created_at }}
+      RECOVERY_RESTORE_STARTED_AT: ${{ inputs.restore_started_at }}
+    steps:
+      - name: Validate immutable candidate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_ID" =~ ^[A-Za-z0-9._-]{1,80}$ ]]
+          [[ "$CANDIDATE_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$IMAGE_REFERENCE" =~ @sha256:[a-f0-9]{64}$ ]]
+          [[ "$REGISTRY_HOST" =~ ^[A-Za-z0-9.-]+(:[0-9]+)?$ ]]
+          [[ "${{ inputs.load_test_run_id }}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${{ inputs.worker_soak_run_id }}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${{ inputs.supply_chain_run_id }}" =~ ^[1-9][0-9]*$ ]]
+          image_digest="${IMAGE_REFERENCE##*@}"
+          printf 'IMAGE_DIGEST=%s\n' "${image_digest,,}" >> "$GITHUB_ENV"
+
+      - name: Authenticate to the candidate registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" --username "$REGISTRY_USERNAME" --password-stdin
+
+      - name: Pull immutable candidate image
+        run: docker pull "$IMAGE_REFERENCE"
+
+      - name: Download read-only load evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: staging-read-only-load-report-${{ inputs.load_test_run_id }}
+          path: evidence/read-only-load
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.load_test_run_id }}
+
+      - name: Download worker soak evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: staging-worker-soak-report-${{ inputs.worker_soak_run_id }}
+          path: evidence/worker-soak
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.worker_soak_run_id }}
+
+      - name: Download candidate supply-chain evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: release-supply-chain-${{ inputs.candidate_commit_sha }}
+          path: evidence/supply-chain
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.supply_chain_run_id }}
+
+      - name: Download candidate web deployment package
+        uses: actions/download-artifact@v8
+        with:
+          name: web-release-${{ inputs.candidate_commit_sha }}
+          path: evidence/web-deployment
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.supply_chain_run_id }}
+
+      - name: Download candidate browser field-validation evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: browser-field-validation-${{ inputs.supply_chain_run_id }}
+          path: evidence/field-validation
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.supply_chain_run_id }}
+
+      - name: Materialize protected preflight environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 evidence
+          umask 077
+          printf '%s' "$PREFLIGHT_ENV_BASE64" | base64 --decode > evidence/preflight.env
+          test -s evidence/preflight.env
+
+      - name: Run production preflight from the candidate image
+        id: preflight
+        continue-on-error: true
+        shell: bash
+        run: |
+          docker run --rm --network host \
+            --env-file "$GITHUB_WORKSPACE/evidence/preflight.env" \
+            -e NODE_ENV=production \
+            -e PREFLIGHT_REQUIRE_CDN=true \
+            -e EVIDENCE_COMMIT_SHA="$CANDIDATE_COMMIT_SHA" \
+            -e DEPLOYMENT_COMMIT_SHA="$CANDIDATE_COMMIT_SHA" \
+            -e DEPLOYMENT_IMAGE_DIGEST="$IMAGE_DIGEST" \
+            "$IMAGE_REFERENCE" node dist/production-preflight.js \
+            > evidence/production-preflight.json
+
+      - name: Remove protected preflight environment
+        if: always()
+        shell: bash
+        run: rm -f -- "$GITHUB_WORKSPACE/evidence/preflight.env"
+
+      - name: Run isolated recovery drill from the candidate image
+        id: recovery
+        continue-on-error: true
+        shell: bash
+        run: |
+          docker run --rm --network host \
+            -e DATABASE_URL="$PRODUCTION_DATABASE_URL" \
+            -e RECOVERY_DATABASE_URL="$RECOVERY_DATABASE_URL" \
+            -e RECOVERY_BACKUP_CREATED_AT \
+            -e RECOVERY_RESTORE_STARTED_AT \
+            -e RECOVERY_RPO_MINUTES=15 \
+            -e RECOVERY_RTO_MINUTES=240 \
+            -e EVIDENCE_COMMIT_SHA="$CANDIDATE_COMMIT_SHA" \
+            "$IMAGE_REFERENCE" node dist/recovery-drill.js \
+            > evidence/recovery-drill.json
+
+      - name: Evaluate the complete release evidence set
+        id: acceptance
+        continue-on-error: true
+        shell: bash
+        run: |
+          docker run --rm \
+            --mount type=bind,source="$GITHUB_WORKSPACE/evidence",target=/evidence,readonly \
+            -e RELEASE_ID \
+            -e RELEASE_COMMIT_SHA="$CANDIDATE_COMMIT_SHA" \
+            -e RELEASE_IMAGE_REFERENCE="$IMAGE_REFERENCE" \
+            -e RELEASE_PREFLIGHT_REPORT=/evidence/production-preflight.json \
+            -e RELEASE_RECOVERY_REPORT=/evidence/recovery-drill.json \
+            -e RELEASE_LOAD_REPORT=/evidence/read-only-load/staging-read-only-load-report.json \
+            -e RELEASE_WORKER_SOAK_REPORT=/evidence/worker-soak/staging-worker-soak-report.json \
+            -e RELEASE_WEB_DEPLOYMENT_REPORT=/evidence/web-deployment/web-deployment-manifest.json \
+            -e RELEASE_FIELD_VALIDATION_REPORT=/evidence/field-validation/field-validation-report.json \
+            -e RELEASE_SUPPLY_CHAIN_REPORT=/evidence/supply-chain/manifest.json \
+            "$IMAGE_REFERENCE" node dist/release-acceptance.js \
+            > release-acceptance.json
+
+      - name: Assert protected files are absent
+        if: always()
+        shell: bash
+        run: test ! -e "$GITHUB_WORKSPACE/evidence/preflight.env"
+
+      - name: Upload release acceptance record
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-acceptance-${{ inputs.release_id }}-${{ github.run_id }}
+          path: |
+            release-acceptance.json
+            evidence/production-preflight.json
+            evidence/recovery-drill.json
+            evidence/read-only-load
+            evidence/worker-soak
+            evidence/web-deployment/web-deployment-manifest.json
+            evidence/field-validation/field-validation-report.json
+            evidence/supply-chain
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: End registry session
+        if: always()
+        continue-on-error: true
+        run: docker logout "$REGISTRY_HOST"
+
+      - name: Enforce release acceptance decision
+        if: >-
+          steps.preflight.outcome != 'success' ||
+          steps.recovery.outcome != 'success' ||
+          steps.acceptance.outcome != 'success'
+        run: exit 1

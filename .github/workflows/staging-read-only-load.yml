@@ -1,0 +1,67 @@
+name: Staging read-only load test
+
+on:
+  workflow_dispatch:
+    inputs:
+      requests:
+        description: Total read-only requests
+        required: true
+        default: "500"
+        type: string
+      concurrency:
+        description: Concurrent clients
+        required: true
+        default: "20"
+        type: string
+      maximum_p95_ms:
+        description: Maximum acceptable p95 latency in milliseconds
+        required: true
+        default: "500"
+        type: string
+      maximum_error_rate_percent:
+        description: Maximum acceptable error rate percentage
+        required: true
+        default: "1"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  load-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    env:
+      LOAD_TEST_BASE_URL: ${{ secrets.STAGING_API_BASE_URL }}
+      OPERATIONS_METRICS_TOKEN: ${{ secrets.STAGING_OPERATIONS_METRICS_TOKEN }}
+      LOAD_TEST_REQUESTS: ${{ inputs.requests }}
+      LOAD_TEST_CONCURRENCY: ${{ inputs.concurrency }}
+      LOAD_TEST_MAX_P95_MS: ${{ inputs.maximum_p95_ms }}
+      LOAD_TEST_MAX_ERROR_RATE_PERCENT: ${{ inputs.maximum_error_rate_percent }}
+      LOAD_TEST_TIMEOUT_MS: "5000"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Run bounded read-only load test
+        id: load_test
+        continue-on-error: true
+        run: node dist/read-only-load-test.js > staging-read-only-load-report.json 2>&1
+      - name: Upload load-test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-read-only-load-report-${{ github.run_id }}
+          path: server/staging-read-only-load-report.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce load-test thresholds
+        if: steps.load_test.outcome != 'success'
+        run: exit 1

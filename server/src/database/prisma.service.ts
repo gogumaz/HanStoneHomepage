@@ -16,7 +16,7 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
 
   async isReady(): Promise<boolean> {
     try {
-      await this.$queryRawUnsafe("SELECT 1");
+      await this.$queryRaw`SELECT 1`;
       return true;
     } catch {
       return false;

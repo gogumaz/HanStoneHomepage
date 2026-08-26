@@ -2,7 +2,7 @@ import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module.js";
 import { PaymentComponentModule } from "../components/payments/index.js";
 import { loadAppConfig } from "../config/app-config.js";
-import { PortOneWebhookController } from "./portone-webhook.controller.js";
+import { TossSubscriptionWebhookController } from "./toss-subscription-webhook.controller.js";
 import { SubscriptionController } from "./subscription.controller.js";
 import { SubscriptionService } from "./subscription.service.js";
 
@@ -13,16 +13,13 @@ import { SubscriptionService } from "./subscription.service.js";
       useFactory: () => {
         const config = loadAppConfig();
         return {
-          provider: "portone-v1" as const,
-          portoneV1: {
-            apiKey: config.portoneV1ApiKey,
-            apiSecret: config.portoneV1ApiSecret,
-          },
+          provider: "toss-payments" as const,
+          tossPayments: { secretKey: config.tossPaymentsSecretKey },
         };
       },
     }),
   ],
-  controllers: [SubscriptionController, PortOneWebhookController],
+  controllers: [SubscriptionController, TossSubscriptionWebhookController],
   providers: [SubscriptionService],
   exports: [SubscriptionService],
 })

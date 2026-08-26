@@ -84,9 +84,9 @@
 - 문의 유형
 - 제목
 - 문의 내용
-- 첨부파일
+- 첨부파일(JPG·PNG·WebP·PDF, 기본 10MB 이하)
 
-회원 본인과 운영자만 조회할 수 있는 비공개 데이터입니다.
+회원 본인과 운영자만 조회할 수 있는 비공개 데이터입니다. 첨부는 사용자·MIME·크기가 고정된 저장소 정책으로 격리 업로드하고 실제 시그니처와 ClamAV 검사를 통과한 파일만 문의에 한 번 연결합니다. 다운로드 때도 소유권 또는 운영 권한을 다시 확인하며 저장소 객체 키를 공개하지 않습니다.
 
 ### 기관상담
 
@@ -209,12 +209,13 @@ ClassHelperPackage
 ```text
 Inquiry
 ├─ id
-├─ userId
+├─ requesterUserId
 ├─ category
 ├─ title
 ├─ content
-├─ status: submitted | in_progress | answered | closed
-├─ assignedAdminId
+├─ status: submitted | in_review | answered | closed
+├─ answer?
+├─ answeredById?
 ├─ answeredAt
 ├─ createdAt
 └─ updatedAt
@@ -249,19 +250,43 @@ Consultation
 | `POST` | `/posts` | 지도자·운영자 |
 | `PATCH` | `/posts/{id}` | 작성자·운영자 |
 | `POST` | `/admin/posts/{id}/publish` | 운영자 |
+| `POST` | `/admin/posts/{id}/reject` | 운영자 |
+| `GET` | `/admin/posts?type={type}&status={status}` | 운영자 |
+| `DELETE` | `/posts/{id}` | 작성자·운영자, 보관 처리 |
 | `GET` | `/faqs` | 공개 |
 | `POST` | `/admin/faqs` | 운영자 |
 | `PATCH` | `/admin/faqs/{id}` | 운영자 |
 | `GET` | `/materials` | 목록 공개, 다운로드는 이용권 검사 |
+| `GET` | `/materials/{id}/download` | 공개·활성 개인 구독·지도자·기관 관리자 권한을 서버에서 다시 검사한 뒤 단기 서명 URL 발급 |
+| `GET` | `/admin/materials` | 운영자, 초안·공개·보관 자료 전체 조회 |
 | `POST` | `/admin/materials` | 운영자 |
+| `PATCH` | `/admin/materials/{id}` | 운영자, 내용 수정과 선택적 파일 교체 |
+| `GET` | `/admin/materials/{id}/revisions` | 운영자, 변경 전 버전 이력 조회 |
+| `POST` | `/admin/materials/{id}/revisions/{revision}/restore` | 운영자, 보존 중인 파일과 내용을 새 버전으로 복원 |
+| `POST` | `/admin/materials/{id}/publish` | 운영자, 안전 검사를 통과한 자료 공개 |
+| `DELETE` | `/admin/materials/{id}` | 운영자, 자료 보관 처리 |
+| `POST` | `/teaching-material-assets/uploads` | 운영자, 격리 업로드 정책 발급 |
+| `POST` | `/teaching-material-assets/{id}/complete` | 운영자, 파일 시그니처·ClamAV 검사 완료 |
+
+교재자료 목록에는 저장소 객체 키를 노출하지 않습니다. `전체 공개`는 비회원, `개인 유료`는 결제 완료 상태이면서 현재 유효한 구독자, `지도자`는 지도자 역할, `기관 회원`은 현재 서버에서 검증 가능한 기관 관리자 역할에만 다운로드를 허용합니다. 운영자·관리자는 모든 자료를 미리 볼 수 있습니다. 기관 소속 일반 회원 모델이 추가되면 기관 이용권과 멤버십을 함께 검사하도록 확장합니다.
 
 ### 지도자 전용 게시판
 
 | 메서드 | 경로 | 권한 |
 |---|---|---|
 | `GET` | `/class-helpers` | 지도자·운영자·관리자 |
+| `GET` | `/admin/class-helpers` | 운영자·관리자, 초안·공개·보관 전체 조회 |
 | `POST` | `/admin/class-helpers` | 운영자·관리자 |
-| `PATCH` | `/admin/class-helpers/{id}` | 운영자·관리자 |
+| `PATCH` | `/admin/class-helpers/{id}` | 운영자·관리자, 내용 수정과 6종 중 선택한 파일만 교체 |
+| `GET` | `/admin/class-helpers/{id}/revisions` | 운영자·관리자, 변경 전 버전 이력 조회 |
+| `POST` | `/admin/class-helpers/{id}/revisions/{revision}/restore` | 운영자·관리자, 보존 중인 6종 파일과 수업 흐름 복원 |
+| `POST` | `/admin/class-helpers/{id}/publish` | 운영자·관리자, 공개 전 강의 영상과 6종 자료 재검사 |
+| `DELETE` | `/admin/class-helpers/{id}` | 운영자·관리자, 보관 처리 |
+| `POST` | `/class-helper-assets/uploads` | 운영자·관리자, 자료별 격리 업로드 정책 발급 |
+| `POST` | `/class-helper-assets/{id}/complete` | 운영자·관리자, 파일 시그니처·ClamAV 검사 |
+| `GET` | `/class-helpers/{id}/assets/{field}` | 지도자·운영자·관리자, 단기 서명 다운로드 |
+
+수업용 영상은 같은 강의의 검사를 통과한 영상을 재사용합니다. 수업 패키지는 빔프로젝터 PPT·인쇄 활동지·역사 퀴즈·문제풀이 미션·정답·해설·진행 가이드 6종을 별도 격리 자산으로 업로드하고, 서버가 6종의 종류와 소유자·검사 상태를 확인한 뒤 한 트랜잭션에서 연결합니다. 실행 화면에는 연결 강의와 바둑미션 게임으로 바로 이동하는 링크가 함께 표시됩니다.
 
 ### 비공개 게시판
 
@@ -270,11 +295,16 @@ Consultation
 | `GET` | `/me/inquiries` | 로그인 회원 본인 |
 | `POST` | `/inquiries` | 로그인 회원 |
 | `GET` | `/admin/inquiries` | 운영자 |
-| `POST` | `/admin/inquiries/{id}/answers` | 운영자 |
+| `GET` | `/admin/inquiries/{id}` | 운영자 |
+| `POST` | `/admin/inquiries/{id}/answer` | 운영자 |
+| `PATCH` | `/admin/inquiries/{id}/status` | 운영자 |
 | `GET` | `/me/consultations` | 본인 또는 접수 확인 권한 |
 | `POST` | `/consultations` | 공개, 속도 제한 적용 |
 | `GET` | `/admin/consultations` | 운영자 |
+| `GET` | `/admin/consultations/{id}` | 운영자 |
 | `PATCH` | `/admin/consultations/{id}/status` | 운영자 |
+
+운영자·관리자는 React `/admin/inquiries`에서 문의 상태·유형·검색어 필터, 상세 확인, 답변 등록·수정과 검토·종료 상태 전환을 수행합니다. 답변 완료 문의를 재검토로 되돌리면 서버 정책에 따라 기존 답변과 답변 시각이 삭제된다는 안내를 화면에 표시합니다.
 
 ## 7. 파일 업로드
 
@@ -288,7 +318,7 @@ Consultation
 6. 게시글에 `attachmentId` 연결
 7. 다운로드 시 게시판 및 이용권 권한 재검사
 
-여행기 사진은 EXIF 위치정보 제거와 공개 동의 확인이 필요합니다.
+여행기 사진은 서버에서 EXIF GPS 포함 여부를 검사하며, 위치정보가 있으면 거부되어 제거 후 다시 첨부해야 합니다. 공개 동의도 함께 확인합니다.
 
 ## 8. 개발용 권한 미리보기
 
@@ -302,12 +332,15 @@ demoRoleSwitcher: true
 
 ## 9. 운영 전 필수 항목
 
-- 서버 역할·소유권 검사
-- 관리자 임시저장·미리보기·예약게시
-- 지도자 글 검토·승인·반려
+- 공지·FAQ 서버 역할 검사, 초안·예약 공개·보관·검색·페이지 조회는 구현됨
+- 수업 팁·여행기 서버 역할·소유권 검사, 지도자 검토 요청, 운영자 승인·반려·보관·검색·페이지 조회는 구현됨
+- 공개 수업 팁·여행기 회원 신고, 중복 신고 차단, 운영자 신고함·숨김·기각과 감사 로그는 구현됨
+- 수업 팁 자료·여행기 사진의 격리 업로드, 시그니처·악성코드·EXIF GPS 검사, 권한별 다운로드와 미연결 파일 정리는 구현됨
+- 나머지 게시판의 서버 역할·소유권 검사
+- 나머지 게시판의 관리자 임시저장·미리보기·예약게시
 - 게시글 수정·삭제 및 변경 이력
-- 비공개 문의 답변과 알림
+- 비공개 문의 답변 완료 앱 내 알림(이메일 알림은 구현됨)
 - 개인정보 보관 기간과 자동 파기
-- 파일 저장소와 악성 파일 검사
-- 검색, 정렬, 페이지네이션
-- 신고·숨김 정책이 필요한 사용자 작성 기능 검토
+- 나머지 게시판 파일 저장소와 악성 파일 검사
+- 나머지 게시판의 검색, 정렬, 페이지네이션
+- 일반 회원 작성 게시판을 확장할 때 반복 위반자 제재·재심 정책 검토

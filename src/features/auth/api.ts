@@ -29,9 +29,44 @@ export type AuthResponse = {
   developmentVerificationToken?: string;
 };
 
-export function oauthStartUrl(provider: 'naver' | 'kakao' | 'google', returnTo = '/account'): string {
+export type OAuthProviderName = 'naver' | 'kakao' | 'google';
+
+export type OAuthAccounts = {
+  items: Array<{
+    provider: OAuthProviderName;
+    email: string | null;
+    createdAt: string;
+  }>;
+  hasPassword: boolean;
+};
+
+export function oauthStartUrl(provider: OAuthProviderName, returnTo = '/account'): string {
   const apiBaseUrl = (window.APP_CONFIG?.apiBaseUrl || '/api/v1').replace(/\/$/, '');
   return `${apiBaseUrl}/auth/oauth/${provider}/start?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
+export function oauthLinkStartUrl(provider: OAuthProviderName): string {
+  const apiBaseUrl = (window.APP_CONFIG?.apiBaseUrl || '/api/v1').replace(/\/$/, '');
+  const returnTo = `/account?oauthLinked=${encodeURIComponent(provider)}`;
+  return `${apiBaseUrl}/me/oauth-accounts/${provider}/start?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
+export function listOAuthAccounts(): Promise<OAuthAccounts> {
+  return apiRequest('/me/oauth-accounts');
+}
+
+export function unlinkOAuthAccount(provider: OAuthProviderName): Promise<{ unlinked: true; provider: OAuthProviderName }> {
+  return apiRequest(`/me/oauth-accounts/${provider}`, { method: 'DELETE' });
+}
+
+export function oauthAccountDeletionStartUrl(provider: OAuthProviderName): string {
+  const apiBaseUrl = (window.APP_CONFIG?.apiBaseUrl || '/api/v1').replace(/\/$/, '');
+  const returnTo = '/account?accountDeleted=1';
+  return `${apiBaseUrl}/me/account-deletion/oauth/${provider}/start?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
+export function deleteAccount(input: { confirmation: string; password: string }): Promise<{ deleted: true }> {
+  return apiRequest('/me', { method: 'DELETE', body: JSON.stringify(input) });
 }
 
 export async function login(input: { email: string; password: string }): Promise<AuthResponse> {

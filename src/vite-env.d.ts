@@ -1,9 +1,10 @@
 /// <reference types="vite/client" />
 
-type PortOneV1Response = {
-  imp_uid?: string;
-  merchant_uid?: string;
-  error_msg?: string;
+type TossPaymentWidgets = {
+  setAmount(input: { currency: 'KRW'; value: number }): Promise<void>;
+  renderPaymentMethods(input: { selector: string; variantKey: string }): Promise<void>;
+  renderAgreement(input: { selector: string; variantKey: string }): Promise<void>;
+  requestPayment(input: Record<string, unknown>): Promise<void>;
 };
 
 interface Window {
@@ -11,18 +12,14 @@ interface Window {
     apiBaseUrl?: string;
     oauthEnabled?: boolean;
     oauthProviders?: Array<'naver' | 'kakao' | 'google'>;
-    portoneV1?: {
-      userCode?: string;
-      channelKey?: string;
-      pgProvider?: string;
-      mid?: string;
+    tossPayments?: {
+      mode?: 'test' | 'live';
+      clientKey?: string;
+      paymentMethodVariantKey?: string;
+      agreementVariantKey?: string;
     };
   };
-  IMP?: {
-    init(userCode: string): void;
-    request_pay(
-      request: Record<string, unknown>,
-      callback: (response: PortOneV1Response) => void,
-    ): void;
+  TossPayments?: ((clientKey: string) => { widgets(input: { customerKey: string }): TossPaymentWidgets }) & {
+    ANONYMOUS?: string;
   };
 }

@@ -50,6 +50,18 @@ export class AccountMailService {
     });
   }
 
+  sendInquiryAnswered(input: { email: string; displayName: string; inquiryId: string }): Promise<MailDeliveryResult> {
+    const url = new URL("/board.html", this.config.publicAppUrl);
+    url.searchParams.set("type", "inquiry");
+    url.searchParams.set("id", input.inquiryId);
+    return this.send({
+      to: input.email,
+      subject: "[바둑타고] 1:1 문의에 답변이 등록되었습니다",
+      text: `${input.displayName}님, 접수하신 1:1 문의에 답변이 등록되었습니다.\n\n${url.toString()}\n\n로그인 후 본인 문의함에서 답변을 확인해 주세요.`,
+      html: `<p><strong>${escapeHtml(input.displayName)}</strong>님, 접수하신 1:1 문의에 답변이 등록되었습니다.</p><p><a href="${escapeHtml(url.toString())}">내 문의 답변 확인하기</a></p><p>로그인 후 본인 문의함에서 답변을 확인해 주세요.</p>`,
+    });
+  }
+
   async verifyConnection(): Promise<void> {
     if (!this.transporter || !this.config.smtpFrom) {
       throw new ApiError(

@@ -3,6 +3,13 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ApiClientError } from '../../lib/api-client';
 import { getLessonThumbnail, listEraLessons, listEras, listSubscriptionPlans } from './api';
 
+function queryErrorMessage(error: unknown): string {
+  if (error instanceof ApiClientError) {
+    return `${error.message}${error.requestId ? ` (요청 ID: ${error.requestId})` : ''}`;
+  }
+  return '네트워크 연결이 불안정합니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.';
+}
+
 function LessonThumbnail({ lessonId, title }: { lessonId: string; title: string }) {
   const thumbnailQuery = useQuery({
     queryKey: ['lesson-thumbnail', lessonId],
@@ -37,11 +44,13 @@ export function LessonsPage() {
     enabled: Boolean(selectedEraId),
     retry: false,
   });
-  const error = erasQuery.error instanceof ApiClientError
-    ? erasQuery.error
-    : lessonsQuery.error instanceof ApiClientError
-      ? lessonsQuery.error
-      : null;
+  const contentError = erasQuery.error ?? lessonsQuery.error;
+  const contentRetrying = erasQuery.isFetching || lessonsQuery.isFetching;
+
+  const retryContent = () => {
+    if (erasQuery.error) void erasQuery.refetch();
+    if (lessonsQuery.error) void lessonsQuery.refetch();
+  };
 
   return (
     <main className="catalog-page">
@@ -64,7 +73,25 @@ export function LessonsPage() {
         </section>
       ) : null}
 
-      {erasQuery.isLoading ? <p role="status">시대 목록을 불러오고 있습니다.</p> : null}
+      {plansQuery.error ? (
+        <section className="catalog-network-state catalog-network-state-secondary" role="status">
+          <div>
+            <strong>구독 플랜은 잠시 후 확인할 수 있습니다.</strong>
+            <p>강의 목록은 계속 이용할 수 있습니다.</p>
+          </div>
+          <button type="button" disabled={plansQuery.isFetching} onClick={() => void plansQuery.refetch()}>
+            {plansQuery.isFetching ? '플랜 확인 중…' : '플랜 다시 불러오기'}
+          </button>
+        </section>
+      ) : null}
+
+      {erasQuery.isLoading ? (
+        <section className="catalog-loading-state" role="status" aria-live="polite">
+          <strong>시대 목록을 불러오고 있습니다.</strong>
+          <p>제목과 기본 안내를 먼저 확인할 수 있습니다.</p>
+          <span aria-hidden="true" />
+        </section>
+      ) : null}
       {erasQuery.data ? (
         <nav className="era-tabs" aria-label="시대 선택">
           {erasQuery.data.map((era) => (
@@ -81,7 +108,13 @@ export function LessonsPage() {
         </nav>
       ) : null}
 
-      {lessonsQuery.isLoading ? <p role="status">강의를 불러오고 있습니다.</p> : null}
+      {lessonsQuery.isLoading ? (
+        <section className="catalog-loading-state" role="status" aria-live="polite">
+          <strong>강의를 불러오고 있습니다.</strong>
+          <p>느린 연결에서도 현재 시대 정보는 그대로 유지됩니다.</p>
+          <span aria-hidden="true" />
+        </section>
+      ) : null}
 
       {lessonsQuery.data ? (
         <section className="era-lessons" aria-labelledby="selected-era-title">
@@ -125,7 +158,17 @@ export function LessonsPage() {
         </section>
       ) : null}
 
-      {error ? <p className="auth-error" role="alert">{error.message}{error.requestId ? ` (요청 ID: ${error.requestId})` : ''}</p> : null}
+      {contentError ? (
+        <section className="catalog-network-state" role="alert">
+          <div>
+            <strong>강의 정보를 불러오지 못했습니다.</strong>
+            <p>{queryErrorMessage(contentError)}</p>
+          </div>
+          <button type="button" disabled={contentRetrying} onClick={retryContent}>
+            {contentRetrying ? '다시 연결 중…' : '강의 목록 다시 불러오기'}
+          </button>
+        </section>
+      ) : null}
     </main>
   );
 }

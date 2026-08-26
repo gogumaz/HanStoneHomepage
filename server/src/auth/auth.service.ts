@@ -2,8 +2,17 @@ import { HttpStatus, Injectable, Logger, Optional } from "@nestjs/common";
 import { loadAppConfig, type AppConfig } from "../config/app-config.js";
 import { ApiError } from "../common/api-error.js";
 import { PrismaService } from "../database/prisma.service.js";
-import { AccountStatus, AccountTokenPurpose, RoleType } from "../generated/prisma/enums.js";
+import {
+  AccountMailKind,
+  AccountStatus,
+  AccountTokenPurpose,
+  ConsentStatus,
+  GuardianLinkStatus,
+  OAuthAttemptPurpose,
+  RoleType,
+} from "../generated/prisma/enums.js";
 import { AccountMailService } from "../mail/account-mail.service.js";
+import { encryptAccountMailToken } from "../mail/account-mail-token-crypto.js";
 import {
   OAuthClient,
   OAuthComponentError,
@@ -37,6 +46,12 @@ type SignupInput = {
   displayName: string;
   role: RoleType;
 };
+
+type OAuthCompletion = (
+  | ({ mode: "login" } & AuthResult)
+  | { mode: "link" }
+  | { mode: "delete_account" }
+) & { returnTo: string };
 
 const PUBLIC_ROLES = new Map<string, RoleType>([
   ["student", RoleType.STUDENT],
@@ -119,6 +134,19 @@ function validatePasswordReset(body: unknown): { token: string; password: string
   return { token, password };
 }
 
+function validateAccountDeletion(body: unknown): { confirmation: string; password: string } {
+  const data = body && typeof body === "object" ? body as Record<string, unknown> : {};
+  const confirmation = readString(data.confirmation);
+  const password = typeof data.password === "string" ? data.password : "";
+  if (confirmation !== "회원탈퇴") {
+    throw new ApiError("ACCOUNT_DELETE_CONFIRMATION_REQUIRED", "확인 문구로 ‘회원탈퇴’를 입력해 주세요.", HttpStatus.BAD_REQUEST);
+  }
+  if (password.length > 128) {
+    throw new ApiError("INVALID_PASSWORD", "비밀번호를 확인해 주세요.", HttpStatus.BAD_REQUEST);
+  }
+  return { confirmation, password };
+}
+
 function isUniqueConstraintError(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
@@ -171,6 +199,7 @@ export class AuthService {
               purpose: AccountTokenPurpose.EMAIL_VERIFICATION,
               tokenHash: hashAccountToken(verificationToken),
               expiresAt: verificationExpiresAt,
+              ...this.accountMailJob(AccountMailKind.EMAIL_VERIFICATION, verificationToken, requestId),
             },
           });
           await transaction.auditLog.create({
@@ -192,16 +221,18 @@ export class AuthService {
       }
     })();
 
-    this.queueAccountMail(
-      "email_verification",
-      user.id,
-      requestId,
-      () => this.accountMail!.sendEmailVerification({
-        email: input.email,
-        displayName: input.displayName,
-        token: verificationToken,
-      }),
-    );
+    if (!this.config.accountMailEncryptionKeyBase64) {
+      this.queueAccountMail(
+        "email_verification",
+        user.id,
+        requestId,
+        () => this.accountMail!.sendEmailVerification({
+          email: input.email,
+          displayName: input.displayName,
+          token: verificationToken,
+        }),
+      );
+    }
 
     return {
       user: this.toCurrentUser(user),
@@ -238,6 +269,7 @@ export class AuthService {
             purpose: AccountTokenPurpose.PASSWORD_RESET,
             tokenHash: hashAccountToken(token),
             expiresAt: this.passwordResetExpiry(),
+            ...this.accountMailJob(AccountMailKind.PASSWORD_RESET, token, requestId),
           },
         });
         await transaction.auditLog.create({
@@ -250,16 +282,18 @@ export class AuthService {
           },
         });
       });
-      this.queueAccountMail(
-        "password_reset",
-        user.id,
-        requestId,
-        () => this.accountMail!.sendPasswordReset({
-          email,
-          displayName: user.displayName,
-          token,
-        }),
-      );
+      if (!this.config.accountMailEncryptionKeyBase64) {
+        this.queueAccountMail(
+          "password_reset",
+          user.id,
+          requestId,
+          () => this.accountMail!.sendPasswordReset({
+            email,
+            displayName: user.displayName,
+            token,
+          }),
+        );
+      }
     }
 
     return {
@@ -356,6 +390,7 @@ export class AuthService {
           purpose: AccountTokenPurpose.EMAIL_VERIFICATION,
           tokenHash: hashAccountToken(token),
           expiresAt: this.emailVerificationExpiry(),
+          ...this.accountMailJob(AccountMailKind.EMAIL_VERIFICATION, token, requestId),
         },
       });
       await transaction.auditLog.create({
@@ -369,16 +404,18 @@ export class AuthService {
       });
     });
 
-    this.queueAccountMail(
-      "email_verification",
-      account.id,
-      requestId,
-      () => this.accountMail!.sendEmailVerification({
-        email: account.email as string,
-        displayName: account.displayName,
-        token,
-      }),
-    );
+    if (!this.config.accountMailEncryptionKeyBase64) {
+      this.queueAccountMail(
+        "email_verification",
+        account.id,
+        requestId,
+        () => this.accountMail!.sendEmailVerification({
+          email: account.email as string,
+          displayName: account.displayName,
+          token,
+        }),
+      );
+    }
 
     return {
       accepted: true,
@@ -486,6 +523,54 @@ export class AuthService {
 
   async startOAuth(providerValue: string, returnToValue: unknown, requestId?: string): Promise<{ url: string }> {
     const provider = this.readOAuthProvider(providerValue);
+    return this.createOAuthAttempt(provider, returnToValue, OAuthAttemptPurpose.LOGIN, null, requestId);
+  }
+
+  async startOAuthLink(
+    user: CurrentUser,
+    providerValue: string,
+    returnToValue: unknown,
+    requestId?: string,
+  ): Promise<{ url: string }> {
+    const provider = this.readOAuthProvider(providerValue);
+    const existing = await this.prisma.oAuthAccount.findUnique({
+      where: { userId_provider: { userId: user.id, provider } },
+    });
+    if (existing) {
+      throw new ApiError("OAUTH_PROVIDER_ALREADY_LINKED", "이미 연결된 소셜 계정입니다.", HttpStatus.CONFLICT);
+    }
+    return this.createOAuthAttempt(provider, returnToValue, OAuthAttemptPurpose.LINK, user.id, requestId);
+  }
+
+  async startOAuthAccountDeletion(
+    user: CurrentUser,
+    providerValue: string,
+    returnToValue: unknown,
+    requestId?: string,
+  ): Promise<{ url: string }> {
+    const provider = this.readOAuthProvider(providerValue);
+    const linked = await this.prisma.oAuthAccount.findUnique({
+      where: { userId_provider: { userId: user.id, provider } },
+    });
+    if (!linked) {
+      throw new ApiError("OAUTH_ACCOUNT_NOT_LINKED", "연결된 소셜 계정을 찾을 수 없습니다.", HttpStatus.NOT_FOUND);
+    }
+    return this.createOAuthAttempt(
+      provider,
+      returnToValue,
+      OAuthAttemptPurpose.DELETE_ACCOUNT,
+      user.id,
+      requestId,
+    );
+  }
+
+  private async createOAuthAttempt(
+    provider: OAuthProviderName,
+    returnToValue: unknown,
+    purpose: OAuthAttemptPurpose,
+    userId: string | null,
+    requestId?: string,
+  ): Promise<{ url: string }> {
     const oauth = this.requireOAuthClient();
     const state = generateOAuthSecret();
     const nonce = generateOAuthSecret();
@@ -505,6 +590,8 @@ export class AuthService {
     const attempt = await this.prisma.oAuthLoginAttempt.create({
       data: {
         provider,
+        purpose,
+        userId,
         stateHash: hashOAuthSecret(state),
         nonce,
         codeVerifier,
@@ -514,11 +601,16 @@ export class AuthService {
     });
     await this.prisma.auditLog.create({
       data: {
-        action: "auth.oauth.started",
+        actorId: userId,
+        action: purpose === OAuthAttemptPurpose.LINK
+          ? "auth.oauth.link_started"
+          : purpose === OAuthAttemptPurpose.DELETE_ACCOUNT
+            ? "auth.account.delete_reauthentication_started"
+            : "auth.oauth.started",
         resourceType: "OAuthLoginAttempt",
         resourceId: attempt.id,
         requestId: requestId ?? null,
-        metadata: { provider, returnTo },
+        metadata: { provider, returnTo, purpose: purpose.toLowerCase() },
       },
     });
     return { url: authorizationUrl.toString() };
@@ -528,7 +620,7 @@ export class AuthService {
     providerValue: string,
     query: Record<string, unknown>,
     requestId?: string,
-  ): Promise<AuthResult & { returnTo: string }> {
+  ): Promise<OAuthCompletion> {
     const provider = this.readOAuthProvider(providerValue);
     const state = readString(query.state);
     const code = readString(query.code);
@@ -570,6 +662,20 @@ export class AuthService {
     } catch (error) {
       this.throwOAuthError(error);
     }
+    if (attempt.purpose === OAuthAttemptPurpose.DELETE_ACCOUNT) {
+      if (!attempt.userId) {
+        throw new ApiError("OAUTH_STATE_INVALID", "계정 탈퇴 인증 요청이 올바르지 않습니다.", HttpStatus.BAD_REQUEST);
+      }
+      await this.deleteAccountWithOAuth(attempt.userId, identity, requestId);
+      return { mode: "delete_account", returnTo: attempt.returnTo };
+    }
+    if (attempt.purpose === OAuthAttemptPurpose.LINK) {
+      if (!attempt.userId) {
+        throw new ApiError("OAUTH_STATE_INVALID", "소셜 계정 연결 요청이 올바르지 않습니다.", HttpStatus.BAD_REQUEST);
+      }
+      await this.linkOAuthIdentity(attempt.userId, identity, requestId);
+      return { mode: "link", returnTo: attempt.returnTo };
+    }
     const user = await this.resolveOAuthUser(identity, requestId);
     if (user.status !== AccountStatus.ACTIVE) {
       throw new ApiError("ACCOUNT_UNAVAILABLE", "현재 사용할 수 없는 계정입니다.", HttpStatus.FORBIDDEN);
@@ -591,7 +697,96 @@ export class AuthService {
         },
       }),
     ]);
-    return { user: this.toCurrentUser(user), sessionToken, expiresAt, returnTo: attempt.returnTo };
+    return { mode: "login", user: this.toCurrentUser(user), sessionToken, expiresAt, returnTo: attempt.returnTo };
+  }
+
+  async listOAuthAccounts(user: CurrentUser): Promise<{
+    items: Array<{ provider: OAuthProviderName; email: string | null; createdAt: Date }>;
+    hasPassword: boolean;
+  }> {
+    const [account, links] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: user.id }, select: { passwordHash: true } }),
+      this.prisma.oAuthAccount.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: "asc" },
+        select: { provider: true, email: true, createdAt: true },
+      }),
+    ]);
+    if (!account) throw new ApiError("ACCOUNT_UNAVAILABLE", "계정을 찾을 수 없습니다.", HttpStatus.NOT_FOUND);
+    return {
+      items: links.flatMap((link) => (
+        link.provider === "naver" || link.provider === "kakao" || link.provider === "google"
+          ? [{ provider: link.provider, email: link.email, createdAt: link.createdAt }]
+          : []
+      )),
+      hasPassword: Boolean(account.passwordHash),
+    };
+  }
+
+  async unlinkOAuthAccount(
+    user: CurrentUser,
+    providerValue: string,
+    requestId?: string,
+  ): Promise<{ unlinked: true; provider: OAuthProviderName }> {
+    const provider = this.readOAuthProvider(providerValue);
+    const [account, links] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: user.id }, select: { passwordHash: true, status: true } }),
+      this.prisma.oAuthAccount.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
+    ]);
+    if (!account || account.status !== AccountStatus.ACTIVE) {
+      throw new ApiError("ACCOUNT_UNAVAILABLE", "현재 사용할 수 없는 계정입니다.", HttpStatus.FORBIDDEN);
+    }
+    const linked = links.find((item) => item.provider === provider);
+    if (!linked) throw new ApiError("OAUTH_ACCOUNT_NOT_LINKED", "연결된 소셜 계정을 찾을 수 없습니다.", HttpStatus.NOT_FOUND);
+    if (!account.passwordHash && links.length <= 1) {
+      throw new ApiError(
+        "LAST_SIGN_IN_METHOD_REQUIRED",
+        "마지막 로그인 수단은 해제할 수 없습니다. 다른 소셜 계정을 먼저 연결해 주세요.",
+        HttpStatus.CONFLICT,
+      );
+    }
+    await this.prisma.$transaction([
+      this.prisma.oAuthAccount.delete({ where: { id: linked.id } }),
+      this.prisma.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: "auth.oauth.unlinked",
+          resourceType: "OAuthAccount",
+          resourceId: linked.id,
+          requestId: requestId ?? null,
+          metadata: { provider },
+        },
+      }),
+    ]);
+    return { unlinked: true, provider };
+  }
+
+  async deleteAccount(
+    user: CurrentUser,
+    body: unknown,
+    requestId?: string,
+  ): Promise<{ deleted: true }> {
+    const { password } = validateAccountDeletion(body);
+    const account = await this.prisma.user.findUnique({ where: { id: user.id } });
+    if (!account || account.status !== AccountStatus.ACTIVE) {
+      throw new ApiError("ACCOUNT_UNAVAILABLE", "현재 사용할 수 없는 계정입니다.", HttpStatus.FORBIDDEN);
+    }
+    if (!account.passwordHash) {
+      throw new ApiError(
+        "OAUTH_REAUTHENTICATION_REQUIRED",
+        "연결된 소셜 계정으로 다시 인증해 주세요.",
+        HttpStatus.CONFLICT,
+      );
+    }
+    if (!password || !(await verifyPassword(password, account.passwordHash))) {
+      throw new ApiError(
+        "ACCOUNT_DELETE_REAUTHENTICATION_FAILED",
+        "현재 비밀번호가 올바르지 않습니다.",
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    await this.anonymizeAccount(user.id, requestId, "password");
+    return { deleted: true };
   }
 
   async authenticate(sessionToken: string | null): Promise<CurrentUser> {
@@ -721,6 +916,145 @@ export class AuthService {
     });
   }
 
+  private async linkOAuthIdentity(userId: string, identity: OAuthIdentity, requestId?: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.status !== AccountStatus.ACTIVE) {
+      throw new ApiError("ACCOUNT_UNAVAILABLE", "현재 사용할 수 없는 계정입니다.", HttpStatus.FORBIDDEN);
+    }
+    const subjectLink = await this.prisma.oAuthAccount.findUnique({
+      where: {
+        provider_providerUserId: {
+          provider: identity.provider,
+          providerUserId: identity.subject,
+        },
+      },
+    });
+    if (subjectLink) {
+      if (subjectLink.userId === userId) return;
+      throw new ApiError(
+        "OAUTH_IDENTITY_ALREADY_LINKED",
+        "이 소셜 계정은 다른 계정에 연결되어 있습니다.",
+        HttpStatus.CONFLICT,
+      );
+    }
+    const providerLink = await this.prisma.oAuthAccount.findUnique({
+      where: { userId_provider: { userId, provider: identity.provider } },
+    });
+    if (providerLink) {
+      throw new ApiError("OAUTH_PROVIDER_ALREADY_LINKED", "이미 같은 공급자의 계정이 연결되어 있습니다.", HttpStatus.CONFLICT);
+    }
+    try {
+      await this.prisma.$transaction(async (transaction) => {
+        const created = await transaction.oAuthAccount.create({
+          data: {
+            userId,
+            provider: identity.provider,
+            providerUserId: identity.subject,
+            email: identity.email,
+          },
+        });
+        await transaction.auditLog.create({
+          data: {
+            actorId: userId,
+            action: "auth.oauth.linked",
+            resourceType: "OAuthAccount",
+            resourceId: created.id,
+            requestId: requestId ?? null,
+            metadata: { provider: identity.provider, emailVerified: identity.emailVerified },
+          },
+        });
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        throw new ApiError("OAUTH_LINK_CONFLICT", "소셜 계정 연결 상태가 변경되었습니다. 다시 확인해 주세요.", HttpStatus.CONFLICT);
+      }
+      throw error;
+    }
+  }
+
+  private async deleteAccountWithOAuth(
+    userId: string,
+    identity: OAuthIdentity,
+    requestId?: string,
+  ): Promise<void> {
+    const linked = await this.prisma.oAuthAccount.findUnique({
+      where: {
+        provider_providerUserId: {
+          provider: identity.provider,
+          providerUserId: identity.subject,
+        },
+      },
+    });
+    if (!linked || linked.userId !== userId) {
+      throw new ApiError(
+        "ACCOUNT_DELETE_REAUTHENTICATION_FAILED",
+        "현재 계정에 연결된 소셜 계정으로 다시 인증해 주세요.",
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    await this.anonymizeAccount(userId, requestId, identity.provider);
+  }
+
+  private async anonymizeAccount(
+    userId: string,
+    requestId: string | undefined,
+    reauthenticationMethod: "password" | OAuthProviderName,
+  ): Promise<void> {
+    const account = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!account || account.status !== AccountStatus.ACTIVE) {
+      throw new ApiError("ACCOUNT_UNAVAILABLE", "현재 사용할 수 없는 계정입니다.", HttpStatus.FORBIDDEN);
+    }
+    const now = new Date();
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.auditLog.create({
+        data: {
+          actorId: userId,
+          action: "auth.account.deleted",
+          resourceType: "User",
+          resourceId: userId,
+          requestId: requestId ?? null,
+          metadata: {
+            reauthenticationMethod,
+            personalData: "anonymized",
+            retainedRecords: ["payment", "refund", "audit"],
+          },
+        },
+      });
+      await transaction.guardianConsent.updateMany({
+        where: {
+          OR: [{ studentId: userId }, { guardianId: userId }],
+          status: ConsentStatus.ACTIVE,
+        },
+        data: { status: ConsentStatus.WITHDRAWN, withdrawnAt: now },
+      });
+      await transaction.guardianLink.updateMany({
+        where: {
+          OR: [{ studentId: userId }, { guardianId: userId }],
+          status: GuardianLinkStatus.ACTIVE,
+        },
+        data: { status: GuardianLinkStatus.REVOKED, revokedAt: now },
+      });
+      await transaction.guardianInvitation.deleteMany({ where: { studentId: userId } });
+      await transaction.lessonProgress.deleteMany({ where: { userId } });
+      await transaction.userRoleAssignment.deleteMany({ where: { userId } });
+      await transaction.accountToken.deleteMany({ where: { userId } });
+      await transaction.oAuthLoginAttempt.deleteMany({ where: { userId } });
+      await transaction.oAuthAccount.deleteMany({ where: { userId } });
+      await transaction.session.deleteMany({ where: { userId } });
+      await transaction.user.update({
+        where: { id: userId },
+        data: {
+          email: null,
+          displayName: "탈퇴 회원",
+          passwordHash: null,
+          emailVerifiedAt: null,
+          status: AccountStatus.DELETED,
+          deletedAt: now,
+        },
+      });
+    });
+  }
+
   private readOAuthProvider(value: string): OAuthProviderName {
     if (value === "naver" || value === "kakao" || value === "google") return value;
     throw new ApiError("OAUTH_PROVIDER_INVALID", "지원하지 않는 소셜 로그인 제공사입니다.", HttpStatus.NOT_FOUND);
@@ -753,6 +1087,20 @@ export class AuthService {
 
   private emailVerificationExpiry(): Date {
     return new Date(Date.now() + this.config.emailVerificationTtlHours * 60 * 60 * 1000);
+  }
+
+  private accountMailJob(kind: AccountMailKind, token: string, requestId?: string) {
+    const key = this.config.accountMailEncryptionKeyBase64;
+    if (!key) return {};
+    return {
+      mailJob: {
+        create: {
+          kind,
+          encryptedToken: encryptAccountMailToken(token, key),
+          requestId: requestId?.slice(0, 100) ?? null,
+        },
+      },
+    };
   }
 
   private queueAccountMail(

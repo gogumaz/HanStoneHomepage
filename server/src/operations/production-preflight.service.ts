@@ -1,7 +1,6 @@
 import { loadOAuthComponentOptions } from "../auth/oauth-options.js";
 import { ApiError } from "../common/api-error.js";
 import { PaymentComponentError } from "../components/payments/payment-provider.js";
-import { PortOneV1PaymentProvider } from "../components/payments/portone-v1.provider.js";
 import { loadAppConfig } from "../config/app-config.js";
 import { PrismaService } from "../database/prisma.service.js";
 import { AccountMailService } from "../mail/account-mail.service.js";
@@ -9,16 +8,19 @@ import { MalwareScannerService } from "../storage/malware-scanner.service.js";
 import { MediaDeliveryService } from "../storage/media-delivery.service.js";
 import { HlsTranscoderService } from "../content/hls-transcoder.service.js";
 import { ObjectStorageService } from "../storage/object-storage.service.js";
+import type { RateLimitStore } from "../common/rate-limit.store.js";
+import { loadReleaseIdentity } from "./release-identity.js";
 
 export type PreflightCheckName =
   | "configuration"
+  | "recoveryPolicy"
   | "database"
+  | "rateLimitStore"
   | "objectStorage"
   | "cdn"
   | "hlsTranscoder"
   | "malwareScanner"
-  | "smtp"
-  | "portone";
+  | "smtp";
 
 export type PreflightCheck = {
   name: PreflightCheckName;
@@ -32,6 +34,8 @@ export type ProductionPreflightReport = {
   checkedAt: string;
   checks: PreflightCheck[];
 };
+
+export const REQUIRED_PRODUCTION_MIGRATION = "20260824002300_account_mail_outbox";
 
 class ConfigurationError extends Error {
   constructor(readonly code: string) {
@@ -66,19 +70,30 @@ export class ProductionPreflightService {
     private readonly transcoder: HlsTranscoderService,
     private readonly scanner: MalwareScannerService,
     private readonly mail: AccountMailService,
+    private readonly rateLimitStore: RateLimitStore,
   ) {}
 
   async run(env: NodeJS.ProcessEnv = process.env): Promise<ProductionPreflightReport> {
     const config = loadAppConfig(env);
     const checks = await Promise.all([
       this.check("configuration", async () => {
+        loadReleaseIdentity(env);
         const oauth = loadOAuthComponentOptions(env);
         const configuredProviders = Object.keys(oauth.providers);
         const missingProviders = requiredOAuthProviders(env)
           .filter((provider) => !(provider in oauth.providers));
         if (missingProviders.length > 0) throw new ConfigurationError("OAUTH_PROVIDERS_MISSING");
-        if (!config.portoneV1ApiKey || !config.portoneV1ApiSecret) {
-          throw new ConfigurationError("PORTONE_NOT_CONFIGURED");
+        if (!config.tossPaymentsSecretKey) {
+          throw new ConfigurationError("TOSS_PAYMENTS_NOT_CONFIGURED");
+        }
+        if (!config.accountMailEncryptionKeyBase64) {
+          throw new ConfigurationError("ACCOUNT_MAIL_QUEUE_KEY_REQUIRED");
+        }
+        if (!config.operationsMetricsToken) {
+          throw new ConfigurationError("OPERATIONS_METRICS_TOKEN_REQUIRED");
+        }
+        if (!config.rateLimitRedisUrl) {
+          throw new ConfigurationError("RATE_LIMIT_REDIS_REQUIRED");
         }
         if (config.nodeEnv === "production" && new URL(config.publicAppUrl).protocol !== "https:") {
           throw new ConfigurationError("PUBLIC_APP_URL_HTTPS_REQUIRED");
@@ -91,12 +106,114 @@ export class ProductionPreflightService {
         if (!config.corsOrigins.includes(new URL(config.publicAppUrl).origin)) {
           throw new ConfigurationError("PUBLIC_APP_ORIGIN_NOT_ALLOWED_BY_CORS");
         }
-        return `oauth=${configuredProviders.sort().join(",") || "none"}; portone=configured`;
+        return `oauth=${configuredProviders.sort().join(",") || "none"}; tossPayments=configured`;
+      }),
+      this.check("recoveryPolicy", async () => {
+        if (!config.databasePitrEnabled) throw new ConfigurationError("DATABASE_PITR_REQUIRED");
+        if (config.backupRetentionDays < 30) throw new ConfigurationError("BACKUP_RETENTION_INSUFFICIENT");
+        if (!config.objectStorageVersioningEnabled) {
+          throw new ConfigurationError("OBJECT_STORAGE_VERSIONING_REQUIRED");
+        }
+        if (config.recoveryRpoMinutes > 15) throw new ConfigurationError("RECOVERY_RPO_TOO_HIGH");
+        if (config.recoveryRtoMinutes > 240) throw new ConfigurationError("RECOVERY_RTO_TOO_HIGH");
+        if (!config.recoveryDrillLastCompletedAt) throw new ConfigurationError("RECOVERY_DRILL_REQUIRED");
+        const drillAgeMs = Date.now() - Date.parse(config.recoveryDrillLastCompletedAt);
+        if (drillAgeMs < 0) throw new ConfigurationError("RECOVERY_DRILL_TIMESTAMP_INVALID");
+        if (drillAgeMs > config.recoveryDrillMaxAgeDays * 24 * 60 * 60 * 1_000) {
+          throw new ConfigurationError("RECOVERY_DRILL_EXPIRED");
+        }
+        return [
+          "databasePitr=declared",
+          `retentionDays=${config.backupRetentionDays}`,
+          "objectVersioning=declared",
+          `rpoMinutes=${config.recoveryRpoMinutes}`,
+          `rtoMinutes=${config.recoveryRtoMinutes}`,
+          `drillCompletedAt=${config.recoveryDrillLastCompletedAt}`,
+        ].join("; ");
       }),
       this.check("database", async () => {
-        await this.prisma.$queryRawUnsafe("SELECT 1");
-        await this.prisma.objectDeletionJob.count();
-        return "connection=ok; latestSchema=ok";
+        await this.prisma.$queryRaw`SELECT 1`;
+        const migrations = await this.prisma.$queryRaw<Array<{ migration_name: string }>>`
+          SELECT "migration_name"
+           FROM "_prisma_migrations"
+           WHERE "migration_name" = ${REQUIRED_PRODUCTION_MIGRATION}
+             AND "finished_at" IS NOT NULL
+             AND "rolled_back_at" IS NULL
+           LIMIT 1`;
+        if (migrations.length === 0) {
+          throw new ConfigurationError("DATABASE_MIGRATION_REQUIRED");
+        }
+        await Promise.all([
+          this.prisma.objectDeletionJob.count(),
+          this.prisma.oAuthLoginAttempt.findFirst({
+            select: { purpose: true, userId: true },
+          }),
+          this.prisma.badukMission.findFirst({
+            select: { rewardId: true, rewardQuantity: true },
+          }),
+          this.prisma.rewardGrant.findFirst({
+            select: { rewardTypeSnapshot: true, rewardTitleSnapshot: true },
+          }),
+          this.prisma.missionFavorite.findFirst({
+            select: { userId: true, missionId: true },
+          }),
+          this.prisma.consultation.findFirst({
+            select: { privacyConsentVersion: true, status: true },
+          }),
+          this.prisma.inquiry.findFirst({
+            select: { requesterUserId: true, status: true, answeredAt: true, answerVersion: true },
+          }),
+          this.prisma.inquiryNotificationJob.findFirst({
+            select: { inquiryId: true, answerVersion: true, status: true, nextAttemptAt: true },
+          }),
+          this.prisma.userNotification.findFirst({ select: { userId: true, kind: true, readAt: true } }),
+          this.prisma.inquiryAttachment.findFirst({
+            select: { ownerUserId: true, inquiryId: true, status: true, scannedAt: true },
+          }),
+          this.prisma.editorialContent.findFirst({
+            select: { type: true, status: true, publishedAt: true },
+          }),
+          this.prisma.communityPost.findFirst({
+            select: { type: true, authorUserId: true, status: true, publicationConsentVersion: true },
+          }),
+          this.prisma.communityPostReport.findFirst({
+            select: { postId: true, reporterUserId: true, reason: true, status: true, resolution: true },
+          }),
+          this.prisma.communityAttachment.findFirst({
+            select: { ownerUserId: true, postId: true, kind: true, status: true, scannedAt: true },
+          }),
+          this.prisma.teachingMaterial.findFirst({
+            select: { lessonId: true, accessLevel: true, status: true, publishedAt: true, revision: true },
+          }),
+          this.prisma.teachingMaterialAsset.findFirst({
+            select: { ownerUserId: true, materialId: true, status: true, scannedAt: true, detachedAt: true },
+          }),
+          this.prisma.teachingMaterialRevision.findFirst({ select: { materialId: true, revision: true, changedById: true } }),
+          this.prisma.classHelper.findFirst({
+            select: { lessonId: true, badukMissionId: true, status: true, publishedAt: true, revision: true },
+          }),
+          this.prisma.classHelperAsset.findFirst({
+            select: { ownerUserId: true, classHelperId: true, kind: true, status: true, scannedAt: true, detachedAt: true },
+          }),
+          this.prisma.classHelperRevision.findFirst({ select: { classHelperId: true, revision: true, changedById: true } }),
+          this.prisma.storeProduct.findFirst({
+            select: { active: true, price: true, requiresShipping: true, stockQuantity: true, sortOrder: true },
+          }),
+          this.prisma.storeOrder.findFirst({
+            select: {
+              userId: true, status: true, providerPaymentId: true, recipientName: true, postalCode: true,
+              inventoryReservedAt: true, inventoryReleasedAt: true,
+            },
+          }),
+          this.prisma.storeCartItem.findFirst({ select: { userId: true, productId: true, quantity: true } }),
+          this.prisma.accountMailJob.findFirst({ select: { tokenId: true, kind: true, status: true, nextAttemptAt: true } }),
+        ]);
+        return `connection=ok; migration=${REQUIRED_PRODUCTION_MIGRATION}; featureSchema=ok`;
+      }),
+      this.check("rateLimitStore", async () => {
+        const provider = await this.rateLimitStore.verifyConnection();
+        if (provider !== "redis") throw new ConfigurationError("RATE_LIMIT_REDIS_REQUIRED");
+        return "provider=redis; atomicIncrement=ok; expiry=ok; probeDeleted=true";
       }),
       this.check("objectStorage", async () => {
         await this.storage.verifyVideoStorageAccess();
@@ -123,14 +240,6 @@ export class ProductionPreflightService {
       this.check("smtp", async () => {
         await this.mail.verifyConnection();
         return "dns=tcp=tls=auth=ok; messageSent=false";
-      }),
-      this.check("portone", async () => {
-        const provider = new PortOneV1PaymentProvider({
-          apiKey: config.portoneV1ApiKey,
-          apiSecret: config.portoneV1ApiSecret,
-        });
-        await provider.verifyConnection(AbortSignal.timeout(10_000));
-        return "credentials=ok; paymentMutation=false";
       }),
     ]);
     return {

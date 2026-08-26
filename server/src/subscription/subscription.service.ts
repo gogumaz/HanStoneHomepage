@@ -22,7 +22,7 @@ const RECONCILIATION_DEFAULT_PAGE_SIZE = 50;
 const RECONCILIATION_MAX_PAGE_SIZE = 200;
 
 type CheckoutInput = { planId: string };
-type VerifyInput = { paymentId: string; orderId: string };
+type VerifyInput = { paymentId: string; orderId: string; amount: number };
 type WebhookInput = VerifyInput & { cancellationId: string | null };
 type ReconciliationStatus = "matched" | "attention";
 type ReconciliationFilters = {
@@ -156,22 +156,35 @@ function validateVerification(body: unknown): VerifyInput {
     throw new ApiError("INVALID_PAYMENT", "결제 확인 정보를 입력해 주세요.", HttpStatus.BAD_REQUEST);
   }
   const data = body as Record<string, unknown>;
-  const paymentId = readString(data.paymentId ?? data.impUid ?? data.imp_uid);
-  const orderId = readString(data.orderId ?? data.merchantUid ?? data.merchant_uid);
-  if (!paymentId || paymentId.length > 100 || !orderId || orderId.length > 80) {
+  const paymentId = readString(data.paymentKey ?? data.paymentId);
+  const orderId = readString(data.orderId);
+  const amount = Number(data.amount);
+  if (!paymentId || paymentId.length > 200 || !/^sub_[A-Za-z0-9_-]{1,76}$/.test(orderId)
+    || !Number.isInteger(amount) || amount < 1) {
     throw new ApiError("INVALID_PAYMENT", "결제 확인 정보가 올바르지 않습니다.", HttpStatus.BAD_REQUEST);
   }
-  return { paymentId, orderId };
+  return { paymentId, orderId, amount };
 }
 
-function validateWebhook(body: unknown): WebhookInput {
-  const input = validateVerification(body);
-  const data = body as Record<string, unknown>;
-  const cancellationId = readString(data.cancellationId ?? data.cancellation_id) || null;
-  if (cancellationId && cancellationId.length > 120) {
-    throw new ApiError("INVALID_PAYMENT", "웹훅 정보를 확인해 주세요.", HttpStatus.BAD_REQUEST);
+function validateWebhook(body: unknown): WebhookInput | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new ApiError("INVALID_PAYMENT", "토스페이먼츠 웹훅 정보를 확인해 주세요.", HttpStatus.BAD_REQUEST);
   }
-  return { ...input, cancellationId };
+  const envelope = body as Record<string, unknown>;
+  if (envelope.eventType !== "PAYMENT_STATUS_CHANGED") return null;
+  const data = envelope.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new ApiError("INVALID_PAYMENT", "토스페이먼츠 웹훅 정보를 확인해 주세요.", HttpStatus.BAD_REQUEST);
+  }
+  const record = data as Record<string, unknown>;
+  const paymentId = readString(record.paymentKey);
+  const orderId = readString(record.orderId);
+  const amount = Number(record.totalAmount ?? record.amount);
+  if (!paymentId || paymentId.length > 200 || !/^sub_[A-Za-z0-9_-]{1,76}$/.test(orderId)
+    || !Number.isInteger(amount) || amount < 1) {
+    throw new ApiError("INVALID_PAYMENT", "토스페이먼츠 웹훅 정보가 올바르지 않습니다.", HttpStatus.BAD_REQUEST);
+  }
+  return { paymentId, orderId, amount, cancellationId: null };
 }
 
 function validateRefund(body: unknown): { reason: string } {
@@ -291,7 +304,10 @@ export class SubscriptionService {
       throw new ApiError("ORDER_NOT_PAYABLE", "결제할 수 없는 주문입니다.", HttpStatus.CONFLICT);
     }
 
-    const payment = await this.getProviderPayment(input.paymentId);
+    if (input.amount !== order.amount) {
+      throw new ApiError("PAYMENT_AMOUNT_MISMATCH", "결제 금액이 주문 금액과 일치하지 않습니다.", HttpStatus.CONFLICT);
+    }
+    const payment = await this.confirmProviderPayment(input, requestId);
     if (payment.paymentId !== input.paymentId || payment.orderId !== order.id) {
       throw new ApiError("PAYMENT_ORDER_MISMATCH", "결제 주문번호가 일치하지 않습니다.", HttpStatus.CONFLICT);
     }
@@ -319,6 +335,7 @@ export class SubscriptionService {
 
   async syncWebhook(body: unknown, requestId?: string) {
     const input = validateWebhook(body);
+    if (!input) return { received: true, action: "ignored_event" };
     const order = await this.prisma.subscriptionOrder.findUnique({ where: { id: input.orderId } });
     if (!order) return { received: true, action: "ignored_unknown_order" };
 
@@ -342,7 +359,7 @@ export class SubscriptionService {
           subscription,
           payment,
           input.cancellationId,
-          "PortOne 웹훅 환불 동기화",
+          "토스페이먼츠 웹훅 환불 동기화",
           null,
           requestId,
         );
@@ -413,6 +430,7 @@ export class SubscriptionService {
         amount: cancelableAmount,
         checksum: cancelableAmount,
         reason,
+        idempotencyKey: `subscription-refund:${subscription.id}`,
       });
       this.assertRefundPayment(order, payment);
     }
@@ -440,11 +458,32 @@ export class SubscriptionService {
     }
   }
 
+  private async confirmProviderPayment(input: VerifyInput, requestId?: string): Promise<PaymentRecord> {
+    if (!this.paymentProvider.confirmPayment) {
+      throw new ApiError(
+        "PAYMENT_CONFIRMATION_NOT_SUPPORTED",
+        "토스페이먼츠 결제 승인을 사용할 수 없습니다.",
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    try {
+      return await this.paymentProvider.confirmPayment({
+        paymentId: input.paymentId,
+        orderId: input.orderId,
+        amount: input.amount,
+        ...(requestId ? { idempotencyKey: requestId } : {}),
+      });
+    } catch (error) {
+      this.throwPaymentProviderError(error);
+    }
+  }
+
   private async cancelProviderPayment(input: {
     paymentId: string;
     amount: number;
     checksum: number;
     reason: string;
+    idempotencyKey?: string;
   }): Promise<PaymentRecord> {
     try {
       return await this.paymentProvider.cancelPayment(input);
@@ -568,7 +607,7 @@ export class SubscriptionService {
     const isFullRefund = cumulativeAmount >= order.amount;
     const completedAt = payment.cancelledAt ?? new Date();
     const cancellationId = providerCancellationId
-      || `portone_${payment.paymentId}_${cumulativeAmount}`;
+      || `toss_${payment.paymentId}_${cumulativeAmount}`;
 
     return this.prisma.$transaction(async (transaction) => {
       await transaction.subscriptionOrder.update({
@@ -713,7 +752,7 @@ export class SubscriptionService {
       );
     }
     const header = [
-      "주문번호", "주문일시", "주문상태", "PortOne 결제번호", "결제수단",
+      "주문번호", "주문일시", "주문상태", "토스 결제키", "결제수단",
       "회원번호", "회원명", "회원이메일", "상품명", "결제금액", "환불금액",
       "구독상태", "구독시작", "구독종료", "대사상태", "확인항목",
     ];
@@ -896,19 +935,19 @@ export class SubscriptionService {
       ? readString((body as Record<string, unknown>).paymentId)
       : "";
     if (requestedPaymentId.length > 100) {
-      throw new ApiError("INVALID_PAYMENT", "PortOne 결제번호를 확인해 주세요.", HttpStatus.BAD_REQUEST);
+      throw new ApiError("INVALID_PAYMENT", "토스 결제키를 확인해 주세요.", HttpStatus.BAD_REQUEST);
     }
     const paymentId = order.providerPaymentId || requestedPaymentId;
     if (!paymentId) {
       throw new ApiError(
         "PAYMENT_ID_REQUIRED",
-        "PortOne 결제번호를 입력해야 대사를 실행할 수 있습니다.",
+        "토스 결제키를 입력해야 대사를 실행할 수 있습니다.",
         HttpStatus.CONFLICT,
       );
     }
     const result = await this.syncWebhook({
-      paymentId,
-      orderId: order.id,
+      eventType: "PAYMENT_STATUS_CHANGED",
+      data: { paymentKey: paymentId, orderId: order.id, totalAmount: order.amount },
     }, requestId);
     await this.prisma.auditLog.create({
       data: {

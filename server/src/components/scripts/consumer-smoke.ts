@@ -45,10 +45,9 @@ const paymentProvider: PaymentProvider = {
 };
 
 const paymentModule = PaymentComponentModule.register({
-  provider: "portone-v1",
-  portoneV1: {
-    apiKey: null,
-    apiSecret: null,
+  provider: "toss-payments",
+  tossPayments: {
+    secretKey: null,
   },
 });
 

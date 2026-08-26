@@ -85,7 +85,7 @@ function createStore() {
         .slice(0, take ?? orders.length)),
       create: vi.fn(async ({ data }: Value) => {
         const order = {
-          provider: "portone-v1", providerPaymentId: null, paymentMethod: null,
+          provider: "toss-payments", providerPaymentId: null, paymentMethod: null,
           paidAt: null, status: SubscriptionOrderStatus.PENDING,
           refundedAmount: 0, refundedAt: null,
           createdAt: new Date(), updatedAt: new Date(), ...data,
@@ -170,12 +170,26 @@ describe("subscription checkout HTTP API", () => {
     cancelledAt: null as Date | null,
   };
   const provider = {
+    confirmPayment: vi.fn(async ({ paymentId, orderId }: { paymentId: string; orderId: string }) => {
+      const order = store.orders.find((item) => item.id === orderId);
+      return {
+        provider: "toss-payments",
+        paymentId,
+        orderId,
+        amount: paymentId === "pay_wrong_amount" ? 1 : order?.amount ?? 0,
+        method: "card",
+        paidAt: new Date(Date.now() - 60_000),
+        status: providerState.status,
+        cancelAmount: providerState.cancelAmount,
+        cancelledAt: providerState.cancelledAt,
+      };
+    }),
     getPayment: vi.fn(async (paymentId: string) => {
       const order = store.orders.at(-1);
       return {
         paymentId,
         orderId: order?.id ?? "missing",
-        amount: paymentId === "imp_wrong_amount" ? 1 : order?.amount ?? 0,
+        amount: paymentId === "pay_wrong_amount" ? 1 : order?.amount ?? 0,
         method: "card",
         paidAt: new Date(Date.now() - 60_000),
         status: providerState.status,
@@ -240,9 +254,9 @@ describe("subscription checkout HTTP API", () => {
   });
 
   it("rejects a mismatched provider amount without issuing a subscription", async () => {
-    const response = await fetch(`${baseUrl}/api/v1/payments/portone/verify`, {
+    const response = await fetch(`${baseUrl}/api/v1/payments/toss/subscriptions/confirm`, {
       method: "POST", headers: cookie,
-      body: JSON.stringify({ paymentId: "imp_wrong_amount", orderId: store.orders[0]?.id }),
+      body: JSON.stringify({ paymentKey: "pay_wrong_amount", orderId: store.orders[0]?.id, amount: 50000 }),
     });
     const body = await response.json() as { error: { code: string } };
     expect(response.status).toBe(409);
@@ -250,11 +264,11 @@ describe("subscription checkout HTTP API", () => {
     expect(store.subscriptions).toHaveLength(0);
   });
 
-  it("issues one subscription for a paid PortOne payment and returns history", async () => {
+  it("issues one subscription for a paid Toss payment and returns history", async () => {
     const orderId = store.orders[0]?.id;
-    const verify = () => fetch(`${baseUrl}/api/v1/payments/portone/verify`, {
+    const verify = () => fetch(`${baseUrl}/api/v1/payments/toss/subscriptions/confirm`, {
       method: "POST", headers: cookie,
-      body: JSON.stringify({ paymentId: "imp_paid_1", orderId }),
+      body: JSON.stringify({ paymentKey: "pay_paid_1", orderId, amount: 50000 }),
     });
     const first = await verify();
     const firstBody = await first.json() as { data: { subscription: { endsAt: string } } };
@@ -272,7 +286,7 @@ describe("subscription checkout HTTP API", () => {
 
     const orders = await fetch(`${baseUrl}/api/v1/me/orders`, { headers: cookie });
     const ordersBody = await orders.json() as { data: { items: Array<{ status: string; paymentId: string }> } };
-    expect(ordersBody.data.items[0]).toMatchObject({ status: "paid", paymentId: "imp_paid_1" });
+    expect(ordersBody.data.items[0]).toMatchObject({ status: "paid", paymentId: "pay_paid_1" });
 
     const duplicateCheckout = await fetch(`${baseUrl}/api/v1/orders/checkout`, {
       method: "POST", headers: cookie,
@@ -285,7 +299,7 @@ describe("subscription checkout HTTP API", () => {
     expect(duplicateBody.error.code).toBe("ACTIVE_SUBSCRIPTION_EXISTS");
   });
 
-  it("allows only operators to inspect mismatches and re-query PortOne", async () => {
+  it("allows only operators to inspect mismatches and re-query Toss Payments", async () => {
     const forbidden = await fetch(`${baseUrl}/api/v1/admin/payments/reconciliation`, { headers: cookie });
     expect(forbidden.status).toBe(403);
     const forbiddenCsv = await fetch(`${baseUrl}/api/v1/admin/payments/reconciliation.csv`, { headers: cookie });
@@ -309,7 +323,7 @@ describe("subscription checkout HTTP API", () => {
       planLabelSnapshot: "1개월",
       monthsSnapshot: 1,
       status: SubscriptionOrderStatus.PENDING,
-      provider: "portone-v1",
+      provider: "toss-payments",
       providerPaymentId: null,
       paymentMethod: null,
       paidAt: null,
@@ -412,11 +426,11 @@ describe("subscription checkout HTTP API", () => {
     const manualSync = await fetch(`${baseUrl}/api/v1/admin/orders/sub_expired_pending/reconcile`, {
       method: "POST",
       headers: operatorCookie,
-      body: JSON.stringify({ paymentId: "imp_manual_failed" }),
+      body: JSON.stringify({ paymentId: "pay_manual_failed" }),
     });
     const manualSyncBody = await manualSync.json() as { data: { action: string; paymentId: string } };
     expect(manualSync.status).toBe(201);
-    expect(manualSyncBody.data).toMatchObject({ action: "payment_failed", paymentId: "imp_manual_failed" });
+    expect(manualSyncBody.data).toMatchObject({ action: "payment_failed", paymentId: "pay_manual_failed" });
     expect(store.orders.at(-1)?.status).toBe(SubscriptionOrderStatus.FAILED);
     store.orders.pop();
   });
@@ -425,15 +439,12 @@ describe("subscription checkout HTTP API", () => {
     providerState.status = "paid";
     providerState.cancelAmount = 10000;
     providerState.cancelledAt = new Date();
-    const webhook = () => fetch(`${baseUrl}/api/v1/payments/portone/webhook`, {
+    const webhook = () => fetch(`${baseUrl}/api/v1/payments/toss/subscriptions/webhook`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        imp_uid: "imp_paid_1",
-        merchant_uid: store.orders[0]?.id,
-        status: "cancelled",
-        cancellation_id: "cancel_partial_1",
-      }),
+      body: JSON.stringify({ eventType: "PAYMENT_STATUS_CHANGED", data: {
+        paymentKey: "pay_paid_1", orderId: store.orders[0]?.id, totalAmount: 50000, status: "PARTIAL_CANCELED",
+      } }),
     });
     const first = await webhook();
     const firstBody = await first.json() as { data: { action: string } };
@@ -501,20 +512,18 @@ describe("subscription checkout HTTP API", () => {
       }),
     });
     const sendWebhook = (paymentId: string, orderId: string, status: string) =>
-      fetch(`${baseUrl}/api/v1/payments/portone/webhook`, {
+      fetch(`${baseUrl}/api/v1/payments/toss/subscriptions/webhook`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        imp_uid: paymentId,
-        merchant_uid: orderId,
-        status,
-      }),
+      body: JSON.stringify({ eventType: "PAYMENT_STATUS_CHANGED", data: {
+        paymentKey: paymentId, orderId, totalAmount: 10000, status,
+      } }),
     });
 
     providerState.status = "failed";
     const failedCheckout = await createCheckout();
     const failedOrder = await failedCheckout.json() as { data: { orderId: string } };
-    const failed = await sendWebhook("imp_webhook_failed", failedOrder.data.orderId, "failed");
+    const failed = await sendWebhook("pay_webhook_failed", failedOrder.data.orderId, "ABORTED");
     const failedBody = await failed.json() as { data: { action: string } };
     expect(failedBody.data.action).toBe("payment_failed");
     expect(store.orders.at(-1)?.status).toBe(SubscriptionOrderStatus.FAILED);
@@ -522,16 +531,16 @@ describe("subscription checkout HTTP API", () => {
     providerState.status = "paid";
     const checkout = await createCheckout();
     const checkoutBody = await checkout.json() as { data: { orderId: string } };
-    const first = await sendWebhook("imp_webhook_paid", checkoutBody.data.orderId, "paid");
+    const first = await sendWebhook("pay_webhook_paid", checkoutBody.data.orderId, "DONE");
     const firstBody = await first.json() as { data: { action: string } };
-    const second = await sendWebhook("imp_webhook_paid", checkoutBody.data.orderId, "paid");
+    const second = await sendWebhook("pay_webhook_paid", checkoutBody.data.orderId, "DONE");
     expect(first.status).toBe(200);
     expect(firstBody.data.action).toBe("payment_confirmed");
     expect(second.status).toBe(200);
     expect(store.subscriptions).toHaveLength(2);
     expect(store.subscriptions[1]).toMatchObject({
       orderId: checkoutBody.data.orderId,
-      paymentId: "imp_webhook_paid",
+      paymentId: "pay_webhook_paid",
       paymentStatus: SubscriptionPaymentStatus.PAID,
     });
   });

@@ -2,24 +2,32 @@ import { copyFile, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
+import {
+  viteDevelopmentSecurityHeaders,
+  webSecurityHeaders,
+} from './src/security/web-security-headers.ts';
 
 const projectRoot = import.meta.dirname;
 const legacyScripts = [
   ['config.js', 'config.js'],
-  ['script.js', 'script.js'],
-  ['lecture.js', 'lecture.js'],
   ['board.js', 'board.js'],
-  ['payment/result.js', 'payment/result.js']
 ] as const;
+
+// These classic runtime scripts are marked `vite-ignore` in HTML and copied as-is.
+// In particular, config.js must remain replaceable after the application bundle is built.
 
 export default defineConfig({
   server: {
+    headers: viteDevelopmentSecurityHeaders,
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
     },
+  },
+  preview: {
+    headers: webSecurityHeaders,
   },
   plugins: [
     react(),
@@ -28,14 +36,14 @@ export default defineConfig({
       configureServer(server) {
         server.middlewares.use((request, _response, next) => {
           const path = request.url?.split('?', 1)[0] ?? '';
-          if (['/account', '/guardian', '/lessons', '/subscriptions', '/dashboard'].includes(path) || path.startsWith('/lessons/') || path.startsWith('/admin/')) request.url = '/app.html';
+          if (['/account', '/guardian', '/lessons', '/subscriptions', '/dashboard', '/missions', '/notifications'].includes(path) || path.startsWith('/lessons/') || path.startsWith('/admin/')) request.url = '/app.html';
           next();
         });
       },
       configurePreviewServer(server) {
         server.middlewares.use((request, _response, next) => {
           const path = request.url?.split('?', 1)[0] ?? '';
-          if (['/account', '/guardian', '/lessons', '/subscriptions', '/dashboard'].includes(path) || path.startsWith('/lessons/') || path.startsWith('/admin/')) request.url = '/app.html';
+          if (['/account', '/guardian', '/lessons', '/subscriptions', '/dashboard', '/missions', '/notifications'].includes(path) || path.startsWith('/lessons/') || path.startsWith('/admin/')) request.url = '/app.html';
           next();
         });
       },
@@ -54,6 +62,7 @@ export default defineConfig({
     }
   ],
   build: {
+    sourcemap: false,
     rollupOptions: {
       input: {
         home: resolve(projectRoot, 'index.html'),

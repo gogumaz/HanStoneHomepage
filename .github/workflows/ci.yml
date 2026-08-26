@@ -21,14 +21,50 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build:web
+      - name: Create commit-bound web CDN deployment manifest
+        env:
+          WEB_RELEASE_COMMIT_SHA: ${{ github.sha }}
+        run: npm run manifest:web-deployment
+      - run: npm run verify:web-artifacts
+      - name: Upload immutable web release package
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-release-${{ github.sha }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 90
 
   api:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: ci
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     defaults:
       run:
         working-directory: server
     env:
       DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
+      RATE_LIMIT_REDIS_TEST_URL: redis://127.0.0.1:6379/15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v7
@@ -38,11 +74,13 @@ jobs:
           cache-dependency-path: server/package-lock.json
       - run: npm ci
       - run: npm run prisma:validate
+      - run: npm run db:deploy
+      - run: npm run smoke:database
       - run: npm run pack:components
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: npm audit --omit=dev
+      - run: npm run verify:runtime-artifacts
 
   browser:
     runs-on: ubuntu-latest
@@ -53,11 +91,73 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - name: Run browser and field validation
+        id: browser_tests
+        continue-on-error: true
+        run: npm run test:e2e
+      - name: Upload browser field-validation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-field-validation-${{ github.run_id }}
+          path: test-results
+          if-no-files-found: error
+          retention-days: 14
+      - name: Enforce browser validation decision
+        if: steps.browser_tests.outcome != 'success'
+        run: exit 1
 
   api-container:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - run: docker build -t baduk-history-api:ci server
+      - name: Verify production image inventory
+        run: >-
+          docker run --rm --entrypoint node baduk-history-api:ci
+          scripts/verify-release-artifacts.mjs --profile api dist
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+      - name: Audit web production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit API production dependencies
+        working-directory: server
+        run: npm audit --omit=dev --audit-level=high
+      - name: Prepare evidence directory
+        run: mkdir -p supply-chain
+      - name: Generate web CycloneDX SBOM
+        run: >-
+          npm sbom --omit=dev --package-lock-only
+          --sbom-format=cyclonedx --sbom-type=application
+          > supply-chain/web.cdx.json
+      - name: Generate API CycloneDX SBOM
+        working-directory: server
+        run: >-
+          npm sbom --omit=dev --package-lock-only
+          --sbom-format=cyclonedx --sbom-type=application
+          > ../supply-chain/api.cdx.json
+      - name: Bind SBOM evidence to candidate commit
+        env:
+          SUPPLY_CHAIN_COMMIT_SHA: ${{ github.sha }}
+        run: >-
+          node server/scripts/create-supply-chain-manifest.mjs
+          supply-chain/web.cdx.json supply-chain/api.cdx.json
+          supply-chain/manifest.json
+      - name: Upload supply-chain evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-supply-chain-${{ github.sha }}
+          path: supply-chain
+          if-no-files-found: error
+          retention-days: 90

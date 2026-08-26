@@ -70,23 +70,34 @@ const identity = await this.oauth.exchangeCode("google", {
 
 ## 결제 컴포넌트
 
-공개 진입점은 `payments/index.ts`입니다. 애플리케이션은 `PAYMENT_PROVIDER` 토큰과 `PaymentProvider` 계약에만 의존하며 현재 어댑터는 PortOne V1입니다.
-
-```ts
-PaymentComponentModule.register({
-  provider: "portone-v1",
-  portoneV1: {
-    apiKey: process.env.PORTONE_V1_REST_API_KEY ?? null,
-    apiSecret: process.env.PORTONE_V1_REST_API_SECRET ?? null,
-  },
-})
-```
+공개 진입점은 `payments/index.ts`입니다. 애플리케이션은 `PAYMENT_PROVIDER` 토큰과 `PaymentProvider` 계약에만 의존하며 토스페이먼츠 Core API 어댑터를 사용합니다.
 
 ```ts
 constructor(@Inject(PAYMENT_PROVIDER) private readonly payments: PaymentProvider) {}
 
 const payment = await this.payments.getPayment(paymentId);
 await this.payments.cancelPayment({ paymentId, amount, checksum, reason });
+```
+
+토스페이먼츠 결제위젯을 직접 사용하는 앱은 서버 전용 Secret Key로 직접 어댑터를 등록합니다. 브라우저 인증 결과의 `paymentKey`, 서버 주문번호와 서버 금액을 `confirmPayment`에 전달하며 같은 요청을 재시도할 때는 같은 멱등키를 사용합니다.
+
+```ts
+PaymentComponentModule.register({
+  provider: "toss-payments",
+  tossPayments: {
+    secretKey: process.env.TOSS_PAYMENTS_SECRET_KEY ?? null,
+  },
+})
+```
+
+```ts
+if (!this.payments.confirmPayment) throw new Error("Payment confirmation is not supported.");
+const payment = await this.payments.confirmPayment({
+  paymentId: paymentKey,
+  orderId,
+  amount: serverAmount,
+  idempotencyKey: requestId,
+});
 ```
 
 주문 가격, 멱등 처리, 구독 발급, 권한 회수와 감사 정책은 사용하는 애플리케이션이 담당합니다. 다른 결제사를 추가할 때는 `PaymentProvider`만 구현하고 모듈 팩터리에 등록합니다.
