@@ -21,6 +21,7 @@
     "test:api": "npm --prefix server test",
     "test:e2e": "playwright test",
     "test:e2e:field": "playwright test e2e/field-validation.spec.ts",
+    "test:e2e:responsive": "playwright test e2e/responsive-validation.spec.ts --project=chromium",
     "typecheck": "tsc -b --pretty false",
     "typecheck:api": "npm --prefix server run typecheck",
     "ci": "npm run typecheck && npm test && npm run build:web && npm run verify:web-artifacts && npm run pack:components && npm run typecheck:api && npm run test:api && npm run build:api && npm --prefix server run verify:runtime-artifacts"
