@@ -35,8 +35,10 @@ hanstone-hosting-{커밋 앞 12자리}.tgz.sha256
 ```
 
 같은 커밋에서 명령을 다시 실행하면 기존 기본 번들의 체크섬과 내부 매니페스트를 검증한 뒤
-`"reused":true`로 성공합니다. 파일이 손상됐거나 TGZ와 체크섬 중 하나만 남아 있으면 안전을
-위해 `HOSTING_BUNDLE_EXISTING_INVALID`로 중단합니다.
+`"reused":true`로 성공합니다. 웹 매니페스트를 다시 만들어 생성 시각만 달라진 경우에도
+커밋·파일 해시·크기·Content-Type·Cache-Control이 모두 같으면 기존 번들을 재사용합니다.
+파일이 손상됐거나 TGZ와 체크섬 중 하나만 남아 있으면 안전을 위해
+`HOSTING_BUNDLE_EXISTING_INVALID`로 중단합니다.
 
 패키지 이름을 지정하려면 `artifacts/` 아래의 새 `.tgz` 경로만 사용할 수 있습니다.
 

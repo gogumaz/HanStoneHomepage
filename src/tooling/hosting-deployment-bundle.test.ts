@@ -121,10 +121,14 @@ describe('hosting deployment bundle', () => {
     expect(JSON.parse(result.stderr)).toEqual({ ok: false, errorType: 'HOSTING_BUNDLE_GIT_DIRTY' });
   });
 
-  it('reuses an intact default bundle for the same commit', async () => {
+  it('reuses an intact default bundle when only the web manifest generation time changed', async () => {
     const { root, commitSha } = await fixture();
     const created = run(process.execPath, [script, '--project-root', root], root);
     expect(created.status).toBe(0);
+    const webManifestPath = resolve(root, 'dist', 'web-deployment-manifest.json');
+    const regeneratedManifest = JSON.parse(await readFile(webManifestPath, 'utf8'));
+    regeneratedManifest.generatedAt = new Date(Date.parse(regeneratedManifest.generatedAt) + 1_000).toISOString();
+    await writeFile(webManifestPath, `${JSON.stringify(regeneratedManifest, null, 2)}\n`, 'utf8');
 
     const result = run(process.execPath, [script, '--project-root', root], root);
     expect(result.stderr).toBe('');

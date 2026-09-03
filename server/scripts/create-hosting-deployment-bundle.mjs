@@ -232,6 +232,7 @@ async function verifyWebRelease(projectRoot, commitSha) {
   return {
     webRoot,
     manifestPath,
+    manifest,
     manifestSha256: await sha256File(manifestPath),
     files: paths,
   };
@@ -260,21 +261,36 @@ async function reuseExistingBundle(projectRoot, output, checksumOutput, commitSh
     ) fail("HOSTING_BUNDLE_EXISTING_INVALID");
 
     let manifest;
+    let bundledWebManifestSource;
+    let bundledWebManifest;
     try {
       manifest = JSON.parse(run(
         "tar",
         ["-xOzf", output, "hanstone-hosting/DEPLOYMENT_BUNDLE_MANIFEST.json"],
         projectRoot,
       ));
+      bundledWebManifestSource = run(
+        "tar",
+        ["-xOzf", output, "hanstone-hosting/web/web-deployment-manifest.json"],
+        projectRoot,
+      );
+      bundledWebManifest = JSON.parse(bundledWebManifestSource);
     } catch {
       fail("HOSTING_BUNDLE_EXISTING_INVALID");
     }
+    validateWebManifestShape(bundledWebManifest, commitSha);
+    const bundledWebManifestSha256 = createHash("sha256")
+      .update(`${bundledWebManifestSource}\n`)
+      .digest("hex");
+    const { generatedAt: _currentGeneratedAt, ...currentWebManifest } = webRelease.manifest;
+    const { generatedAt: _bundledGeneratedAt, ...bundledWebManifestContents } = bundledWebManifest;
     if (
       manifest?.schemaVersion !== 1
       || manifest?.kind !== "hanstone-hosting-deployment-bundle"
       || manifest?.ok !== true
       || manifest?.commitSha !== commitSha
-      || manifest?.webDeploymentManifestSha256 !== webRelease.manifestSha256
+      || manifest?.webDeploymentManifestSha256 !== bundledWebManifestSha256
+      || JSON.stringify(currentWebManifest) !== JSON.stringify(bundledWebManifestContents)
       || manifest?.containsSecrets !== false
       || !Array.isArray(manifest?.files)
       || !Number.isInteger(manifest?.totals?.files)
@@ -289,7 +305,7 @@ async function reuseExistingBundle(projectRoot, output, checksumOutput, commitSh
       output: normalizedRelative(projectRoot, output),
       checksumOutput: normalizedRelative(projectRoot, checksumOutput),
       archiveSha256,
-      webDeploymentManifestSha256: webRelease.manifestSha256,
+      webDeploymentManifestSha256: bundledWebManifestSha256,
       fileCount: manifest.totals.files,
       totalBytes: manifest.totals.bytes,
     })}\n`);
