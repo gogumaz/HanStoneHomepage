@@ -1,0 +1,162 @@
+name: Rollback rehearsal verification
+run-name: Rollback rehearsal · ${{ inputs.drill_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type AUTHORIZE_ISOLATED_ROLLBACK_REHEARSAL after deploying the previous release to the drill environment
+        required: true
+        type: string
+      drill_id:
+        description: Immutable rehearsal identifier
+        required: true
+        type: string
+      candidate_commit_sha:
+        description: Current accepted candidate commit SHA containing the verification tooling
+        required: true
+        type: string
+      current_release_id:
+        description: Current accepted release identifier
+        required: true
+        type: string
+      current_acceptance_run_id:
+        description: Successful current release acceptance run ID
+        required: true
+        type: string
+      target_release_id:
+        description: Previous successful release identifier restored in the drill environment
+        required: true
+        type: string
+      target_closeout_run_id:
+        description: Previous successful release closeout run ID
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: rollback-rehearsal-${{ inputs.drill_id }}
+  cancel-in-progress: false
+
+jobs:
+  verify-rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+    env:
+      DEPLOY_VERIFY_BASE_URL: ${{ secrets.ROLLBACK_DRILL_API_BASE_URL }}
+      DEPLOY_VERIFY_WEB_BASE_URL: ${{ secrets.ROLLBACK_DRILL_WEB_BASE_URL }}
+      OPERATIONS_METRICS_TOKEN: ${{ secrets.ROLLBACK_DRILL_OPERATIONS_METRICS_TOKEN }}
+      DEPLOY_VERIFY_RELEASE_ID: ${{ inputs.target_release_id }}
+      DEPLOY_VERIFY_REQUIRE_NON_PRODUCTION: "true"
+      DEPLOY_VERIFY_SAMPLES: "3"
+      DEPLOY_VERIFY_INTERVAL_MS: "2000"
+      DEPLOY_VERIFY_TIMEOUT_MS: "5000"
+      DEPLOY_VERIFY_MAX_P95_MS: "1000"
+    steps:
+      - name: Validate immutable rehearsal inputs
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          [[ "${{ inputs.confirmation }}" == "AUTHORIZE_ISOLATED_ROLLBACK_REHEARSAL" ]]
+          [[ "${{ inputs.drill_id }}" =~ ^[A-Za-z0-9._-]{1,80}$ ]]
+          [[ "${{ inputs.candidate_commit_sha }}" =~ ^[a-f0-9]{40}$ ]]
+          [[ "${{ inputs.current_release_id }}" =~ ^[A-Za-z0-9._-]{1,80}$ ]]
+          [[ "${{ inputs.target_release_id }}" =~ ^[A-Za-z0-9._-]{1,80}$ ]]
+          [[ "${{ inputs.current_acceptance_run_id }}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${{ inputs.target_closeout_run_id }}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${{ inputs.current_release_id }}" != "${{ inputs.target_release_id }}" ]]
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.candidate_commit_sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+      - name: Download current acceptance evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: release-acceptance-${{ inputs.current_release_id }}-${{ inputs.current_acceptance_run_id }}
+          path: evidence/current
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.current_acceptance_run_id }}
+
+      - name: Download previous closeout evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: release-closeout-${{ inputs.target_release_id }}-${{ inputs.target_closeout_run_id }}
+          path: evidence/target
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.target_closeout_run_id }}
+
+      - name: Verify rehearsal artifact identities
+        id: artifact_identity
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$GITHUB_WORKSPACE/evidence/current/release-acceptance.json"
+          target="$GITHUB_WORKSPACE/evidence/target/release-closeout.json"
+          jq -e --arg releaseId "${{ inputs.current_release_id }}" --arg commit "${{ inputs.candidate_commit_sha }}" \
+            '.ok == true and .releaseId == $releaseId and .commitSha == $commit' "$current" > /dev/null
+          jq -e --arg releaseId "${{ inputs.target_release_id }}" \
+            '.ok == true and .releaseId == $releaseId' "$target" > /dev/null
+          target_commit="$(jq -er '.commitSha' "$target")"
+          target_digest="$(jq -er '.imageDigest' "$target")"
+          target_web_hash="$(jq -er '.webDeploymentManifestSha256' "$target")"
+          [[ "$target_commit" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$target_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          [[ "$target_web_hash" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$target_commit" != "${{ inputs.candidate_commit_sha }}" ]]
+          printf 'DEPLOY_VERIFY_EXPECTED_COMMIT_SHA=%s\n' "$target_commit" >> "$GITHUB_ENV"
+          printf 'DEPLOY_VERIFY_EXPECTED_IMAGE_DIGEST=%s\n' "$target_digest" >> "$GITHUB_ENV"
+          printf 'DEPLOY_VERIFY_EXPECTED_WEB_MANIFEST_SHA256=%s\n' "$target_web_hash" >> "$GITHUB_ENV"
+
+      - name: Re-verify restored API and web release
+        id: deployment_verification
+        continue-on-error: true
+        run: node dist/deployment-verification.js > rollback-deployment-verification.json 2>&1
+
+      - name: Seal rollback rehearsal evidence
+        id: rehearsal_evidence
+        continue-on-error: true
+        env:
+          ROLLBACK_REHEARSAL_DRILL_ID: ${{ inputs.drill_id }}
+          ROLLBACK_REHEARSAL_ENVIRONMENT: isolated-rollback-drill
+          ROLLBACK_REHEARSAL_API_BASE_URL: ${{ secrets.ROLLBACK_DRILL_API_BASE_URL }}
+          ROLLBACK_REHEARSAL_WEB_BASE_URL: ${{ secrets.ROLLBACK_DRILL_WEB_BASE_URL }}
+          ROLLBACK_REHEARSAL_CURRENT_ACCEPTANCE_REPORT: ${{ github.workspace }}/evidence/current/release-acceptance.json
+          ROLLBACK_REHEARSAL_TARGET_CLOSEOUT_REPORT: ${{ github.workspace }}/evidence/target/release-closeout.json
+          ROLLBACK_REHEARSAL_DEPLOYMENT_REPORT: rollback-deployment-verification.json
+        run: node dist/rollback-rehearsal-evidence.js > rollback-rehearsal-evidence.json 2>&1
+
+      - name: Upload rollback rehearsal evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rollback-rehearsal-${{ inputs.drill_id }}-${{ github.run_id }}
+          path: |
+            server/rollback-deployment-verification.json
+            server/rollback-rehearsal-evidence.json
+            evidence/current/release-acceptance.json
+            evidence/target/release-closeout.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Enforce rollback rehearsal decision
+        if: >-
+          steps.artifact_identity.outcome != 'success' ||
+          steps.deployment_verification.outcome != 'success' ||
+          steps.rehearsal_evidence.outcome != 'success'
+        run: exit 1

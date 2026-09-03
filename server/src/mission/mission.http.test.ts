@@ -6,6 +6,7 @@ import { ApiExceptionFilter } from "../common/api-exception.filter.js";
 import { ApiResponseInterceptor } from "../common/api-response.interceptor.js";
 import { RequestIdMiddleware } from "../common/request-id.middleware.js";
 import { PrismaService } from "../database/prisma.service.js";
+import { listenForHttpTest } from "../test-utils/listen-test-app.js";
 import {
   AccountStatus,
   BadukMissionStatus,
@@ -171,6 +172,7 @@ function createPrismaMock() {
         && (!where.missionId?.in || where.missionId.in.includes(attempt.missionId))
         && (!where.status || attempt.status === where.status)
         && (!where.wrongMoveCount?.gt || attempt.wrongMoveCount > where.wrongMoveCount.gt))
+        .sort((left, right) => right.lastPlayedAt.getTime() - left.lastPlayedAt.getTime())
         .map((attempt) => ({
           ...attempt,
           mission: missions.find((item) => item.id === attempt.missionId),
@@ -305,8 +307,7 @@ describe("baduk mission HTTP flow", () => {
     app.use(requestId.use.bind(requestId));
     app.useGlobalFilters(new ApiExceptionFilter());
     app.useGlobalInterceptors(new ApiResponseInterceptor());
-    await app.listen(0, "127.0.0.1");
-    baseUrl = await app.getUrl();
+    baseUrl = await listenForHttpTest(app);
   });
 
   afterAll(async () => app.close());
@@ -464,47 +465,121 @@ describe("baduk mission HTTP flow", () => {
     mission.timeLimitSeconds = null;
   });
 
-  it("grants a logged-in learner's mission reward only once across retries", async () => {
+  it("grants a mission reward only once across concurrent attempts and retries", async () => {
     const headers = { "content-type": "application/json", cookie: "baduk_session=mission-student-token" };
-    const startResponse = await fetch(`${baseUrl}/api/v1/missions/MISSION-HTTP-9/attempts`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ source: "mission_list", clientAttemptId: "attempt_reward_001" }),
-    });
-    const started = await startResponse.json() as { data: { attempt: Record<string, any> } };
-
-    const complete = async (clientMoveId: string, boardHash: string) => {
-      const response = await fetch(`${baseUrl}/api/v1/mission-attempts/${started.data.attempt.id}/moves`, {
+    const start = async (clientAttemptId: string) => {
+      const response = await fetch(`${baseUrl}/api/v1/missions/MISSION-HTTP-9/attempts`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ source: "mission_list", clientAttemptId }),
+      });
+      return response.json() as Promise<{ data: { attempt: Record<string, any> } }>;
+    };
+    const complete = async (attempt: Record<string, any>, clientMoveId: string) => {
+      const response = await fetch(`${baseUrl}/api/v1/mission-attempts/${attempt.id}/moves`, {
         method: "POST",
         headers,
         body: JSON.stringify({
           clientMoveId,
           missionVersion: 1,
           expectedMoveNumber: 0,
-          boardHash,
+          boardHash: attempt.boardHash,
           move: { x: 4, y: 5 },
         }),
       });
       return response.json() as Promise<{ data: Record<string, any> }>;
     };
 
-    const first = await complete("move_reward_001", started.data.attempt.boardHash);
-    expect(first.data.reward).toMatchObject({ id: "mission-star", type: "star", quantity: 1, newlyGranted: true });
+    const [startedA, startedB] = await Promise.all([
+      start("attempt_reward_001"),
+      start("attempt_reward_002"),
+    ]);
+    const [first, second] = await Promise.all([
+      complete(startedA.data.attempt, "move_reward_001"),
+      complete(startedB.data.attempt, "move_reward_002"),
+    ]);
+    expect(first.data.reward).toMatchObject({ id: "mission-star", type: "star", quantity: 1 });
+    expect(second.data.reward).toMatchObject({ id: "mission-star", type: "star", quantity: 1 });
+    expect([first.data.reward.newlyGranted, second.data.reward.newlyGranted].sort()).toEqual([false, true]);
     expect(state.rewardGrants).toHaveLength(1);
 
-    const retryResponse = await fetch(`${baseUrl}/api/v1/mission-attempts/${started.data.attempt.id}/retry`, {
+    const retryResponse = await fetch(`${baseUrl}/api/v1/mission-attempts/${startedA.data.attempt.id}/retry`, {
       method: "POST",
       headers,
     });
     const retried = await retryResponse.json() as { data: { attempt: Record<string, any> } };
-    const second = await complete("move_reward_002", retried.data.attempt.boardHash);
-    expect(second.data.reward).toMatchObject({ id: "mission-star", quantity: 1, newlyGranted: false });
+    const retryCompletion = await complete(retried.data.attempt, "move_reward_retry_001");
+    expect(retryCompletion.data.reward).toMatchObject({ id: "mission-star", quantity: 1, newlyGranted: false });
     expect(state.rewardGrants).toHaveLength(1);
 
     const rewardsResponse = await fetch(`${baseUrl}/api/v1/me/rewards`, { headers: { cookie: headers.cookie } });
     const rewards = await rewardsResponse.json() as { data: Record<string, any> };
     expect(rewards.data).toMatchObject({ totals: { stars: 1, badges: 0, artifactCards: 0 } });
     expect(rewards.data.items).toHaveLength(1);
+  });
+
+  it("shows one wrong-note item per mission using the latest attempt result", async () => {
+    const headers = { "content-type": "application/json", cookie: "baduk_session=mission-student-token" };
+    const start = async (clientAttemptId: string) => {
+      const response = await fetch(`${baseUrl}/api/v1/missions/MISSION-HTTP-9/attempts`, {
+        method: "POST", headers,
+        body: JSON.stringify({ source: "wrong_note", clientAttemptId }),
+      });
+      return response.json() as Promise<{ data: { attempt: Record<string, any> } }>;
+    };
+    const move = async (attempt: Record<string, any>, clientMoveId: string, x: number, y: number) => {
+      const response = await fetch(`${baseUrl}/api/v1/mission-attempts/${attempt.id}/moves`, {
+        method: "POST", headers,
+        body: JSON.stringify({
+          clientMoveId, missionVersion: 1, expectedMoveNumber: 0,
+          boardHash: attempt.boardHash, move: { x, y },
+        }),
+      });
+      return response.json() as Promise<{ data: Record<string, any> }>;
+    };
+
+    const firstAttempt = await start("attempt_wrong_note_001");
+    await move(firstAttempt.data.attempt, "move_wrong_note_001", 0, 0);
+    const firstRecord = state.attempts.find((item) => item.id === firstAttempt.data.attempt.id);
+    if (firstRecord) firstRecord.lastPlayedAt = new Date("2099-01-01T00:00:00.000Z");
+
+    const reviewedAttempt = await start("attempt_wrong_note_002");
+    await move(reviewedAttempt.data.attempt, "move_wrong_note_002", 4, 5);
+    const reviewedRecord = state.attempts.find((item) => item.id === reviewedAttempt.data.attempt.id);
+    if (reviewedRecord) reviewedRecord.lastPlayedAt = new Date("2099-01-02T00:00:00.000Z");
+
+    const reviewedResponse = await fetch(`${baseUrl}/api/v1/me/wrong-note`, {
+      headers: { cookie: headers.cookie },
+    });
+    const reviewed = await reviewedResponse.json() as { data: { items: Array<Record<string, any>> } };
+    expect(reviewed.data.items).toHaveLength(1);
+    expect(reviewed.data.items[0]).toMatchObject({
+      id: reviewedAttempt.data.attempt.id,
+      latestResult: "completed",
+      reviewCompleted: true,
+      wrongMoveCount: 0,
+      historicalWrongMoveCount: 1,
+      bestScore: 100,
+    });
+
+    const latestWrongAttempt = await start("attempt_wrong_note_003");
+    await move(latestWrongAttempt.data.attempt, "move_wrong_note_003", 0, 0);
+    const latestWrongRecord = state.attempts.find((item) => item.id === latestWrongAttempt.data.attempt.id);
+    if (latestWrongRecord) latestWrongRecord.lastPlayedAt = new Date("2099-01-03T00:00:00.000Z");
+
+    const latestResponse = await fetch(`${baseUrl}/api/v1/me/wrong-note`, {
+      headers: { cookie: headers.cookie },
+    });
+    const latest = await latestResponse.json() as { data: { items: Array<Record<string, any>> } };
+    expect(latest.data.items).toHaveLength(1);
+    expect(latest.data.items[0]).toMatchObject({
+      id: latestWrongAttempt.data.attempt.id,
+      latestResult: "in_progress",
+      reviewCompleted: false,
+      wrongMoveCount: 1,
+      historicalWrongMoveCount: 2,
+      bestScore: 100,
+    });
   });
 
   it("protects the problem CMS and lets an operator create, validate, and publish a 13-line mission", async () => {

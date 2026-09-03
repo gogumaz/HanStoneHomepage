@@ -19,10 +19,11 @@ test("homepage prioritizes the optimized hero image", async ({ page }) => {
   await expect(preload).toHaveAttribute("href", "assets/hero-journey.webp");
   await expect(preload).toHaveAttribute("type", "image/webp");
   await expect(preload).toHaveAttribute("fetchpriority", "high");
-  await expect(page.locator(".hero-image")).toHaveCSS(
-    "background-image",
-    /hero-journey\.webp/,
-  );
+  const heroImage = page.locator(".hero-image");
+  await expect(heroImage).toHaveAttribute("src", "assets/hero-journey.webp");
+  await expect(heroImage).toHaveAttribute("fetchpriority", "high");
+  await expect(heroImage).toHaveAttribute("decoding", "async");
+  await expect(heroImage).toHaveCSS("object-fit", "cover");
 });
 
 test("교재 주문을 서버 가격으로 생성하고 토스 결제를 멱등 승인한다", async ({ page }) => {
@@ -39,7 +40,10 @@ test("교재 주문을 서버 가격으로 생성하고 토스 결제를 멱등 
       })
     });`,
   }));
-  await page.route("https://js.tosspayments.com/v2/standard", (route) => route.fulfill({
+  let sdkRequests = 0;
+  await page.route("https://js.tosspayments.com/v2/standard", (route) => {
+    sdkRequests += 1;
+    return route.fulfill({
     status: 200,
     contentType: "application/javascript",
     body: `window.TossPayments=function(){return {widgets:function(){return {
@@ -54,7 +58,8 @@ test("교재 주문을 서버 가격으로 생성하고 토스 결제를 멱등 
         window.location.href=url.toString();
       }
     }}}}; window.TossPayments.ANONYMOUS='ANONYMOUS';`,
-  }));
+    });
+  });
 
   let checkoutBody: Record<string, unknown> | undefined;
   let confirmationBody: Record<string, unknown> | undefined;
@@ -92,7 +97,9 @@ test("교재 주문을 서버 가격으로 생성하고 토스 결제를 멱등 
   });
 
   await page.goto("/");
+  expect(sdkRequests).toBe(0);
   await page.getByRole("button", { name: "토스로 결제" }).first().click();
+  expect(sdkRequests).toBe(1);
   await expect(page.locator("#paymentProductPrice")).toHaveText("18,000원");
   await page.locator("#shippingRecipientName").fill("홍길동");
   await page.locator("#shippingRecipientPhone").fill("010-1234-5678");
@@ -121,6 +128,7 @@ test("교재 주문을 서버 가격으로 생성하고 토스 결제를 멱등 
     amount: 18_000,
   });
   expect(confirmationRequestId).toMatch(/^toss_confirm_/);
+  expect(sdkRequests).toBe(1);
 });
 
 test("홈페이지 기관 상담 폼이 검증된 필드만 API로 제출한다", async ({ page }) => {
@@ -166,6 +174,77 @@ test("홈페이지 기관 상담 폼이 검증된 필드만 API로 제출한다"
     content: "다음 학기 방과후 바둑 수업 도입을 상담하고 싶습니다.",
     privacyConsent: true,
   });
+});
+
+test("기관 상담 서버 오류 후 입력값을 보존하고 같은 내용으로 재시도한다", async ({ page }) => {
+  await page.route("**/config.js", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/javascript",
+      body: "window.APP_CONFIG=Object.freeze({apiBaseUrl:'/api/v1',boardApiEnabled:true,oauthEnabled:false});",
+    });
+  });
+  const submitted: Array<Record<string, unknown>> = [];
+  await page.route("**/api/v1/consultations", async (route) => {
+    submitted.push(route.request().postDataJSON() as Record<string, unknown>);
+    if (submitted.length === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "CONSULTATION_TEMPORARY_ERROR", message: "잠시 후 다시 시도해 주세요." } }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { id: "consultation-retry-1", status: "submitted" } }),
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "도입 문의하기" }).click();
+  const dialog = page.getByRole("dialog", { name: "기관 도입 상담" });
+  const form = dialog.locator("#consultForm");
+  const expected = {
+    category: "방과후학교",
+    organizationName: "푸른초등학교",
+    contactName: "김지도",
+    phone: "010-9876-5432",
+    email: "retry@example.test",
+    expectedStudents: 24,
+    title: "재시도 보존 확인",
+    content: "서버 오류가 발생해도 이 상담 내용을 그대로 보존해 주세요.",
+    privacyConsent: true,
+  };
+  await form.locator('[name="category"]').selectOption(expected.category);
+  await form.locator('[name="organizationName"]').fill(expected.organizationName);
+  await form.locator('[name="contactName"]').fill(expected.contactName);
+  await form.locator('[name="phone"]').fill(expected.phone);
+  await form.locator('[name="email"]').fill(expected.email);
+  await form.locator('[name="expectedStudents"]').fill(String(expected.expectedStudents));
+  await form.locator('[name="title"]').fill(expected.title);
+  await form.locator('[name="content"]').fill(expected.content);
+  await form.locator('[name="privacyConsent"]').check();
+
+  const submitButton = form.getByRole("button", { name: "상담 신청하기" });
+  await submitButton.click();
+  await expect(page.locator("#toast")).toContainText("잠시 후 다시 시도해 주세요");
+  await expect(dialog).toBeVisible();
+  await expect(form.locator('[name="category"]')).toHaveValue(expected.category);
+  await expect(form.locator('[name="organizationName"]')).toHaveValue(expected.organizationName);
+  await expect(form.locator('[name="contactName"]')).toHaveValue(expected.contactName);
+  await expect(form.locator('[name="phone"]')).toHaveValue(expected.phone);
+  await expect(form.locator('[name="email"]')).toHaveValue(expected.email);
+  await expect(form.locator('[name="expectedStudents"]')).toHaveValue(String(expected.expectedStudents));
+  await expect(form.locator('[name="title"]')).toHaveValue(expected.title);
+  await expect(form.locator('[name="content"]')).toHaveValue(expected.content);
+  await expect(form.locator('[name="privacyConsent"]')).toBeChecked();
+  await expect(submitButton).toBeEnabled();
+
+  await submitButton.click();
+  await expect(page.locator("#toast")).toContainText("상담 신청이 접수되었습니다");
+  await expect(dialog).toBeHidden();
+  expect(submitted).toEqual([expected, expected]);
 });
 
 test("로그인 회원이 1:1 문의를 접수하고 본인 답변만 확인한다", async ({ page }) => {
@@ -726,7 +805,7 @@ test("React 계정 화면이 세션 없음 상태에서 로그인 폼을 표시�
     });
   });
   await page.goto("/app.html");
-  await page.getByRole("link", { name: "계정 API 확인" }).click();
+  await page.getByRole("link", { name: "로그인·계정" }).click();
 
   await expect(page).toHaveURL(/\/account$/);
   await expect(page.getByRole("heading", { name: "계정과 보안" })).toBeVisible();
@@ -1607,7 +1686,9 @@ test("구독 주문을 만들고 토스 승인 후 구독 내역을 갱신한다
   }));
   await page.route("https://js.tosspayments.com/v2/standard", (route) => route.fulfill({
     status: 200, contentType: "application/javascript", body: `window.TossPayments=function(){return {widgets:function(){return {
-      setAmount:async function(){},renderPaymentMethods:async function(){},renderAgreement:async function(){},
+      setAmount:async function(){},
+      renderPaymentMethods:async function(input){document.querySelector(input.selector).innerHTML='<div role="group" aria-label="테스트 결제수단">테스트 카드</div>';},
+      renderAgreement:async function(input){document.querySelector(input.selector).innerHTML='<label><input type="checkbox"/>테스트 결제 약관</label>';},
       requestPayment:async function(request){const url=new URL(request.successUrl);url.searchParams.set('paymentKey','pay_e2e_paid');url.searchParams.set('orderId','sub_e2e_order');url.searchParams.set('amount','50000');window.location.href=url.toString();}
     }}}};window.TossPayments.ANONYMOUS='ANONYMOUS';`,
   }));
@@ -1685,6 +1766,8 @@ test("구독 주문을 만들고 토스 승인 후 구독 내역을 갱신한다
   await page.goto("/subscriptions");
   const sixMonthPlan = page.locator("article").filter({ has: page.getByRole("heading", { name: "6개월" }) });
   await sixMonthPlan.getByRole("button", { name: "결제하기" }).click();
+  await expect(page.getByRole("group", { name: "테스트 결제수단" })).toContainText("테스트 카드");
+  await expect(page.getByRole("checkbox", { name: "테스트 결제 약관" })).toBeVisible();
   await expect(page.getByText(/테스트 결제입니다\. 실제 금액은 청구되지 않습니다/)).toBeVisible();
   await page.getByRole("button", { name: "토스로 50,000원 결제" }).click();
 
@@ -1838,7 +1921,7 @@ test("19줄 모바일 확대 상태에서 스크롤과 터치 착수를 구분�
   }));
 
   try {
-    await page.goto("http://127.0.0.1:5173/missions");
+    await page.goto("/missions");
     await page.getByRole("button", { name: "시작하기" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: "문제 시작" }).click();
@@ -2079,7 +2162,7 @@ test("운영자가 연결 강의 영상과 6종 안전 자산으로 지도자 �
         revision: 1,
         publishedAt: "2026-08-24T00:00:00.000Z",
         lessonVideo: { kind: "video", originalName: "연결 강의 영상", appUrl: "/lessons/PRE-01" },
-        missionUrl: "/missions?lessonId=PRE-01&missionId=MISSION-PRE-01-01",
+        missionUrl: "/missions?lessonId=PRE-01&missionId=MISSION-PRE-01-01&mode=classroom",
       };
       fields.forEach((field) => { helper[field] = {
         kind: "material", originalName: `${field}.pdf`, status: "ready",
@@ -2127,7 +2210,7 @@ test("운영자가 연결 강의 영상과 6종 안전 자산으로 지도자 �
   for (const field of fields) expect(submitted).not.toHaveProperty(field);
   await page.getByRole("button", { name: /E2E classroom package/ }).click();
   await expect(page.locator("#detailAttachments a")).toHaveCount(7);
-  await expect(page.getByRole("link", { name: "바둑미션 게임 실행" })).toHaveAttribute("href", /missionId=MISSION-PRE-01-01/);
+  await expect(page.getByRole("link", { name: "바둑미션 게임 실행" })).toHaveAttribute("href", /missionId=MISSION-PRE-01-01&mode=classroom/);
   await page.locator("#detailModerationActions").getByRole("button", { name: "수정" }).click();
   for (const field of fields) await expect(form.locator(`[name="${field}"]`)).not.toHaveAttribute("required", "");
   await form.locator('[name="lessonDuration"]').fill("30분");

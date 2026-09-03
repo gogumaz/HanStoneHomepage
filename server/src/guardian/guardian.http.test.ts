@@ -7,6 +7,8 @@ import { ApiExceptionFilter } from "../common/api-exception.filter.js";
 import { ApiResponseInterceptor } from "../common/api-response.interceptor.js";
 import { RequestIdMiddleware } from "../common/request-id.middleware.js";
 import { PrismaService } from "../database/prisma.service.js";
+import { listenForHttpTest } from "../test-utils/listen-test-app.js";
+import { koreanWeekWindow } from "./learning-metrics.js";
 import {
   AccountStatus,
   ConsentStatus,
@@ -15,6 +17,7 @@ import {
   LessonProgressStatus,
   LessonStatus,
   RoleType,
+  MinorAccountStatus,
 } from "../generated/prisma/enums.js";
 
 type RecordValue = Record<string, any>;
@@ -24,11 +27,13 @@ function createPrismaMock() {
     { id: "student-1", email: "student@example.com", displayName: "초대 학생", passwordHash: null, status: AccountStatus.ACTIVE, roles: [{ role: RoleType.STUDENT }] },
     { id: "guardian-1", email: "guardian@example.com", displayName: "초대 보호자", passwordHash: null, status: AccountStatus.ACTIVE, roles: [{ role: RoleType.GUARDIAN }] },
     { id: "guardian-2", email: "other@example.com", displayName: "다른 보호자", passwordHash: null, status: AccountStatus.ACTIVE, roles: [{ role: RoleType.GUARDIAN }] },
+    { id: "child-1", email: "child@example.com", displayName: "동의 대기 어린이", passwordHash: null, status: AccountStatus.ACTIVE, ageBand: "UNDER_14", minorAccountStatus: MinorAccountStatus.GUARDIAN_CONSENT_PENDING, guardianConsentVerifiedAt: null, roles: [{ role: RoleType.STUDENT }] },
   ];
   const sessions: RecordValue[] = [
     { id: "session-student", userId: "student-1", tokenHash: hashSessionToken("student-token"), expiresAt: new Date(Date.now() + 60_000), revokedAt: null },
     { id: "session-guardian", userId: "guardian-1", tokenHash: hashSessionToken("guardian-token"), expiresAt: new Date(Date.now() + 60_000), revokedAt: null },
     { id: "session-other", userId: "guardian-2", tokenHash: hashSessionToken("other-token"), expiresAt: new Date(Date.now() + 60_000), revokedAt: null },
+    { id: "session-child", userId: "child-1", tokenHash: hashSessionToken("child-token"), expiresAt: new Date(Date.now() + 60_000), revokedAt: null },
   ];
   const invitations: RecordValue[] = [];
   const links: RecordValue[] = [];
@@ -62,6 +67,21 @@ function createPrismaMock() {
       updatedAt: new Date("2026-08-19T00:00:00.000Z"), lastPositionSeconds: 0, completedSteps: 2,
     },
   };
+  const week = koreanWeekWindow(new Date());
+  const activityAt = (day: number, hour = 2) => new Date(
+    week.start.getTime() + day * 24 * 60 * 60 * 1_000 + hour * 60 * 60 * 1_000,
+  );
+  const stepActivities = [
+    { completedAt: activityAt(0) },
+    { completedAt: activityAt(0, 5) },
+    { completedAt: activityAt(1) },
+  ];
+  const missionAttempts = [
+    { missionId: "MISSION-A", status: "COMPLETED", wrongMoveCount: 0, startedAt: activityAt(2), lastPlayedAt: activityAt(2, 4) },
+    { missionId: "MISSION-A", status: "COMPLETED", wrongMoveCount: 0, startedAt: activityAt(3), lastPlayedAt: activityAt(3, 4) },
+    { missionId: "MISSION-B", status: "COMPLETED", wrongMoveCount: 1, startedAt: activityAt(4), lastPlayedAt: activityAt(4, 4) },
+    { missionId: "MISSION-C", status: "IN_PROGRESS", wrongMoveCount: 0, startedAt: activityAt(5), lastPlayedAt: activityAt(5, 4) },
+  ];
 
   function invitationMatches(item: RecordValue, where: RecordValue): boolean {
     if (where.id && item.id !== where.id) return false;
@@ -77,7 +97,14 @@ function createPrismaMock() {
   }
 
   const prisma = {
-    user: { findUnique: vi.fn(async () => null) },
+    user: {
+      findUnique: vi.fn(async () => null),
+      updateMany: vi.fn(async ({ where, data }: RecordValue) => {
+        const matches = users.filter((user) => user.id === where.id && user.minorAccountStatus === where.minorAccountStatus);
+        matches.forEach((user) => Object.assign(user, data));
+        return { count: matches.length };
+      }),
+    },
     session: {
       findUnique: vi.fn(async ({ where, include }: RecordValue) => {
         const session = sessions.find((item) => item.tokenHash === where.tokenHash);
@@ -169,6 +196,29 @@ function createPrismaMock() {
         return { count: matches.length };
       }),
     },
+    era: {
+      findMany: vi.fn(async () => [{
+        id: "era_prehistoric",
+        order: 1,
+        name: "선사시대",
+        theme: "첫 시대",
+        description: "선사시대 학습",
+        lessons: lessons
+          .filter((lesson) => lesson.status === LessonStatus.PUBLISHED)
+          .map((lesson) => {
+            const progress = progressByLesson[lesson.id];
+            return {
+              ...lesson,
+              isFreeSample: true,
+              _count: { steps: lesson.totalSteps },
+              progress: progress ? [{ ...progress, _count: { stepCompletions: progress.completedSteps } }] : [],
+            };
+          }),
+      }]),
+    },
+    accountSubscription: {
+      findFirst: vi.fn(async () => null),
+    },
     lesson: {
       findMany: vi.fn(async ({ where }: RecordValue) => lessons
         .filter((lesson) => lesson.status === where.status)
@@ -182,6 +232,12 @@ function createPrismaMock() {
           };
         })),
     },
+    lessonStepCompletion: {
+      findMany: vi.fn(async () => stepActivities),
+    },
+    missionAttempt: {
+      findMany: vi.fn(async () => missionAttempts),
+    },
     auditLog: { create: vi.fn(async () => ({ id: "audit" })) },
     isReady: vi.fn(async () => true),
     $transaction: vi.fn(async (input: unknown) => {
@@ -189,7 +245,7 @@ function createPrismaMock() {
       return Promise.all(input as Promise<unknown>[]);
     }),
   };
-  return { prisma: prisma as unknown as PrismaService, invitations, links, consents };
+  return { prisma: prisma as unknown as PrismaService, users, invitations, links, consents };
 }
 
 describe("guardian invitation HTTP flow", () => {
@@ -213,8 +269,7 @@ describe("guardian invitation HTTP flow", () => {
     app.use(requestId.use.bind(requestId));
     app.useGlobalFilters(new ApiExceptionFilter());
     app.useGlobalInterceptors(new ApiResponseInterceptor());
-    await app.listen(0, "127.0.0.1");
-    baseUrl = await app.getUrl();
+    baseUrl = await listenForHttpTest(app);
   });
 
   afterAll(async () => app.close());
@@ -331,6 +386,10 @@ describe("guardian invitation HTTP flow", () => {
         summary: {
           totalLessons: number; startedLessons: number; completedLessons: number;
           completionRate: number; completedSteps: number; totalSteps: number; stepCompletionRate: number;
+          weekly: {
+            studyDays: number; firstAttemptCorrectMissions: number;
+            firstAttemptMissions: number; firstAttemptAccuracy: number;
+          };
         };
         items: Array<{ lesson: { id: string }; progress: { status: string; completedSteps: number } }>;
       };
@@ -347,11 +406,26 @@ describe("guardian invitation HTTP flow", () => {
       completedSteps: 3,
       totalSteps: 4,
       stepCompletionRate: 75,
+      weekly: {
+        studyDays: 6,
+        firstAttemptCorrectMissions: 1,
+        firstAttemptMissions: 3,
+        firstAttemptAccuracy: 33,
+      },
     });
     expect(report.data.items).toEqual([
       expect.objectContaining({ lesson: expect.objectContaining({ id: "PRE-01" }), progress: expect.objectContaining({ status: "in_progress", completedSteps: 1 }) }),
       expect.objectContaining({ lesson: expect.objectContaining({ id: "PRE-02" }), progress: expect.objectContaining({ status: "completed", completedSteps: 2 }) }),
     ]);
+
+    const studentDashboardResponse = await fetch(`${baseUrl}/api/v1/me/dashboard`, {
+      headers: { cookie: "baduk_session=student-token" },
+    });
+    const studentDashboard = await studentDashboardResponse.json() as {
+      data: { summary: typeof report.data.summary };
+    };
+    expect(studentDashboardResponse.status).toBe(200);
+    expect(studentDashboard.data.summary).toEqual(report.data.summary);
 
     const forbiddenRevoke = await fetch(
       `${baseUrl}/api/v1/me/guardian-links/${accepted.data.link.id}/revoke`,
@@ -376,6 +450,61 @@ describe("guardian invitation HTTP flow", () => {
     });
     const emptyList = await emptyListResponse.json() as { data: { students: unknown[] } };
     expect(emptyList.data.students).toHaveLength(0);
+  });
+
+  it("keeps an under-14 account restricted until verified guardian consent and stores paid consent separately", async () => {
+    const blockedBeforeConsent = await fetch(`${baseUrl}/api/v1/me/dashboard`, {
+      headers: { cookie: "baduk_session=child-token" },
+    });
+    expect(blockedBeforeConsent.status).toBe(403);
+
+    const invitationResponse = await fetch(`${baseUrl}/api/v1/me/guardian-invitations`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: "baduk_session=child-token" },
+      body: JSON.stringify({ email: "other@example.com" }),
+    });
+    const created = await invitationResponse.json() as {
+      data: {
+        developmentToken: string;
+        invitation: { consent: { scopes: string[]; requiresChildAccountConsent: boolean } };
+      };
+    };
+    expect(invitationResponse.status).toBe(201);
+    expect(created.data.invitation.consent).toMatchObject({
+      requiresChildAccountConsent: true,
+      scopes: ["learning_progress", "learning_reports", "child_account_creation"],
+    });
+
+    const acceptResponse = await fetch(
+      `${baseUrl}/api/v1/guardian-invitations/${created.data.developmentToken}/accept`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: "baduk_session=other-token" },
+        body: JSON.stringify({
+          consent: true,
+          policyVersion: "guardian-link-v1",
+          scopes: created.data.invitation.consent.scopes,
+          paidSubscriptionConsent: true,
+        }),
+      },
+    );
+    expect(acceptResponse.status).toBe(200);
+
+    expect(state.users.find((user) => user.id === "child-1")).toMatchObject({
+      minorAccountStatus: MinorAccountStatus.ACTIVE,
+      guardianConsentVerifiedAt: expect.any(Date),
+    });
+    const childConsents = state.consents.filter((consent) => consent.studentId === "child-1");
+    expect(childConsents.map((consent) => consent.consentType).sort()).toEqual([
+      "child_account",
+      "guardian_learning_access",
+      "minor_paid_subscription",
+    ]);
+
+    const allowedAfterConsent = await fetch(`${baseUrl}/api/v1/me/dashboard`, {
+      headers: { cookie: "baduk_session=child-token" },
+    });
+    expect(allowedAfterConsent.status).toBe(200);
   });
 
   it("rejects expired invitations and marks them expired", async () => {

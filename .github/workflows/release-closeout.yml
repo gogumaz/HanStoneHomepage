@@ -1,8 +1,13 @@
 name: Release closeout
+run-name: Release closeout · ${{ inputs.release_id }}
 
 on:
   workflow_dispatch:
     inputs:
+      solo_release_confirmation:
+        description: Type AUTHORIZE_SOLO_PRODUCTION_RELEASE for the designated solo operator
+        required: true
+        type: string
       release_id:
         description: Accepted immutable release identifier
         required: true
@@ -49,6 +54,8 @@ jobs:
     environment: production
     timeout-minutes: 15
     env:
+      SOLO_RELEASE_ACTOR: ${{ github.actor }}
+      SOLO_RELEASE_CONFIRMATION: ${{ inputs.solo_release_confirmation }}
       RELEASE_ID: ${{ inputs.release_id }}
       CANDIDATE_COMMIT_SHA: ${{ inputs.candidate_commit_sha }}
       IMAGE_REFERENCE: ${{ inputs.image_reference }}
@@ -61,6 +68,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          [[ "$SOLO_RELEASE_ACTOR" == "gogumaz" ]]
+          [[ "$SOLO_RELEASE_CONFIRMATION" == "AUTHORIZE_SOLO_PRODUCTION_RELEASE" ]]
           [[ "$RELEASE_ID" =~ ^[A-Za-z0-9._-]{1,80}$ ]]
           [[ "$CANDIDATE_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]
           [[ "$IMAGE_REFERENCE" =~ @sha256:[a-f0-9]{64}$ ]]
@@ -119,6 +128,28 @@ jobs:
             --arg webManifestSha256 "$WEB_MANIFEST_SHA256" \
             '.ok == true and .rollbackRecommended == false and .expected.commitSha == $commitSha and .expected.imageDigest == $imageDigest and .web.ok == true and .web.expected.commitSha == $commitSha and .web.expected.manifestSha256 == $webManifestSha256' \
             evidence/deployment/production-deployment-verification.json > /dev/null
+          jq -e \
+            --arg commitSha "$CANDIDATE_COMMIT_SHA" \
+            --arg verifiedAt "$(jq -er '.completedAt' evidence/deployment/production-deployment-verification.json)" \
+            '.schemaVersion == 2 and .ok == true and .commitSha == $commitSha and
+             .deploymentVerifiedAt == $verifiedAt and (.checks | length) == 18 and
+             all(.checks[]; .status == "pass" and .code == "OK")' \
+            evidence/deployment/transport-security-evidence.json > /dev/null
+          jq -e \
+            --arg commitSha "$CANDIDATE_COMMIT_SHA" \
+            --arg preflightAt "$(jq -er '.preflightCheckedAt' evidence/deployment/transport-security-evidence.json)" \
+            '.schemaVersion == 1 and .ok == true and .commitSha == $commitSha and
+             .preflightCheckedAt == $preflightAt and (.checks | length) == 9 and
+             (has("providerEventId") | not) and
+             all(.checks[]; .status == "pass" and .code == "OK")' \
+            evidence/deployment/mail-operations-evidence.json > /dev/null
+          jq -e \
+            --arg commitSha "$CANDIDATE_COMMIT_SHA" \
+            --arg preflightSha256 "$(jq -er '.artifacts.preflightSha256' evidence/deployment/mail-operations-evidence.json)" \
+            '.schemaVersion == 1 and .ok == true and .commitSha == $commitSha and
+             .artifacts.preflightSha256 == $preflightSha256 and (.checks | length) == 7 and
+             all(.checks[]; .status == "pass" and .code == "OK")' \
+            evidence/deployment/legal-approval-binding.json > /dev/null
 
       - name: Generate final closeout record from the accepted image
         id: closeout
@@ -129,6 +160,9 @@ jobs:
             --mount type=bind,source="$GITHUB_WORKSPACE/evidence",target=/evidence,readonly \
             -e RELEASE_CLOSEOUT_ACCEPTANCE_REPORT=/evidence/acceptance/release-acceptance.json \
             -e RELEASE_CLOSEOUT_DEPLOYMENT_REPORT=/evidence/deployment/production-deployment-verification.json \
+            -e RELEASE_CLOSEOUT_TRANSPORT_SECURITY_REPORT=/evidence/deployment/transport-security-evidence.json \
+            -e RELEASE_CLOSEOUT_MAIL_OPERATIONS_REPORT=/evidence/deployment/mail-operations-evidence.json \
+            -e RELEASE_CLOSEOUT_LEGAL_APPROVAL_BINDING_REPORT=/evidence/deployment/legal-approval-binding.json \
             -e RELEASE_CLOSEOUT_MAX_DELAY_HOURS="$MAXIMUM_VERIFICATION_DELAY_HOURS" \
             "$IMAGE_REFERENCE" node dist/release-closeout.js \
             > release-closeout.json
@@ -142,6 +176,9 @@ jobs:
             release-closeout.json
             evidence/acceptance/release-acceptance.json
             evidence/deployment/production-deployment-verification.json
+            evidence/deployment/transport-security-evidence.json
+            evidence/deployment/mail-operations-evidence.json
+            evidence/deployment/legal-approval-binding.json
           if-no-files-found: error
           retention-days: 90
 

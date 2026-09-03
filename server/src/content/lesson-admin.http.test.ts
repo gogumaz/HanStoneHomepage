@@ -7,6 +7,7 @@ import { ApiExceptionFilter } from "../common/api-exception.filter.js";
 import { ApiResponseInterceptor } from "../common/api-response.interceptor.js";
 import { RequestIdMiddleware } from "../common/request-id.middleware.js";
 import { PrismaService } from "../database/prisma.service.js";
+import { listenForHttpTest } from "../test-utils/listen-test-app.js";
 import { AccountStatus, LessonStatus, RoleType } from "../generated/prisma/enums.js";
 import { ObjectStorageService } from "../storage/object-storage.service.js";
 import { MalwareScannerService } from "../storage/malware-scanner.service.js";
@@ -192,8 +193,7 @@ describe("admin lesson CMS HTTP API", () => {
     app.use(requestId.use.bind(requestId));
     app.useGlobalFilters(new ApiExceptionFilter());
     app.useGlobalInterceptors(new ApiResponseInterceptor());
-    await app.listen(0, "127.0.0.1");
-    baseUrl = await app.getUrl();
+    baseUrl = await listenForHttpTest(app);
   });
 
   afterAll(async () => app.close());

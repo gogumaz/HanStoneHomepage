@@ -8,6 +8,7 @@ import { ApiResponseInterceptor } from "../common/api-response.interceptor.js";
 import { RequestIdMiddleware } from "../common/request-id.middleware.js";
 import { PrismaService } from "../database/prisma.service.js";
 import { ObjectStorageService } from "../storage/object-storage.service.js";
+import { listenForHttpTest } from "../test-utils/listen-test-app.js";
 import {
   AccountStatus,
   LessonAssetKind,
@@ -30,6 +31,7 @@ function createPrismaMock(): PrismaService {
   ];
   const sessions = [
     ["free-token", "student-free"],
+    ["free-token-device-b", "student-free"],
     ["active-token", "student-active"],
     ["expired-token", "student-expired"],
     ["operator-token", "operator-1"],
@@ -50,6 +52,11 @@ function createPrismaMock(): PrismaService {
       id: "PAID-01", status: LessonStatus.PUBLISHED, isFreeSample: false,
       videoAssetKey: "lesson-videos/paid.mp4", thumbnailKey: null,
       eraId: "era_prehistoric", order: 2, course: "입문 1권", title: "구독 강의", durationMinutes: 10,
+    },
+    {
+      id: "PAID-02", status: LessonStatus.PUBLISHED, isFreeSample: false,
+      videoAssetKey: "lesson-videos/paid-02.mp4", thumbnailKey: null,
+      eraId: "era_prehistoric", order: 3, course: "입문 1권", title: "두 번째 구독 강의", durationMinutes: 12,
     },
   ];
   const lessonAssets: Value[] = [
@@ -93,6 +100,7 @@ function createPrismaMock(): PrismaService {
     id: "completion-active-seed",
     progressId: "progress-active-seed",
     stepId: "FREE-01-01",
+    completedAt: new Date(Date.now() - 60_000),
   }];
   const plans = [
     { id: "subscription-1m", label: "1개월", months: 1, price: 10000, active: true, recommended: false },
@@ -269,6 +277,7 @@ function createPrismaMock(): PrismaService {
       }),
     },
     lessonStepCompletion: {
+      findMany: vi.fn(async () => completions.map((item) => ({ completedAt: item.completedAt }))),
       upsert: vi.fn(async ({ where, create }: Value) => {
         const key = where.progressId_stepId;
         const existing = completions.find((item) => item.progressId === key.progressId && item.stepId === key.stepId);
@@ -277,6 +286,9 @@ function createPrismaMock(): PrismaService {
         completions.push(completion);
         return completion;
       }),
+    },
+    missionAttempt: {
+      findMany: vi.fn(async () => []),
     },
     auditLog: { create: vi.fn(async () => ({ id: "audit" })) },
     isReady: vi.fn(async () => true),
@@ -346,13 +358,12 @@ describe("lesson access and progress HTTP API", () => {
     app.use(requestId.use.bind(requestId));
     app.useGlobalFilters(new ApiExceptionFilter());
     app.useGlobalInterceptors(new ApiResponseInterceptor());
-    await app.listen(0, "127.0.0.1");
-    baseUrl = await app.getUrl();
+    baseUrl = await listenForHttpTest(app);
   });
 
   afterAll(async () => app.close());
 
-  it("allows a free sample, blocks missing or expired subscriptions, and allows operator preview", async () => {
+  it("allows a free sample and every published paid lesson with one active subscription", async () => {
     const free = await fetch(`${baseUrl}/api/v1/lessons/FREE-01/playback`);
     const freeBody = await free.json() as { data: { access: { source: string }; playback: { status: string } } };
     expect(free.status).toBe(200);
@@ -369,25 +380,32 @@ describe("lesson access and progress HTTP API", () => {
     expect(expired.status).toBe(403);
     expect(expiredBody.error.code).toBe("SUBSCRIPTION_REQUIRED");
 
-    const active = await fetch(`${baseUrl}/api/v1/lessons/PAID-01/playback`, {
-      headers: { cookie: "baduk_session=active-token" },
-    });
-    const activeBody = await active.json() as {
-      data: {
-        access: { source: string; subscriptionEndsAt: string };
-        playback: { status: string; format: string; url: string; expiresAt: string };
+    const subscriptionEndsAt: string[] = [];
+    for (const lessonId of ["PAID-01", "PAID-02"]) {
+      const active = await fetch(`${baseUrl}/api/v1/lessons/${lessonId}/playback`, {
+        headers: { cookie: "baduk_session=active-token" },
+      });
+      const activeBody = await active.json() as {
+        data: {
+          lessonId: string;
+          access: { source: string; subscriptionEndsAt: string };
+          playback: { status: string; format: string; url: string; expiresAt: string };
+        };
       };
-    };
-    expect(active.status).toBe(200);
-    expect(active.headers.get("cache-control")).toBe("private, no-store");
-    expect(active.headers.get("vary")).toContain("Cookie");
-    expect(activeBody.data.access.source).toBe("subscription");
-    expect(activeBody.data.access.subscriptionEndsAt).toBeTruthy();
-    expect(activeBody.data.playback.status).toBe("ready");
-    expect(activeBody.data.playback.format).toBe("mp4");
-    expect(activeBody.data.playback.url).toContain("X-Amz-Signature=signed");
-    expect(activeBody.data.playback.expiresAt).toBeTruthy();
-    expect(JSON.stringify(activeBody)).not.toContain("videoAssetKey");
+      expect(active.status).toBe(200);
+      expect(active.headers.get("cache-control")).toBe("private, no-store");
+      expect(active.headers.get("vary")).toContain("Cookie");
+      expect(activeBody.data.lessonId).toBe(lessonId);
+      expect(activeBody.data.access.source).toBe("subscription");
+      expect(activeBody.data.access.subscriptionEndsAt).toBeTruthy();
+      expect(activeBody.data.playback.status).toBe("ready");
+      expect(activeBody.data.playback.format).toBe("mp4");
+      expect(activeBody.data.playback.url).toContain("X-Amz-Signature=signed");
+      expect(activeBody.data.playback.expiresAt).toBeTruthy();
+      expect(JSON.stringify(activeBody)).not.toContain("videoAssetKey");
+      subscriptionEndsAt.push(activeBody.data.access.subscriptionEndsAt);
+    }
+    expect(new Set(subscriptionEndsAt).size).toBe(1);
 
     const operator = await fetch(`${baseUrl}/api/v1/lessons/PAID-01/playback`, {
       headers: { cookie: "baduk_session=operator-token" },
@@ -481,7 +499,10 @@ describe("lesson access and progress HTTP API", () => {
     const body = await response.json() as {
       data: {
         access: { hasActiveSubscription: boolean; subscriptionEndsAt: string };
-        summary: { totalLessons: number; startedLessons: number; completedLessons: number };
+        summary: {
+          totalLessons: number; startedLessons: number; completedLessons: number;
+          weekly: { studyDays: number; firstAttemptMissions: number; firstAttemptAccuracy: number };
+        };
         eras: Array<{ id: string; status: string; totalLessons: number }>;
         nextLesson: { lesson: { id: string; accessible: boolean }; reason: string };
       };
@@ -491,14 +512,42 @@ describe("lesson access and progress HTTP API", () => {
     expect(response.headers.get("vary")).toContain("Cookie");
     expect(body.data.access.hasActiveSubscription).toBe(true);
     expect(body.data.access.subscriptionEndsAt).toBeTruthy();
-    expect(body.data.summary).toMatchObject({ totalLessons: 2, startedLessons: 1, completedLessons: 0 });
+    expect(body.data.summary).toMatchObject({ totalLessons: 3, startedLessons: 1, completedLessons: 0 });
+    expect(body.data.summary.weekly).toMatchObject({ studyDays: 1, firstAttemptMissions: 0, firstAttemptAccuracy: 0 });
     expect(body.data.eras).toEqual([
-      expect.objectContaining({ id: "era_prehistoric", status: "in_progress", totalLessons: 2 }),
+      expect.objectContaining({ id: "era_prehistoric", status: "in_progress", totalLessons: 3 }),
       expect.objectContaining({ id: "era_goryeo", status: "coming_soon", totalLessons: 0 }),
     ]);
     expect(body.data.nextLesson).toMatchObject({
       lesson: { id: "FREE-01", accessible: true },
       reason: "continue",
+    });
+
+    const activeCookie = { cookie: "baduk_session=active-token" };
+    const finalStep = await fetch(`${baseUrl}/api/v1/lessons/FREE-01/steps/FREE-01-02/complete`, {
+      method: "POST",
+      headers: activeCookie,
+    });
+    expect(finalStep.status).toBe(201);
+    const completed = await fetch(`${baseUrl}/api/v1/lessons/FREE-01/complete`, {
+      method: "POST",
+      headers: activeCookie,
+    });
+    expect(completed.status).toBe(201);
+
+    const afterCompletion = await fetch(`${baseUrl}/api/v1/me/dashboard`, {
+      headers: activeCookie,
+    });
+    const afterCompletionBody = await afterCompletion.json() as {
+      data: {
+        summary: { completedLessons: number };
+        nextLesson: { lesson: { id: string; accessible: boolean }; reason: string };
+      };
+    };
+    expect(afterCompletionBody.data.summary.completedLessons).toBe(1);
+    expect(afterCompletionBody.data.nextLesson).toMatchObject({
+      lesson: { id: "PAID-01", accessible: true },
+      reason: "next",
     });
   });
 
@@ -568,10 +617,11 @@ describe("lesson access and progress HTTP API", () => {
     expect(playbackBody.data.playback.status).toBe("asset_pending");
   });
 
-  it("stores step completion idempotently and completes only after every step", async () => {
-    const cookie = { cookie: "baduk_session=free-token" };
+  it("syncs progress across two sessions, stores steps idempotently, and completes only after every step", async () => {
+    const deviceA = { cookie: "baduk_session=free-token" };
+    const deviceB = { cookie: "baduk_session=free-token-device-b" };
     const start = await fetch(`${baseUrl}/api/v1/lessons/FREE-01/start`, {
-      method: "POST", headers: cookie,
+      method: "POST", headers: deviceA,
     });
     const started = await start.json() as { data: { status: string; completedSteps: number } };
     expect(start.status).toBe(201);
@@ -579,30 +629,43 @@ describe("lesson access and progress HTTP API", () => {
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const step = await fetch(`${baseUrl}/api/v1/lessons/FREE-01/steps/FREE-01-01/complete`, {
-        method: "POST", headers: cookie,
+        method: "POST", headers: deviceA,
       });
       const stepBody = await step.json() as { data: { completedSteps: number } };
       expect(stepBody.data.completedSteps).toBe(1);
     }
 
+    const syncedOnDeviceB = await fetch(`${baseUrl}/api/v1/me/lessons/FREE-01/progress`, {
+      headers: deviceB,
+    });
+    const syncedOnDeviceBBody = await syncedOnDeviceB.json() as {
+      data: { status: string; completedSteps: number; completedStepIds: string[] };
+    };
+    expect(syncedOnDeviceB.status).toBe(200);
+    expect(syncedOnDeviceBBody.data).toMatchObject({
+      status: "in_progress",
+      completedSteps: 1,
+      completedStepIds: ["FREE-01-01"],
+    });
+
     const tooEarly = await fetch(`${baseUrl}/api/v1/lessons/FREE-01/complete`, {
-      method: "POST", headers: cookie,
+      method: "POST", headers: deviceB,
     });
     const tooEarlyBody = await tooEarly.json() as { error: { code: string } };
     expect(tooEarly.status).toBe(409);
     expect(tooEarlyBody.error.code).toBe("LESSON_STEPS_INCOMPLETE");
 
     await fetch(`${baseUrl}/api/v1/lessons/FREE-01/steps/FREE-01-02/complete`, {
-      method: "POST", headers: cookie,
+      method: "POST", headers: deviceB,
     });
     const complete = await fetch(`${baseUrl}/api/v1/lessons/FREE-01/complete`, {
-      method: "POST", headers: cookie,
+      method: "POST", headers: deviceB,
     });
     const completed = await complete.json() as { data: { status: string; completedSteps: number } };
     expect(completed.data).toMatchObject({ status: "completed", completedSteps: 2 });
 
     const progress = await fetch(`${baseUrl}/api/v1/me/lessons/FREE-01/progress`, {
-      headers: cookie,
+      headers: deviceA,
     });
     const progressBody = await progress.json() as { data: { status: string; completedStepIds: string[] } };
     expect(progressBody.data.status).toBe("completed");

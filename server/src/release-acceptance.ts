@@ -34,10 +34,17 @@ async function main(): Promise<void> {
     fieldValidation: await readReleaseEvidenceFile("fieldValidation", required("RELEASE_FIELD_VALIDATION_REPORT")),
     supplyChain: await readReleaseEvidenceFile("supplyChain", required("RELEASE_SUPPLY_CHAIN_REPORT")),
   };
+  const stagingEvidenceBundle = await readReleaseEvidenceFile(
+    "stagingBundle",
+    required("RELEASE_STAGING_BUNDLE_REPORT"),
+  );
   const result = new ReleaseAcceptanceService().run({
     releaseId: required("RELEASE_ID"),
     commitSha: required("RELEASE_COMMIT_SHA"),
     imageReference: required("RELEASE_IMAGE_REFERENCE"),
+    stagingEvidenceBundle: stagingEvidenceBundle.value,
+    stagingEvidenceBundleSha256: stagingEvidenceBundle.sha256,
+    stagingEvidenceBundleMaximumAgeHours: hours("RELEASE_STAGING_BUNDLE_MAX_AGE_HOURS", 168),
     reports: {
       preflight: evidenceFiles.preflight.value,
       recovery: evidenceFiles.recovery.value,

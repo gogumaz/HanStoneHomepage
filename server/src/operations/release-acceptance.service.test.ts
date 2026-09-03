@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   ReleaseAcceptanceService,
@@ -20,7 +21,7 @@ const recoveryNames = ["migration", "criticalTables", "relationships", "rpo", "r
 const queueNames = ["account_mail", "inquiry_notification", "video_scan", "hls_transcode", "object_deletion"];
 
 function validInput(): ReleaseAcceptanceInput {
-  return {
+  const value: ReleaseAcceptanceInput = {
     releaseId: "release-2026.08.24",
     commitSha: "A".repeat(40),
     imageReference: `registry.example.com/baduk-history-api@sha256:${"a".repeat(64)}`,
@@ -42,6 +43,9 @@ function validInput(): ReleaseAcceptanceInput {
       fieldValidation: 168,
       supplyChain: 168,
     },
+    stagingEvidenceBundle: null,
+    stagingEvidenceBundleSha256: "8".repeat(64),
+    stagingEvidenceBundleMaximumAgeHours: 168,
     reports: {
       preflight: {
         ok: true,
@@ -126,6 +130,31 @@ function validInput(): ReleaseAcceptanceInput {
       },
     },
   };
+  const bundleBase = {
+    schemaVersion: 1,
+    ok: true,
+    releaseId: value.releaseId,
+    candidateCommitSha: value.commitSha.toLowerCase(),
+    loadTestRunId: 101,
+    workerSoakRunId: 102,
+    checkedAt: "2026-08-24T11:30:00.000Z",
+    maximumAgeHours: 168,
+    checks: [
+      "sourceInventory", "candidateIdentity", "readOnlyLoad", "workerSoak", "controlledLoad",
+      "execution", "concurrentObservation", "executionTimeline", "freshness",
+    ].map((name) => ({ name, status: "pass", code: "OK" })),
+    sources: [
+      { name: "readOnlyLoad", sha256: value.evidenceSha256.readOnlyLoad, observedAt: "2026-08-24T10:00:00.000Z" },
+      { name: "workerSoak", sha256: value.evidenceSha256.workerSoak, observedAt: "2026-08-24T11:00:00.000Z" },
+      { name: "controlledLoad", sha256: "8".repeat(64), observedAt: "2026-08-24T10:30:00.000Z" },
+      { name: "execution", sha256: "9".repeat(64), observedAt: "2026-08-24T11:00:01.000Z" },
+    ],
+  };
+  value.stagingEvidenceBundle = {
+    ...bundleBase,
+    evidenceSha256: createHash("sha256").update(JSON.stringify(bundleBase)).digest("hex"),
+  };
+  return value;
 }
 
 describe("ReleaseAcceptanceService", () => {
@@ -141,6 +170,7 @@ describe("ReleaseAcceptanceService", () => {
     expect(report.evidence.map(({ status }) => status)).toEqual([
       "pass", "pass", "pass", "pass", "pass", "pass", "pass",
     ]);
+    expect(report.stagingEvidenceBundle.status).toBe("pass");
     expect(JSON.stringify(report)).not.toContain("secret-value");
     expect(JSON.stringify(report)).not.toContain("private-database");
     expect(JSON.stringify(report)).not.toContain("rawMetric");
@@ -259,10 +289,32 @@ describe("ReleaseAcceptanceService", () => {
     const second = service.run(changed);
     const changedPolicy = validInput();
     changedPolicy.maximumAgeHours.workerSoak = 24;
+    const changedBundle = validInput();
+    changedBundle.stagingEvidenceBundleSha256 = "0".repeat(64);
 
     expect(service.run(validInput()).manifestSha256).toBe(first.manifestSha256);
     expect(second.manifestSha256).not.toBe(first.manifestSha256);
     expect(service.run(changedPolicy).manifestSha256).not.toBe(first.manifestSha256);
+    expect(service.run(changedBundle).manifestSha256).not.toBe(first.manifestSha256);
+  });
+
+  it("rejects a tampered staging bundle or source reports that differ from the seven evidence files", () => {
+    const tampered = validInput();
+    (tampered.stagingEvidenceBundle as { releaseId: string }).releaseId = "different-release";
+    const tamperedReport = new ReleaseAcceptanceService(() => now).run(tampered);
+    expect(tamperedReport.ok).toBe(false);
+    expect(tamperedReport.stagingEvidenceBundle.checks.map(({ code }) => code)).toEqual(expect.arrayContaining([
+      "STAGING_BUNDLE_IDENTITY_INVALID",
+      "STAGING_BUNDLE_SELF_DIGEST_INVALID",
+    ]));
+
+    const mismatched = validInput();
+    const sources = (mismatched.stagingEvidenceBundle as { sources: Array<{ name: string; sha256: string }> }).sources;
+    sources.find(({ name }) => name === "workerSoak")!.sha256 = "0".repeat(64);
+    const mismatchReport = new ReleaseAcceptanceService(() => now).run(mismatched);
+    expect(mismatchReport.stagingEvidenceBundle.checks).toContainEqual({
+      name: "workerSource", status: "fail", code: "STAGING_BUNDLE_WORKER_SOURCE_MISMATCH",
+    });
   });
 
   it("rejects expired, future, and invalid evidence timestamps", () => {
@@ -310,5 +362,8 @@ describe("ReleaseAcceptanceService", () => {
       ...validInput(),
       maximumAgeHours: { ...validInput().maximumAgeHours, preflight: 0 },
     })).toThrowError(expect.objectContaining({ name: "RELEASE_EVIDENCE_MAXIMUM_AGE_INVALID" }));
+    expect(() => new ReleaseAcceptanceService(() => now).run({
+      ...validInput(), stagingEvidenceBundleSha256: "invalid",
+    })).toThrowError(expect.objectContaining({ name: "RELEASE_STAGING_BUNDLE_SHA256_INVALID" }));
   });
 });

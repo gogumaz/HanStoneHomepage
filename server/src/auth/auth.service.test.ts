@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../common/api-error.js";
 import type { PrismaService } from "../database/prisma.service.js";
-import { AccountStatus, AccountTokenPurpose, RoleType } from "../generated/prisma/enums.js";
+import { AccountStatus, AccountTokenPurpose, AgeBand, MinorAccountStatus, RoleType } from "../generated/prisma/enums.js";
 import { AuthService } from "./auth.service.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { hashSessionToken } from "./session-cookie.js";
@@ -16,6 +16,9 @@ type StoredUser = {
   emailVerifiedAt: Date | null;
   status: AccountStatus;
   roles: Array<{ role: RoleType }>;
+  ageBand: AgeBand;
+  minorAccountStatus: MinorAccountStatus;
+  guardianConsentVerifiedAt: Date | null;
 };
 
 type StoredAccountToken = {
@@ -55,6 +58,9 @@ function createPrismaMock() {
           emailVerifiedAt: null,
           status: AccountStatus.ACTIVE,
           roles: data.roles.create,
+          ageBand: data.ageBand,
+          minorAccountStatus: data.minorAccountStatus,
+          guardianConsentVerifiedAt: null,
         };
         users.push(user);
         return user;
@@ -159,12 +165,32 @@ describe("AuthService", () => {
       password: "safe-password-123",
       displayName: "바둑 학생",
       role: "student",
+      ageBand: "adult",
     }, "req_signup_test");
 
     expect(result.user).toMatchObject({ email: "student@example.com", roles: ["student"] });
     expect(state.users[0]?.passwordHash).not.toBe("safe-password-123");
     await expect(verifyPassword("safe-password-123", state.users[0]?.passwordHash ?? "")).resolves.toBe(true);
     await expect(service.authenticate(result.sessionToken)).resolves.toEqual(result.user);
+  });
+
+  it("creates an under-14 account in guardian-consent-pending state", async () => {
+    const state = createPrismaMock();
+    const service = new AuthService(state.prisma);
+
+    const result = await service.signup({
+      email: "child@example.com",
+      password: "safe-password-123",
+      displayName: "어린이 회원",
+      role: "student",
+      ageBand: "under_14",
+    });
+
+    expect(result.user).toMatchObject({
+      ageBand: "under_14",
+      minorAccountStatus: "guardian_consent_pending",
+      guardianConsentVerifiedAt: null,
+    });
   });
 
   it("does not allow a public signup to grant an operator role", async () => {
@@ -175,6 +201,7 @@ describe("AuthService", () => {
       password: "safe-password-123",
       displayName: "운영자 요청",
       role: "operator",
+      ageBand: "adult",
     })).rejects.toMatchObject({ code: "INVALID_ROLE" } satisfies Partial<ApiError>);
   });
 
@@ -188,6 +215,9 @@ describe("AuthService", () => {
       emailVerifiedAt: null,
       status: AccountStatus.ACTIVE,
       roles: [{ role: RoleType.GUARDIAN }],
+      ageBand: AgeBand.ADULT,
+      minorAccountStatus: MinorAccountStatus.NOT_APPLICABLE,
+      guardianConsentVerifiedAt: null,
     });
     const service = new AuthService(state.prisma);
 
@@ -205,6 +235,7 @@ describe("AuthService", () => {
       password: "safe-password-123",
       displayName: "세션 회전",
       role: "guardian",
+      ageBand: "adult",
     });
 
     const refreshed = await service.refresh(signup.sessionToken, "req_refresh_test");
@@ -225,6 +256,7 @@ describe("AuthService", () => {
       password: "safe-password-123",
       displayName: "인증 회원",
       role: "student",
+      ageBand: "adult",
     });
 
     expect(signup.user.emailVerified).toBe(false);
@@ -246,6 +278,7 @@ describe("AuthService", () => {
       password: "old-password-123",
       displayName: "복구 회원",
       role: "guardian",
+      ageBand: "adult",
     });
     const secondSession = await service.login({
       email: "reset@example.com",
@@ -298,6 +331,7 @@ describe("AuthService", () => {
       password: "safe-password-123",
       displayName: "메일 회원",
       role: "student",
+      ageBand: "adult",
     }, "req_mail_test");
 
     expect(signup.user.email).toBe("mail@example.com");
@@ -330,6 +364,7 @@ describe("AuthService", () => {
       password: "safe-password-123",
       displayName: "영속 메일 회원",
       role: "student",
+      ageBand: "adult",
     }, "req_durable_mail");
 
     const createData = vi.mocked(state.prisma.accountToken.create).mock.calls[0]?.[0].data as {
@@ -355,6 +390,7 @@ describe("AuthService", () => {
       password: "safe-password-123",
       displayName: "발송 실패 회원",
       role: "student",
+      ageBand: "adult",
     }, "req_mail_failure")).resolves.toMatchObject({
       user: { email: "mail-failure@example.com" },
     });

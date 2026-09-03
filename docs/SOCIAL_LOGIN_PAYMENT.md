@@ -9,6 +9,14 @@
 - OAuth: 네이버·카카오·Google 공급자별 Client ID·Secret·Redirect URI
 - 비밀 키는 Git 추적 파일과 브라우저 자산에 포함하지 않음
 
+네이버 로그인은 `https://nid.naver.com/oauth2.0/authorize`에서 `state`와 PKCE로 시작하고, 콜백에서 네이버 토큰 교환과 Bearer 프로필 조회를 마친 뒤 서버 세션을 발급합니다. 자동 통합 테스트는 인가 요청부터 사용자 생성·세션 쿠키·원래 경로 복귀·콜백 재사용 차단까지 외부 응답을 모사해 검증합니다. 운영 배포 전에는 별도로 네이버 개발자센터의 실제 Client ID·Secret·Callback URL을 사용한 현장 검증이 필요합니다.
+
+카카오 로그인은 `https://kauth.kakao.com/oauth/authorize`에서 `profile_nickname account_email` 동의 범위와 `state`·PKCE를 적용합니다. 콜백은 토큰 교환 후 Bearer 프로필 조회로 카카오 회원번호, 검증 이메일, 닉네임을 매핑하고 서버 세션을 발급합니다. 자동 통합 테스트는 원래 경로 복귀와 동일 콜백 재사용 차단까지 검증하며, 운영 배포 전에는 카카오 개발자 콘솔에 실제 Redirect URI와 동의 항목을 등록해 현장 검증해야 합니다.
+
+Google 로그인은 OIDC `openid email profile` 범위와 `state`·PKCE·`nonce`로 시작합니다. 콜백에서 받은 ID 토큰은 Google JWKS 서명, 발급자, Client ID 대상, 만료와 `nonce`를 검증한 뒤에만 계정과 서버 세션을 만듭니다. 자동 통합 테스트는 토큰 요청부터 검증된 이메일·이름 매핑, 원래 경로 복귀와 콜백 재사용 차단까지 확인하며, 운영 배포 전에는 Google Cloud Console의 실제 OAuth 동의 화면과 Redirect URI로 현장 검증해야 합니다.
+
+OAuth `state` 원문은 저장하지 않고 SHA-256 해시, 공급자, 만료 시각, 사용 시각을 서버에 보관합니다. 콜백에서는 형식·해시·공급자·만료·일회성 소비를 확인한 뒤에만 토큰을 교환합니다. Google `nonce`는 시작 요청과 같은 값을 서명 검증된 ID 토큰에서 다시 확인하며, 누락되거나 일치하지 않으면 사용자나 세션을 만들지 않습니다.
+
 브라우저 공개 설정은 다음과 같습니다.
 
 ```js

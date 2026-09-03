@@ -18,6 +18,8 @@ import { MaterialModule } from "./material/material.module.js";
 import { ClassHelperModule } from "./class-helper/class-helper.module.js";
 import { StoreModule } from "./store/store.module.js";
 import { OperationsModule } from "./operations/operations.module.js";
+import { QrModule } from "./qr/qr.module.js";
+import { OrganizationModule } from "./organization/organization.module.js";
 
 @Module({
   imports: [
@@ -36,6 +38,8 @@ import { OperationsModule } from "./operations/operations.module.js";
     ClassHelperModule,
     StoreModule,
     OperationsModule,
+    QrModule,
+    OrganizationModule,
   ],
   controllers: [HealthController],
   providers: [

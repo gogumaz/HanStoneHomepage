@@ -62,6 +62,9 @@ function contentDisposition(fileName: string, inline: boolean): string {
 @Injectable()
 export class ObjectStorageService {
   private readonly bucket: string | null;
+  private readonly endpoint: string | null;
+  private readonly region: string;
+  private readonly forcePathStyle: boolean;
   private readonly ttlSeconds: number;
   private readonly uploadTtlSeconds: number;
   private readonly maxVideoBytes: number;
@@ -73,6 +76,9 @@ export class ObjectStorageService {
   constructor() {
     const config = loadAppConfig();
     this.bucket = config.objectStorageBucket;
+    this.endpoint = config.objectStorageEndpoint;
+    this.region = config.objectStorageRegion;
+    this.forcePathStyle = config.objectStorageForcePathStyle;
     this.ttlSeconds = config.playbackUrlTtlSeconds;
     this.uploadTtlSeconds = config.videoUploadUrlTtlSeconds;
     this.maxVideoBytes = config.videoUploadMaxBytes;
@@ -953,6 +959,13 @@ export class ObjectStorageService {
         Body: probe,
         ContentType: "application/octet-stream",
       }));
+      const unsignedResponse = await fetch(this.unsignedObjectUrl(objectKey), {
+        method: "GET",
+        redirect: "follow",
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (unsignedResponse.ok) failed = true;
+      await unsignedResponse.body?.cancel();
       const object = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: objectKey }));
       const received = object.Body ? await object.Body.transformToByteArray() : new Uint8Array();
       if (!Buffer.from(received).equals(Buffer.from(probe))) failed = true;
@@ -971,6 +984,28 @@ export class ObjectStorageService {
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
+  }
+
+  private unsignedObjectUrl(objectKey: string): string {
+    if (!this.bucket) throw new Error("OBJECT_STORAGE_NOT_CONFIGURED");
+    const encodedKey = objectKey.split("/").map(encodeURIComponent).join("/");
+    if (this.endpoint) {
+      const url = new URL(this.endpoint);
+      const basePath = url.pathname.replace(/\/+$/, "");
+      if (this.forcePathStyle) {
+        url.pathname = `${basePath}/${encodeURIComponent(this.bucket)}/${encodedKey}`;
+      } else {
+        url.hostname = `${this.bucket}.${url.hostname}`;
+        url.pathname = `${basePath}/${encodedKey}`;
+      }
+      url.search = "";
+      url.hash = "";
+      return url.toString();
+    }
+    const host = this.region === "us-east-1"
+      ? `${this.bucket}.s3.amazonaws.com`
+      : `${this.bucket}.s3.${this.region}.amazonaws.com`;
+    return `https://${host}/${encodedKey}`;
   }
 
   async verifyCdnDelivery(

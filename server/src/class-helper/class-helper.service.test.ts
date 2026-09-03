@@ -130,7 +130,7 @@ describe("ClassHelperService", () => {
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({
       lessonVideo: { appUrl: "/lessons/PRE-01" },
-      missionUrl: "/missions?lessonId=PRE-01&missionId=MISSION-PRE-01-01",
+      missionUrl: "/missions?lessonId=PRE-01&missionId=MISSION-PRE-01-01&mode=classroom",
       activityPdf: { downloadUrl: expect.stringContaining("/assets/activityPdf") },
     });
     expect(JSON.stringify(result)).not.toContain("objectKey");

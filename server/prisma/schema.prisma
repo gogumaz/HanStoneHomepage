@@ -14,6 +14,20 @@ enum AccountStatus {
   DELETED
 }
 
+enum AgeBand {
+  UNKNOWN
+  UNDER_14
+  AGE_14_TO_18
+  ADULT
+}
+
+enum MinorAccountStatus {
+  AGE_DECLARATION_REQUIRED
+  GUARDIAN_CONSENT_PENDING
+  ACTIVE
+  NOT_APPLICABLE
+}
+
 enum AccountTokenPurpose {
   PASSWORD_RESET
   EMAIL_VERIFICATION
@@ -32,6 +46,29 @@ enum RoleType {
   ORGANIZATION_ADMIN
   OPERATOR
   ADMIN
+}
+
+enum RoleVerificationStatus {
+  NOT_REQUIRED
+  PENDING
+  VERIFIED
+  REVOKED
+}
+
+enum OrganizationMembershipRole {
+  INSTRUCTOR
+  ADMIN
+}
+
+enum OrganizationMembershipStatus {
+  ACTIVE
+  SUSPENDED
+  ENDED
+}
+
+enum OrganizationClassStatus {
+  ACTIVE
+  ARCHIVED
 }
 
 enum InvitationStatus {
@@ -55,6 +92,11 @@ enum LessonStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
+}
+
+enum LessonQrCodeStatus {
+  ACTIVE
+  DISABLED
 }
 
 enum LessonAssetKind {
@@ -186,6 +228,7 @@ enum InquiryNotificationStatus {
   SENT
   SKIPPED
   ERROR
+  BOUNCED
 }
 
 enum AccountMailKind {
@@ -199,6 +242,7 @@ enum AccountMailStatus {
   SENT
   SKIPPED
   ERROR
+  BOUNCED
 }
 
 enum UserNotificationKind {
@@ -313,6 +357,9 @@ model User {
   passwordHash                  String?
   emailVerifiedAt               DateTime?
   status                        AccountStatus            @default(ACTIVE)
+  ageBand                       AgeBand                  @default(ADULT)
+  minorAccountStatus            MinorAccountStatus       @default(NOT_APPLICABLE)
+  guardianConsentVerifiedAt     DateTime?
   createdAt                     DateTime                 @default(now())
   updatedAt                     DateTime                 @updatedAt
   deletedAt                     DateTime?
@@ -361,8 +408,11 @@ model User {
   updatedClassHelpers           ClassHelper[]             @relation("ClassHelperUpdatedBy")
   classHelperAssets             ClassHelperAsset[]
   classHelperRevisions          ClassHelperRevision[]      @relation("ClassHelperRevisionChangedBy")
+  organizationMemberships       OrganizationMembership[]
+  organizationClassEnrollments  OrganizationClassEnrollment[]
 
   @@index([status])
+  @@index([minorAccountStatus])
 }
 
 model AccountToken {
@@ -397,17 +447,94 @@ model AccountMailJob {
   token          AccountToken      @relation(fields: [tokenId], references: [id], onDelete: Cascade)
 
   @@index([status, nextAttemptAt, createdAt])
+  @@index([messageId])
 }
 
 model UserRoleAssignment {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
-  role      RoleType
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                 String                 @id @default(uuid()) @db.Uuid
+  userId             String                 @db.Uuid
+  role               RoleType
+  verificationStatus RoleVerificationStatus @default(NOT_REQUIRED)
+  verifiedAt         DateTime?
+  createdAt          DateTime               @default(now())
+  user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, role])
   @@index([role])
+  @@index([role, verificationStatus])
+}
+
+model Organization {
+  id          String                   @id @default(uuid()) @db.Uuid
+  name        String                   @db.VarChar(120)
+  slug        String                   @unique @db.VarChar(80)
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  memberships OrganizationMembership[]
+  classes     OrganizationClass[]
+}
+
+model OrganizationMembership {
+  id                 String                       @id @default(uuid()) @db.Uuid
+  organizationId     String                       @db.Uuid
+  userId             String                       @db.Uuid
+  role               OrganizationMembershipRole
+  status             OrganizationMembershipStatus @default(ACTIVE)
+  startsAt           DateTime                     @default(now())
+  endsAt             DateTime?
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+  organization       Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user               User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teacherAssignments OrganizationClassTeacherAssignment[]
+
+  @@unique([organizationId, userId])
+  @@index([userId, status, startsAt, endsAt])
+  @@index([organizationId, role, status])
+}
+
+model OrganizationClass {
+  id                 String                               @id @default(uuid()) @db.Uuid
+  organizationId     String                               @db.Uuid
+  name               String                               @db.VarChar(100)
+  academicYear       Int
+  status             OrganizationClassStatus              @default(ACTIVE)
+  createdAt          DateTime                             @default(now())
+  updatedAt          DateTime                             @updatedAt
+  organization       Organization                         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  teacherAssignments OrganizationClassTeacherAssignment[]
+  enrollments        OrganizationClassEnrollment[]
+
+  @@unique([organizationId, academicYear, name])
+  @@index([organizationId, status])
+}
+
+model OrganizationClassTeacherAssignment {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  organizationClassId String                 @db.Uuid
+  teacherMembershipId String                 @db.Uuid
+  startsAt            DateTime               @default(now())
+  endsAt              DateTime?
+  createdAt           DateTime               @default(now())
+  organizationClass   OrganizationClass      @relation(fields: [organizationClassId], references: [id], onDelete: Cascade)
+  teacherMembership   OrganizationMembership @relation(fields: [teacherMembershipId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationClassId, teacherMembershipId])
+  @@index([teacherMembershipId, startsAt, endsAt])
+}
+
+model OrganizationClassEnrollment {
+  id                  String            @id @default(uuid()) @db.Uuid
+  organizationClassId String            @db.Uuid
+  studentId           String            @db.Uuid
+  startsAt            DateTime          @default(now())
+  endsAt              DateTime?
+  createdAt           DateTime          @default(now())
+  organizationClass   OrganizationClass @relation(fields: [organizationClassId], references: [id], onDelete: Cascade)
+  student             User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationClassId, studentId])
+  @@index([studentId, startsAt, endsAt])
 }
 
 model OAuthAccount {
@@ -553,9 +680,26 @@ model Lesson {
   missions         BadukMission[]
   teachingMaterials TeachingMaterial[]
   classHelpers       ClassHelper[]
+  qrCodes            LessonQrCode[]
 
   @@unique([eraId, order])
   @@index([status, eraId, order])
+}
+
+model LessonQrCode {
+  id         String             @id @default(uuid()) @db.Uuid
+  codeHash   String             @unique @db.VarChar(64)
+  lessonId   String             @db.VarChar(40)
+  status     LessonQrCodeStatus @default(ACTIVE)
+  expiresAt  DateTime?
+  maxClaims  Int?
+  claimCount Int                @default(0)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  lesson     Lesson             @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId, status])
+  @@index([status, expiresAt])
 }
 
 model LessonAsset {
@@ -1340,6 +1484,7 @@ model InquiryNotificationJob {
   @@unique([inquiryId, answerVersion])
   @@index([status, nextAttemptAt, createdAt])
   @@index([recipientUserId, createdAt])
+  @@index([messageId])
 }
 
 model UserNotification {

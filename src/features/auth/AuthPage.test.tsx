@@ -1,20 +1,24 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthPage } from './AuthPage';
 
-function renderPage() {
+function renderPage(initialEntry = '/account') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <AuthPage />
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <Routes>
+          <Route path="/account" element={<AuthPage />} />
+          <Route path="/qr/:code" element={<h1>QR 강의 복귀 완료</h1>} />
+        </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
 describe('AuthPage', () => {
@@ -113,6 +117,62 @@ describe('AuthPage', () => {
     expect(screen.queryByRole('link', { name: '카카오로 계속하기' })).not.toBeInTheDocument();
   });
 
+  it('returns to the original QR route after email login', async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/me')) {
+        return new Response(JSON.stringify({
+          error: { code: 'AUTH_REQUIRED', message: '로그인이 필요합니다.', requestId: 'req_qr_login' },
+        }), { status: 401, headers: { 'content-type': 'application/json' } });
+      }
+      if (url.endsWith('/auth/login') && init?.method === 'POST') {
+        return new Response(JSON.stringify({
+          data: {
+            user: {
+              id: 'student-qr',
+              email: 'qr@example.com',
+              emailVerified: true,
+              displayName: 'QR 학생',
+              roles: ['student'],
+            },
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderPage('/account?returnTo=%2Fqr%2FQR-PREHISTORIC-0001');
+
+    fireEvent.change(await screen.findByLabelText('이메일'), { target: { value: 'qr@example.com' } });
+    fireEvent.change(screen.getByLabelText('비밀번호'), { target: { value: 'safe-password-123' } });
+    fireEvent.click(screen.getByRole('button', { name: '로그인' }));
+
+    expect(await screen.findByRole('heading', { name: 'QR 강의 복귀 완료' })).toBeInTheDocument();
+  });
+
+  it('preserves a safe QR return path for OAuth and rejects external destinations', async () => {
+    window.APP_CONFIG = {
+      apiBaseUrl: '/api/v1',
+      oauthEnabled: true,
+      oauthProviders: ['google'],
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { code: 'AUTH_REQUIRED', message: '로그인이 필요합니다.', requestId: 'req_oauth_qr' },
+    }), { status: 401, headers: { 'content-type': 'application/json' } })));
+
+    renderPage('/account?returnTo=%2Fqr%2FQR-PREHISTORIC-0001');
+    expect(await screen.findByRole('link', { name: 'Google로 계속하기' })).toHaveAttribute(
+      'href',
+      '/api/v1/auth/oauth/google/start?returnTo=%2Fqr%2FQR-PREHISTORIC-0001',
+    );
+
+    cleanup();
+    renderPage('/account?returnTo=https%3A%2F%2Fattacker.example%2Fsteal');
+    expect(await screen.findByRole('link', { name: 'Google로 계속하기' })).toHaveAttribute(
+      'href',
+      '/api/v1/auth/oauth/google/start?returnTo=%2Faccount',
+    );
+  });
+
   it('renders API-provided account text without creating executable HTML', async () => {
     const maliciousName = '<img src=x onerror="window.__xss=1">공격자';
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -194,6 +254,53 @@ describe('AuthPage', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/me/oauth-accounts/google',
       expect.objectContaining({ method: 'DELETE', credentials: 'include' }),
+    );
+  });
+
+  it('removes private query data after logout and keeps the account signed out', async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/auth/logout') && init?.method === 'POST') {
+        return new Response(JSON.stringify({ data: { loggedOut: true } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.endsWith('/me/oauth-accounts')) {
+        return new Response(JSON.stringify({ data: { items: [], hasPassword: true } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.endsWith('/me')) {
+        return new Response(JSON.stringify({
+          data: {
+            user: {
+              id: 'student-logout',
+              email: 'student@example.test',
+              emailVerified: true,
+              displayName: '로그아웃 학생',
+              roles: ['student'],
+            },
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const queryClient = renderPage();
+    queryClient.setQueryData(['student-dashboard'], { privateProgress: 73 });
+    queryClient.setQueryData(['guardian-student-report', 'student-logout'], { privateReport: true });
+
+    fireEvent.click(await screen.findByRole('button', { name: '로그아웃' }));
+
+    expect(await screen.findByText('로그아웃했습니다.')).toBeInTheDocument();
+    expect(queryClient.getQueryData(['current-user'])).toBeNull();
+    expect(queryClient.getQueryData(['student-dashboard'])).toBeUndefined();
+    expect(queryClient.getQueryData(['guardian-student-report', 'student-logout'])).toBeUndefined();
+    expect(screen.getByRole('button', { name: '로그인' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/auth/logout',
+      expect.objectContaining({ method: 'POST', credentials: 'include' }),
     );
   });
 

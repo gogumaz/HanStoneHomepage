@@ -1,5 +1,6 @@
 import { Component, lazy, Suspense, type ReactNode } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
+import { RoleNavigation } from './RoleNavigation';
 
 const AuthPage = lazy(async () => ({
   default: (await import('../features/auth/AuthPage')).AuthPage,
@@ -42,6 +43,13 @@ const AdminCommunityReportsPage = lazy(async () => ({
 }));
 const NotificationsPage = lazy(async () => ({ default: (await import('../features/notification/NotificationsPage')).NotificationsPage }));
 const AdminOperationsPage = lazy(async () => ({ default: (await import('../features/operations/AdminOperationsPage')).AdminOperationsPage }));
+const QrPage = lazy(async () => ({ default: (await import('../features/qr/QrPage')).QrPage }));
+const OrganizationAdminPage = lazy(async () => ({
+  default: (await import('../features/organization/OrganizationAdminPage')).OrganizationAdminPage,
+}));
+const PrivacyPage = lazy(async () => ({
+  default: (await import('../features/legal/PrivacyPage')).PrivacyPage,
+}));
 
 type RouteErrorBoundaryProps = {
   children: ReactNode;
@@ -92,7 +100,11 @@ export function RouteLoading() {
   );
 }
 
-export function StackStatus() {
+type StackStatusProps = {
+  navigation?: ReactNode;
+};
+
+export function StackStatus({ navigation }: StackStatusProps = {}) {
   return (
     <main className="react-stack-page">
       <section className="react-stack-card" aria-labelledby="react-stack-title">
@@ -108,24 +120,7 @@ export function StackStatus() {
           <div><dt>Routing</dt><dd>React Router</dd></div>
           <div><dt>Server state</dt><dd>TanStack Query</dd></div>
         </dl>
-        <nav aria-label="기존 프로토타입 이동">
-          <Link to="/lessons">React 강의 여행</Link>
-          <Link to="/dashboard">나의 여행지도</Link>
-          <Link to="/admin/lessons">강의 CMS</Link>
-          <Link to="/admin/payments">결제 대사 관리</Link>
-          <Link to="/missions">바둑미션</Link>
-          <Link to="/admin/missions">바둑문제 입력기</Link>
-          <Link to="/admin/consultations">기관 상담 관리</Link>
-          <Link to="/admin/inquiries">1:1 문의 관리</Link>
-          <Link to="/admin/community-reports">커뮤니티 신고함</Link>
-          <Link to="/admin/operations">운영 워커 상태</Link>
-          <Link to="/notifications">알림함</Link>
-          <Link to="/subscriptions">계정 구독</Link>
-          <Link to="/account">계정 API 확인</Link>
-          <Link to="/index.html">기존 홈페이지</Link>
-          <Link to="/lecture.html">강의 CMS</Link>
-          <Link to="/board.html?type=classHelper">지도자 수업도우미</Link>
-        </nav>
+        {navigation ?? <RoleNavigation />}
       </section>
     </main>
   );
@@ -140,6 +135,7 @@ export function App() {
           <Route path="/guardian" element={<GuardianPage />} />
           <Route path="/lessons" element={<LessonsPage />} />
           <Route path="/lessons/:lessonId" element={<LessonDetailPage />} />
+          <Route path="/qr/:code" element={<QrPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/admin/lessons" element={<AdminLessonsPage />} />
           <Route path="/admin/payments" element={<AdminPaymentsPage />} />
@@ -151,6 +147,8 @@ export function App() {
           <Route path="/admin/community-reports" element={<AdminCommunityReportsPage />} />
           <Route path="/admin/operations" element={<AdminOperationsPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/organization/admin" element={<OrganizationAdminPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="*" element={<StackStatus />} />
         </Routes>
       </Suspense>

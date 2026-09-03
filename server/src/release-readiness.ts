@@ -4,6 +4,10 @@ import {
   ReleaseReadinessService,
   type ReleaseReadinessInput,
 } from "./operations/release-readiness.service.js";
+import {
+  RELEASE_APPROVAL_MODE,
+  SOLO_RELEASE_OPERATOR_LOGIN,
+} from "./common/release-approval-policy.js";
 
 const execFileAsync = promisify(execFile);
 const ghExecutable = process.platform === "win32" ? "gh.exe" : "gh";
@@ -48,6 +52,17 @@ async function main(): Promise<void> {
       typeof repositoryInfo.defaultBranchRef?.name !== "string") {
     throw cliError("GH_REPOSITORY_METADATA_INVALID");
   }
+  let actorLogin = process.env.RELEASE_TRIGGER_ACTOR?.trim() ?? "";
+  if (!actorLogin) {
+    const authenticatedUser = json<{ login?: unknown }>(
+      await command(ghExecutable, ["api", "user"], "GH_AUTHENTICATED_USER_READ_FAILED"),
+      "GH_AUTHENTICATED_USER_JSON_INVALID",
+    );
+    if (typeof authenticatedUser.login !== "string") {
+      throw cliError("GH_AUTHENTICATED_USER_INVALID");
+    }
+    actorLogin = authenticatedUser.login;
+  }
   const repository = repositoryInfo.nameWithOwner;
   const defaultBranch = repositoryInfo.defaultBranchRef.name;
   const localCommitSha = (await command("git", ["rev-parse", "HEAD"], "GIT_HEAD_READ_FAILED")).trim();
@@ -84,14 +99,21 @@ async function main(): Promise<void> {
     "GH_ENVIRONMENT_JSON_INVALID",
   );
   const productionEnvironmentExists = environments.environments?.some(({ name }) => name === "production") ?? false;
-  let productionReviewerCount = 0;
+  let productionReviewers: ReleaseReadinessInput["productionReviewers"] = [];
   let productionPreventSelfReview = false;
   let productionProtectedBranchesOnly = false;
   let productionCustomDeploymentBranchNames: string[] = [];
   let productionSecretNames: string[] = [];
   if (productionEnvironmentExists) {
     const production = json<{
-      protection_rules?: Array<{ type?: unknown; reviewers?: unknown[]; prevent_self_review?: unknown }>;
+      protection_rules?: Array<{
+        type?: unknown;
+        reviewers?: Array<{
+          type?: unknown;
+          reviewer?: { login?: unknown; slug?: unknown } | null;
+        }>;
+        prevent_self_review?: unknown;
+      }>;
       deployment_branch_policy?: {
         protected_branches?: unknown;
         custom_branch_policies?: unknown;
@@ -102,7 +124,17 @@ async function main(): Promise<void> {
     );
     const requiredReviewerRule = production.protection_rules
       ?.find(({ type }) => type === "required_reviewers");
-    productionReviewerCount = requiredReviewerRule?.reviewers?.length ?? 0;
+    productionReviewers = requiredReviewerRule?.reviewers?.flatMap(
+      ({ type, reviewer }): ReleaseReadinessInput["productionReviewers"] => {
+        if (type === "User" && typeof reviewer?.login === "string") {
+          return [{ type: "User" as const, identity: reviewer.login }];
+        }
+        if (type === "Team" && typeof reviewer?.slug === "string") {
+          return [{ type: "Team" as const, identity: reviewer.slug }];
+        }
+        return [];
+      },
+    ) ?? [];
     productionPreventSelfReview = requiredReviewerRule?.prevent_self_review === true;
     productionProtectedBranchesOnly = production.deployment_branch_policy?.protected_branches === true;
     if (production.deployment_branch_policy?.custom_branch_policies === true) {
@@ -135,12 +167,15 @@ async function main(): Promise<void> {
   const input: ReleaseReadinessInput = {
     repository,
     defaultBranch,
+    actorLogin,
+    approvalMode: RELEASE_APPROVAL_MODE,
+    soloOperatorLogin: SOLO_RELEASE_OPERATOR_LOGIN,
     localCommitSha,
     remoteDefaultCommitSha: remoteDefaultCommitSha || null,
     dirtyFileCount,
     workflows,
     productionEnvironmentExists,
-    productionReviewerCount,
+    productionReviewers,
     productionPreventSelfReview,
     productionProtectedBranchesOnly,
     productionCustomDeploymentBranchNames,

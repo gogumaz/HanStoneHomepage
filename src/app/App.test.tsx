@@ -32,7 +32,7 @@ describe('React stack entry', () => {
   it('shows the selected frontend stack', () => {
     render(
       <MemoryRouter>
-        <StackStatus />
+        <StackStatus navigation={<nav aria-label="테스트 메뉴" />} />
       </MemoryRouter>
     );
 

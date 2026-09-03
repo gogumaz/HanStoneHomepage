@@ -4,6 +4,7 @@ import { createPkceChallenge, normalizeReturnTo } from "./oauth-flow.js";
 describe("OAuth flow helpers", () => {
   it("keeps internal return paths and rejects external redirects", () => {
     expect(normalizeReturnTo("/dashboard?from=oauth#next")).toBe("/dashboard?from=oauth#next");
+    expect(normalizeReturnTo("/qr/QR-PREHISTORIC-0001")).toBe("/qr/QR-PREHISTORIC-0001");
     expect(normalizeReturnTo("https://attacker.example/path")).toBe("/");
     expect(normalizeReturnTo("//attacker.example/path")).toBe("/");
     expect(normalizeReturnTo("/\\attacker.example")).toBe("/");

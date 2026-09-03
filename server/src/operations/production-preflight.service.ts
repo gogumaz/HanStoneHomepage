@@ -35,7 +35,7 @@ export type ProductionPreflightReport = {
   checks: PreflightCheck[];
 };
 
-export const REQUIRED_PRODUCTION_MIGRATION = "20260824002300_account_mail_outbox";
+export const REQUIRED_PRODUCTION_MIGRATION = "20260830000400_minor_account_consent";
 
 class ConfigurationError extends Error {
   constructor(readonly code: string) {
@@ -89,6 +89,12 @@ export class ProductionPreflightService {
         if (!config.accountMailEncryptionKeyBase64) {
           throw new ConfigurationError("ACCOUNT_MAIL_QUEUE_KEY_REQUIRED");
         }
+        if (!config.mailDkimSelector) {
+          throw new ConfigurationError("MAIL_DKIM_SELECTOR_REQUIRED");
+        }
+        if (!config.mailBounceWebhookSecret) {
+          throw new ConfigurationError("MAIL_BOUNCE_WEBHOOK_SECRET_REQUIRED");
+        }
         if (!config.operationsMetricsToken) {
           throw new ConfigurationError("OPERATIONS_METRICS_TOKEN_REQUIRED");
         }
@@ -106,7 +112,13 @@ export class ProductionPreflightService {
         if (!config.corsOrigins.includes(new URL(config.publicAppUrl).origin)) {
           throw new ConfigurationError("PUBLIC_APP_ORIGIN_NOT_ALLOWED_BY_CORS");
         }
-        return `oauth=${configuredProviders.sort().join(",") || "none"}; tossPayments=configured`;
+        return [
+          `oauth=${configuredProviders.sort().join(",") || "none"}`,
+          "tossPayments=configured",
+          `legalPolicy=${config.legalPolicyVersion}`,
+          `legalApprovedAt=${config.legalPolicyApprovedAt}`,
+          "legalApprovalSha256=verified",
+        ].join("; ");
       }),
       this.check("recoveryPolicy", async () => {
         if (!config.databasePitrEnabled) throw new ConfigurationError("DATABASE_PITR_REQUIRED");
@@ -207,6 +219,12 @@ export class ProductionPreflightService {
           }),
           this.prisma.storeCartItem.findFirst({ select: { userId: true, productId: true, quantity: true } }),
           this.prisma.accountMailJob.findFirst({ select: { tokenId: true, kind: true, status: true, nextAttemptAt: true } }),
+          this.prisma.organizationMembership.findFirst({
+            select: { organizationId: true, userId: true, role: true, status: true, startsAt: true, endsAt: true },
+          }),
+          this.prisma.organizationClassTeacherAssignment.findFirst({
+            select: { organizationClassId: true, teacherMembershipId: true, startsAt: true, endsAt: true },
+          }),
         ]);
         return `connection=ok; migration=${REQUIRED_PRODUCTION_MIGRATION}; featureSchema=ok`;
       }),
@@ -217,7 +235,7 @@ export class ProductionPreflightService {
       }),
       this.check("objectStorage", async () => {
         await this.storage.verifyVideoStorageAccess();
-        return "put=get=delete=ok";
+        return "put=get=delete=ok; anonymousRead=denied";
       }),
       this.check("cdn", async () => {
         const provider = await this.delivery.verifyCdnConnection();
@@ -239,7 +257,17 @@ export class ProductionPreflightService {
       }),
       this.check("smtp", async () => {
         await this.mail.verifyConnection();
-        return "dns=tcp=tls=auth=ok; messageSent=false";
+        const dns = await this.mail.verifyDomainAuthentication();
+        return [
+          "dns=spf+dkim+dmarc",
+          `dmarcPolicy=${dns.dmarcPolicy}`,
+          `domainSha256=${dns.domainSha256}`,
+          `dkimSelectorSha256=${dns.dkimSelectorSha256}`,
+          `dnsRecordsSha256=${dns.dnsRecordsSha256}`,
+          "tcp=tls=auth=ok",
+          "bounceWebhook=configured",
+          "messageSent=false",
+        ].join("; ");
       }),
     ]);
     return {

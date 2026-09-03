@@ -1,0 +1,3 @@
+export const RELEASE_APPROVAL_MODE = "solo" as const;
+export const SOLO_RELEASE_OPERATOR_LOGIN = "gogumaz";
+export const SOLO_RELEASE_CONFIRMATION = "AUTHORIZE_SOLO_PRODUCTION_RELEASE";

@@ -1,3 +1,5 @@
+import { CURRENT_LEGAL_POLICY_VERSION } from "../common/legal-policy.js";
+
 export type AppConfig = {
   nodeEnv: "development" | "test" | "production";
   port: number;
@@ -21,6 +23,8 @@ export type AppConfig = {
   smtpUser: string | null;
   smtpPassword: string | null;
   smtpFrom: string | null;
+  mailDkimSelector: string | null;
+  mailBounceWebhookSecret: string | null;
   smtpConnectionTimeoutMs: number;
   accountMailEncryptionKeyBase64: string | null;
   accountMailPollIntervalMs: number;
@@ -28,6 +32,9 @@ export type AppConfig = {
   accountMailLockTimeoutMs: number;
   workerHealthBacklogMinutes: number;
   operationsMetricsToken: string | null;
+  legalPolicyVersion: string | null;
+  legalPolicyApprovedAt: string | null;
+  legalPolicyApprovalSha256: string | null;
   inquiryNotificationPollIntervalMs: number;
   inquiryNotificationMaxAttempts: number;
   inquiryNotificationLockTimeoutMs: number;
@@ -164,6 +171,42 @@ function optionalMetricsToken(value: string | undefined): string | null {
   return candidate;
 }
 
+function optionalLegalPolicyVersion(value: string | undefined): string | null {
+  if (!value?.trim()) return null;
+  const candidate = value.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(candidate)) {
+    throw new Error("LEGAL_POLICY_VERSION은 영문·숫자·점·_·- 조합의 1~100자 값이어야 합니다.");
+  }
+  return candidate;
+}
+
+function optionalSha256(value: string | undefined, key: string): string | null {
+  if (!value?.trim()) return null;
+  const candidate = value.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(candidate)) {
+    throw new Error(`${key}는 64자리 SHA-256 16진수여야 합니다.`);
+  }
+  return candidate;
+}
+
+function optionalMailDkimSelector(value: string | undefined): string | null {
+  if (!value?.trim()) return null;
+  const candidate = value.trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,62}$/.test(candidate)) {
+    throw new Error("MAIL_DKIM_SELECTOR는 영문·숫자·_·- 조합의 1~63자 값이어야 합니다.");
+  }
+  return candidate;
+}
+
+function optionalWebhookSecret(value: string | undefined): string | null {
+  if (!value?.trim()) return null;
+  const candidate = value.trim();
+  if (!/^[A-Za-z0-9_-]{32,200}$/.test(candidate)) {
+    throw new Error("MAIL_BOUNCE_WEBHOOK_SECRET은 영문·숫자·_·- 조합의 32~200자 값이어야 합니다.");
+  }
+  return candidate;
+}
+
 export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const nodeEnv = env.NODE_ENV ?? "development";
   if (!allowedEnvironments.has(nodeEnv)) {
@@ -187,6 +230,8 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const smtpUser = env.SMTP_USER?.trim() || null;
   const smtpPassword = env.SMTP_PASSWORD?.trim() || null;
   const smtpFrom = env.MAIL_FROM?.trim() || null;
+  const mailDkimSelector = optionalMailDkimSelector(env.MAIL_DKIM_SELECTOR);
+  const mailBounceWebhookSecret = optionalWebhookSecret(env.MAIL_BOUNCE_WEBHOOK_SECRET);
   const accountMailEncryptionKeyBase64 = optionalEncryptionKey(env.ACCOUNT_MAIL_ENCRYPTION_KEY_BASE64);
   const operationsMetricsToken = optionalMetricsToken(env.OPERATIONS_METRICS_TOKEN);
   if (Boolean(smtpUser) !== Boolean(smtpPassword)) {
@@ -480,6 +525,54 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error("RATE_LIMIT_CONNECT_TIMEOUT_MS는 500~30000ms여야 합니다.");
   }
 
+  const databaseUrl = required(env.DATABASE_URL, "DATABASE_URL");
+  const smtpSecure = booleanValue(env.SMTP_SECURE, false, "SMTP_SECURE");
+  const smtpRequireTls = booleanValue(env.SMTP_REQUIRE_TLS, nodeEnv === "production", "SMTP_REQUIRE_TLS");
+  const legalPolicyVersion = optionalLegalPolicyVersion(env.LEGAL_POLICY_VERSION);
+  const legalPolicyApprovedAt = optionalIsoTimestamp(env.LEGAL_POLICY_APPROVED_AT, "LEGAL_POLICY_APPROVED_AT");
+  const legalPolicyApprovalSha256 = optionalSha256(
+    env.LEGAL_POLICY_APPROVAL_SHA256,
+    "LEGAL_POLICY_APPROVAL_SHA256",
+  );
+  if (nodeEnv === "production") {
+    const publicUrl = new URL(publicAppUrl);
+    if (publicUrl.protocol !== "https:" || publicUrl.username || publicUrl.password) {
+      throw new Error("운영 PUBLIC_APP_URL은 자격정보가 없는 HTTPS URL이어야 합니다.");
+    }
+    for (const origin of corsOrigins) {
+      const url = new URL(origin);
+      if (url.protocol !== "https:" || url.origin !== origin.replace(/\/$/u, "") || url.username || url.password) {
+        throw new Error("운영 CORS_ORIGINS는 HTTPS origin만 허용합니다.");
+      }
+    }
+    const database = new URL(databaseUrl);
+    const sslMode = database.searchParams.get("sslmode")?.toLowerCase();
+    if (!sslMode || !["require", "verify-ca", "verify-full"].includes(sslMode)) {
+      throw new Error("운영 DATABASE_URL에는 sslmode=require, verify-ca 또는 verify-full이 필요합니다.");
+    }
+    if (rateLimitRedisUrl && new URL(rateLimitRedisUrl).protocol !== "rediss:") {
+      throw new Error("운영 RATE_LIMIT_REDIS_URL은 rediss:// TLS 연결이어야 합니다.");
+    }
+    if (objectStorageEndpoint && new URL(objectStorageEndpoint).protocol !== "https:") {
+      throw new Error("운영 OBJECT_STORAGE_ENDPOINT는 HTTPS URL이어야 합니다.");
+    }
+    if (!smtpSecure && !smtpRequireTls) {
+      throw new Error("운영 SMTP는 SMTPS 또는 STARTTLS를 강제해야 합니다.");
+    }
+    if (legalPolicyVersion !== CURRENT_LEGAL_POLICY_VERSION) {
+      throw new Error(`운영 LEGAL_POLICY_VERSION은 ${CURRENT_LEGAL_POLICY_VERSION}이어야 합니다.`);
+    }
+    if (!legalPolicyApprovedAt) {
+      throw new Error("운영 LEGAL_POLICY_APPROVED_AT이 필요합니다.");
+    }
+    if (Date.parse(legalPolicyApprovedAt) > Date.now()) {
+      throw new Error("운영 LEGAL_POLICY_APPROVED_AT은 미래 시각일 수 없습니다.");
+    }
+    if (!legalPolicyApprovalSha256) {
+      throw new Error("운영 LEGAL_POLICY_APPROVAL_SHA256가 필요합니다.");
+    }
+  }
+
   return {
     nodeEnv: nodeEnv as AppConfig["nodeEnv"],
     port: positiveInteger(env.PORT, 3000, "PORT"),
@@ -488,7 +581,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     rateLimitRedisUrl,
     rateLimitKeyPrefix,
     rateLimitConnectTimeoutMs,
-    databaseUrl: required(env.DATABASE_URL, "DATABASE_URL"),
+    databaseUrl,
     corsOrigins,
     sessionCookieName: env.SESSION_COOKIE_NAME?.trim() || "baduk_session",
     sessionTtlHours: positiveInteger(env.SESSION_TTL_HOURS, 168, "SESSION_TTL_HOURS"),
@@ -498,15 +591,13 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     publicAppUrl,
     smtpHost,
     smtpPort: positiveInteger(env.SMTP_PORT, 587, "SMTP_PORT"),
-    smtpSecure: booleanValue(env.SMTP_SECURE, false, "SMTP_SECURE"),
-    smtpRequireTls: booleanValue(
-      env.SMTP_REQUIRE_TLS,
-      nodeEnv === "production",
-      "SMTP_REQUIRE_TLS",
-    ),
+    smtpSecure,
+    smtpRequireTls,
     smtpUser,
     smtpPassword,
     smtpFrom,
+    mailDkimSelector,
+    mailBounceWebhookSecret,
     smtpConnectionTimeoutMs: positiveInteger(
       env.SMTP_CONNECTION_TIMEOUT_MS,
       10_000,
@@ -534,6 +625,9 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       "WORKER_HEALTH_BACKLOG_MINUTES",
     ),
     operationsMetricsToken,
+    legalPolicyVersion,
+    legalPolicyApprovedAt,
+    legalPolicyApprovalSha256,
     inquiryNotificationPollIntervalMs,
     inquiryNotificationMaxAttempts,
     inquiryNotificationLockTimeoutMs,

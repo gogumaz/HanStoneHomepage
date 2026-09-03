@@ -35,6 +35,14 @@ export type StudentDashboard = {
     totalSteps: number;
     stepCompletionRate: number;
     lastActivityAt: string | null;
+    weekly: {
+      periodStart: string;
+      periodEnd: string;
+      studyDays: number;
+      firstAttemptCorrectMissions: number;
+      firstAttemptMissions: number;
+      firstAttemptAccuracy: number;
+    };
   };
   eras: Array<{
     id: string;

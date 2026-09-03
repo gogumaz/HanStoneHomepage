@@ -1,4 +1,4 @@
-export const REQUIRED_RECOVERY_MIGRATION = "20260824002300_account_mail_outbox";
+export const REQUIRED_RECOVERY_MIGRATION = "20260830000400_minor_account_consent";
 
 export const REQUIRED_RECOVERY_TABLES = [
   "User",
@@ -13,6 +13,11 @@ export const REQUIRED_RECOVERY_TABLES = [
   "Inquiry",
   "InquiryNotificationJob",
   "ObjectDeletionJob",
+  "Organization",
+  "OrganizationMembership",
+  "OrganizationClass",
+  "OrganizationClassTeacherAssignment",
+  "OrganizationClassEnrollment",
 ] as const;
 
 type QueryResult<Row> = {

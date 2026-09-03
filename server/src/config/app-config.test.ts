@@ -4,7 +4,7 @@ import { loadAppConfig } from "./app-config.js";
 function productionEnv(): NodeJS.ProcessEnv {
   return {
     NODE_ENV: "production",
-    DATABASE_URL: "postgresql://user:password@database.example.com:5432/app",
+    DATABASE_URL: "postgresql://user:password@database.example.com:5432/app?sslmode=require",
     CORS_ORIGINS: "https://www.example.com",
     PUBLIC_APP_URL: "https://www.example.com",
     SMTP_HOST: "smtp.example.com",
@@ -14,10 +14,40 @@ function productionEnv(): NodeJS.ProcessEnv {
     SMTP_USER: "smtp-user",
     SMTP_PASSWORD: "smtp-password",
     MAIL_FROM: "바둑타고 <no-reply@example.com>",
+    MAIL_DKIM_SELECTOR: "mail2026",
+    MAIL_BOUNCE_WEBHOOK_SECRET: "bounce_webhook_secret_1234567890_abcd",
+    LEGAL_POLICY_VERSION: "guardian-link-v1",
+    LEGAL_POLICY_APPROVED_AT: "2026-08-01T00:00:00.000Z",
+    LEGAL_POLICY_APPROVAL_SHA256: "a".repeat(64),
   };
 }
 
 describe("loadAppConfig account mail settings", () => {
+  it("rejects plaintext production transports", () => {
+    expect(() => loadAppConfig({ ...productionEnv(), PUBLIC_APP_URL: "http://www.example.com" }))
+      .toThrow(/PUBLIC_APP_URL.*HTTPS/);
+    expect(() => loadAppConfig({ ...productionEnv(), CORS_ORIGINS: "http://www.example.com" }))
+      .toThrow(/CORS_ORIGINS.*HTTPS/);
+    expect(() => loadAppConfig({
+      ...productionEnv(),
+      DATABASE_URL: "postgresql://user:password@database.example.com:5432/app",
+    })).toThrow(/DATABASE_URL.*sslmode/);
+    expect(() => loadAppConfig({
+      ...productionEnv(),
+      RATE_LIMIT_REDIS_URL: "redis://redis.example.com:6379",
+    })).toThrow(/RATE_LIMIT_REDIS_URL.*rediss/);
+    expect(() => loadAppConfig({
+      ...productionEnv(),
+      OBJECT_STORAGE_BUCKET: "production-assets",
+      OBJECT_STORAGE_ENDPOINT: "http://storage.example.com",
+    })).toThrow(/OBJECT_STORAGE_ENDPOINT.*HTTPS/);
+    expect(() => loadAppConfig({
+      ...productionEnv(),
+      SMTP_SECURE: "false",
+      SMTP_REQUIRE_TLS: "false",
+    })).toThrow(/SMTP.*STARTTLS/);
+  });
+
   it("keeps the Toss Payments secret in server configuration only", () => {
     expect(loadAppConfig({
       DATABASE_URL: "postgresql://test:test@localhost/test",
@@ -107,6 +137,7 @@ describe("loadAppConfig account mail settings", () => {
     const missingSmtp = productionEnv();
     delete missingSmtp.SMTP_HOST;
     expect(() => loadAppConfig(missingSmtp)).toThrow(/SMTP_HOST/);
+
   });
 
   it("accepts a TLS-required authenticated SMTP configuration", () => {
@@ -118,7 +149,26 @@ describe("loadAppConfig account mail settings", () => {
       smtpRequireTls: true,
       smtpUser: "smtp-user",
       smtpFrom: "바둑타고 <no-reply@example.com>",
+      mailDkimSelector: "mail2026",
+      legalPolicyVersion: "guardian-link-v1",
+      legalPolicyApprovedAt: "2026-08-01T00:00:00.000Z",
+      legalPolicyApprovalSha256: "a".repeat(64),
     });
+  });
+
+  it("requires a signed current legal-policy approval in production", () => {
+    expect(() => loadAppConfig({ ...productionEnv(), LEGAL_POLICY_VERSION: undefined }))
+      .toThrow(/LEGAL_POLICY_VERSION/);
+    expect(() => loadAppConfig({ ...productionEnv(), LEGAL_POLICY_VERSION: "guardian-link-v0" }))
+      .toThrow(/guardian-link-v1/);
+    expect(() => loadAppConfig({ ...productionEnv(), LEGAL_POLICY_APPROVED_AT: undefined }))
+      .toThrow(/LEGAL_POLICY_APPROVED_AT/);
+    expect(() => loadAppConfig({ ...productionEnv(), LEGAL_POLICY_APPROVED_AT: "2999-01-01T00:00:00.000Z" }))
+      .toThrow(/미래/);
+    expect(() => loadAppConfig({ ...productionEnv(), LEGAL_POLICY_APPROVAL_SHA256: undefined }))
+      .toThrow(/LEGAL_POLICY_APPROVAL_SHA256/);
+    expect(() => loadAppConfig({ ...productionEnv(), LEGAL_POLICY_APPROVAL_SHA256: "not-a-hash" }))
+      .toThrow(/SHA-256/);
   });
 
   it("rejects incomplete credentials and header injection", () => {

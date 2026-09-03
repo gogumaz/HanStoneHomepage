@@ -1,11 +1,20 @@
 import { createHash } from "node:crypto";
 import { RELEASE_EVIDENCE_NAMES } from "./release-acceptance.service.js";
+import {
+  successfulDeploymentVerificationEvidenceValid,
+} from "./deployment-verification.service.js";
 
 export type ReleaseCloseoutInput = {
   acceptance: unknown;
   deploymentVerification: unknown;
+  transportSecurity: unknown;
+  mailOperations: unknown;
+  legalApprovalBinding: unknown;
   acceptanceSha256: string;
   deploymentVerificationSha256: string;
+  transportSecuritySha256: string;
+  mailOperationsSha256: string;
+  legalApprovalBindingSha256: string;
   maximumVerificationDelayHours: number;
 };
 
@@ -16,12 +25,16 @@ export type ReleaseCloseoutReport = {
   imageReference: string | null;
   imageDigest: string | null;
   webDeploymentManifestSha256: string | null;
+  stagingEvidenceBundleSha256: string | null;
   acceptanceManifestSha256: string | null;
   closedAt: string;
   closeoutSha256: string;
   artifacts: {
     acceptanceSha256: string;
     deploymentVerificationSha256: string;
+    transportSecuritySha256: string;
+    mailOperationsSha256: string;
+    legalApprovalBindingSha256: string;
   };
   timeline: {
     acceptedAt: string | null;
@@ -49,6 +62,23 @@ const WEB_DEPLOYMENT_CHECK_NAMES = [
   "assetSha256",
   "assetCacheControl",
   "assetContentType",
+] as const;
+
+const TRANSPORT_SECURITY_CHECK_NAMES = [
+  "productionEnvironment", "apiHttps", "webHttps", "apiTlsCertificate", "webTlsCertificate",
+  "publicAppHttps", "corsHttps", "oauthHttps", "databaseTls", "redisTls", "objectStorageHttps",
+  "cdnHttps", "smtpTls", "preflight", "runtimeConnections", "deploymentVerification",
+  "candidateIdentity", "evidenceTimestamps",
+] as const;
+
+const MAIL_OPERATIONS_CHECK_NAMES = [
+  "preflight", "candidateCommit", "smtpCheck", "smtpDetail", "preflightTimestamp",
+  "preflightFreshness", "bounceWebhook", "providerEventCorrelation", "bounceAuditLog",
+] as const;
+
+const LEGAL_APPROVAL_BINDING_CHECK_NAMES = [
+  "approvalEvidence", "policyVersion", "candidateCommit", "approvalTimestamp",
+  "documentSha256", "generatedTimestamp", "preflight",
 ] as const;
 
 function closeoutError(code: string): Error {
@@ -97,6 +127,24 @@ function allWebChecksPassed(value: unknown): boolean {
   }) && expected.size === 0;
 }
 
+function allNamedChecksPassed(value: unknown, expectedNames: readonly string[]): boolean {
+  if (!Array.isArray(value) || value.length !== expectedNames.length) return false;
+  const expected = new Set(expectedNames);
+  return value.every((item) => {
+    const entry = object(item);
+    return typeof entry?.name === "string" && expected.delete(entry.name) &&
+      entry.status === "pass" && entry.code === "OK";
+  }) && expected.size === 0;
+}
+
+function stagingEvidenceBundleSha256(value: unknown): string | null {
+  const bundle = object(value);
+  const checks = Array.isArray(bundle?.checks) ? bundle.checks.map(object) : [];
+  return bundle?.status === "pass" && typeof bundle.sha256 === "string" && /^[a-fA-F0-9]{64}$/u.test(bundle.sha256)
+    && checks.length > 0 && checks.every((entry) => entry?.status === "pass" && entry?.code === "OK")
+    ? bundle.sha256.toLowerCase() : null;
+}
+
 export class ReleaseCloseoutService {
   constructor(private readonly now: () => Date = () => new Date()) {}
 
@@ -106,12 +154,21 @@ export class ReleaseCloseoutService {
       throw closeoutError("RELEASE_CLOSEOUT_MAXIMUM_DELAY_INVALID");
     }
     const artifactHashPattern = /^[a-fA-F0-9]{64}$/;
-    if (!artifactHashPattern.test(input.acceptanceSha256) || !artifactHashPattern.test(input.deploymentVerificationSha256)) {
+    if (!artifactHashPattern.test(input.acceptanceSha256) ||
+      !artifactHashPattern.test(input.deploymentVerificationSha256) ||
+      !artifactHashPattern.test(input.transportSecuritySha256) ||
+      !artifactHashPattern.test(input.mailOperationsSha256) ||
+      !artifactHashPattern.test(input.legalApprovalBindingSha256)) {
       throw closeoutError("RELEASE_CLOSEOUT_ARTIFACT_SHA256_INVALID");
     }
 
     const acceptance = object(input.acceptance);
     const deployment = object(input.deploymentVerification);
+    const transport = object(input.transportSecurity);
+    const mailOperations = object(input.mailOperations);
+    const legalApprovalBinding = object(input.legalApprovalBinding);
+    const mailArtifacts = object(mailOperations?.artifacts);
+    const legalArtifacts = object(legalApprovalBinding?.artifacts);
     const expected = object(deployment?.expected);
     const samples = object(deployment?.samples);
     const threshold = object(deployment?.threshold);
@@ -129,6 +186,9 @@ export class ReleaseCloseoutService {
     const acceptanceManifestSha256 = typeof acceptance?.manifestSha256 === "string" &&
       artifactHashPattern.test(acceptance.manifestSha256) ? acceptance.manifestSha256.toLowerCase() : null;
     const acceptedWebManifestSha256 = evidenceSha256(acceptance?.evidence, "webDeployment");
+    const acceptedStagingBundleSha256 = stagingEvidenceBundleSha256(acceptance?.stagingEvidenceBundle);
+    const deploymentEvidenceValid = releaseId !== null
+      && successfulDeploymentVerificationEvidenceValid(deployment, releaseId);
     const accepted = timestamp(acceptance?.checkedAt);
     const verified = timestamp(deployment?.completedAt);
     const verificationDelayMinutes = accepted && verified
@@ -145,9 +205,18 @@ export class ReleaseCloseoutService {
     const checks = [
       check("acceptance", acceptance?.ok === true, "RELEASE_ACCEPTANCE_NOT_SUCCESSFUL"),
       check("acceptanceEvidence", allEvidencePassed(acceptance?.evidence), "RELEASE_ACCEPTANCE_EVIDENCE_INCOMPLETE"),
+      check(
+        "stagingEvidenceBundle",
+        acceptedStagingBundleSha256 !== null,
+        "RELEASE_ACCEPTANCE_STAGING_BUNDLE_INVALID",
+      ),
       check("acceptanceManifest", acceptanceManifestSha256 !== null, "RELEASE_ACCEPTANCE_MANIFEST_INVALID"),
       check("acceptanceImageReference", imageReference !== null, "RELEASE_ACCEPTANCE_IMAGE_REFERENCE_INVALID"),
-      check("deploymentVerification", deployment?.ok === true, "DEPLOYMENT_VERIFICATION_NOT_SUCCESSFUL"),
+      check(
+        "deploymentVerification",
+        deployment?.ok === true && deploymentEvidenceValid,
+        "DEPLOYMENT_VERIFICATION_NOT_SUCCESSFUL",
+      ),
       check("rollbackDecision", deployment?.rollbackRecommended === false, "DEPLOYMENT_ROLLBACK_RECOMMENDED"),
       check(
         "deploymentSamples",
@@ -177,6 +246,33 @@ export class ReleaseCloseoutService {
           webExpected?.manifestSha256 === acceptedWebManifestSha256,
         "WEB_DEPLOYMENT_CANDIDATE_IDENTITY_MISMATCH",
       ),
+      check(
+        "transportSecurity",
+        transport?.schemaVersion === 3 && transport?.releaseId === releaseId &&
+          transport?.ok === true && transport?.commitSha === commitSha &&
+          transport?.deploymentVerifiedAt === deployment?.completedAt &&
+          allNamedChecksPassed(transport?.checks, TRANSPORT_SECURITY_CHECK_NAMES),
+        "TRANSPORT_SECURITY_EVIDENCE_INVALID",
+      ),
+      check(
+        "mailOperations",
+        mailOperations?.schemaVersion === 2 && mailOperations?.releaseId === releaseId && mailOperations?.ok === true &&
+          mailOperations?.commitSha === commitSha &&
+          mailOperations?.preflightCheckedAt === transport?.preflightCheckedAt &&
+          allNamedChecksPassed(mailOperations?.checks, MAIL_OPERATIONS_CHECK_NAMES) &&
+          !("providerEventId" in (mailOperations ?? {})),
+        "MAIL_OPERATIONS_EVIDENCE_INVALID",
+      ),
+      check(
+        "legalApprovalBinding",
+        legalApprovalBinding?.schemaVersion === 2 && legalApprovalBinding?.releaseId === releaseId &&
+          legalApprovalBinding?.ok === true &&
+          legalApprovalBinding?.commitSha === commitSha &&
+          allNamedChecksPassed(legalApprovalBinding?.checks, LEGAL_APPROVAL_BINDING_CHECK_NAMES) &&
+          typeof legalArtifacts?.preflightSha256 === "string" &&
+          legalArtifacts.preflightSha256 === mailArtifacts?.preflightSha256,
+        "LEGAL_APPROVAL_BINDING_EVIDENCE_INVALID",
+      ),
       check("timelineOrder", timelineOrdered, "DEPLOYMENT_VERIFICATION_BEFORE_ACCEPTANCE"),
       check("timelineDelay", timelineWithinLimit, "DEPLOYMENT_VERIFICATION_EXPIRED"),
       check("timelineFuture", timelineNotFuture, "DEPLOYMENT_VERIFICATION_TIMESTAMP_IN_FUTURE"),
@@ -185,6 +281,15 @@ export class ReleaseCloseoutService {
     const artifacts = {
       acceptanceSha256: input.acceptanceSha256.toLowerCase(),
       deploymentVerificationSha256: input.deploymentVerificationSha256.toLowerCase(),
+      transportSecuritySha256: input.transportSecuritySha256.toLowerCase(),
+      mailOperationsSha256: input.mailOperationsSha256.toLowerCase(),
+      legalApprovalBindingSha256: input.legalApprovalBindingSha256.toLowerCase(),
+    };
+    const timeline = {
+      acceptedAt: accepted?.toISOString() ?? null,
+      verifiedAt: verified?.toISOString() ?? null,
+      verificationDelayMinutes,
+      maximumVerificationDelayHours: input.maximumVerificationDelayHours,
     };
     const closeoutSource = JSON.stringify({
       releaseId,
@@ -192,10 +297,12 @@ export class ReleaseCloseoutService {
       imageDigest,
       imageReference,
       webDeploymentManifestSha256: acceptedWebManifestSha256,
+      stagingEvidenceBundleSha256: acceptedStagingBundleSha256,
       acceptanceManifestSha256,
       closedAt,
       artifacts,
       maximumVerificationDelayHours: input.maximumVerificationDelayHours,
+      timeline,
       checks: checks.map(({ name, status }) => ({ name, status })),
     });
     return {
@@ -205,16 +312,12 @@ export class ReleaseCloseoutService {
       imageReference,
       imageDigest,
       webDeploymentManifestSha256: acceptedWebManifestSha256,
+      stagingEvidenceBundleSha256: acceptedStagingBundleSha256,
       acceptanceManifestSha256,
       closedAt,
       closeoutSha256: createHash("sha256").update(closeoutSource, "utf8").digest("hex"),
       artifacts,
-      timeline: {
-        acceptedAt: accepted?.toISOString() ?? null,
-        verifiedAt: verified?.toISOString() ?? null,
-        verificationDelayMinutes,
-        maximumVerificationDelayHours: input.maximumVerificationDelayHours,
-      },
+      timeline,
       checks,
     };
   }

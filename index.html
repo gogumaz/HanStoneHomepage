@@ -8,7 +8,7 @@
   <title>바둑타고 한국사 여행</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="preload" as="image" href="assets/hero-journey.webp" type="image/webp" fetchpriority="high">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="/legacy-home.css">
 </head>
 <body>
   <a class="skip-link" href="#main">본문 바로가기</a>
@@ -47,9 +47,9 @@
     </div>
   </header>
 
-  <main id="main">
+  <main id="main" tabindex="-1">
     <section class="hero" aria-labelledby="heroTitle">
-      <div class="hero-image" role="img" aria-label="아이들과 바둑돌 친구들이 한국사 유적을 향해 여행하는 모습"></div>
+      <img class="hero-image" src="assets/hero-journey.webp" width="1672" height="941" fetchpriority="high" decoding="async" alt="아이들과 바둑돌 친구들이 한국사 유적을 향해 여행하는 모습" data-safe-x1="710" data-safe-y1="370" data-safe-x2="1300" data-safe-y2="870">
       <div class="hero-wash"></div>
       <div class="container hero-content">
         <div class="hero-copy reveal">
@@ -131,15 +131,15 @@
         </div>
 
         <div class="era-selector reveal" role="tablist" aria-label="한국사 시대 선택">
-          <button class="era-tab active" role="tab" aria-selected="true" data-era="prehistoric"><b>01</b><span>선사시대</span><small>주변을 살펴라</small></button>
-          <button class="era-tab" role="tab" aria-selected="false" data-era="gojoseon"><b>02</b><span>고조선</span><small>영역을 지켜라</small></button>
-          <button class="era-tab" role="tab" aria-selected="false" data-era="three"><b>03</b><span>삼국시대</span><small>연결하고 확장하라</small></button>
-          <button class="era-tab locked" role="tab" aria-selected="false" data-era="goryeo"><b>04</b><span>고려</span><small>균형을 잡아라</small></button>
-          <button class="era-tab locked" role="tab" aria-selected="false" data-era="joseon"><b>05</b><span>조선</span><small>판 전체를 읽어라</small></button>
-          <button class="era-tab locked" role="tab" aria-selected="false" data-era="modern"><b>06</b><span>근현대</span><small>선택의 결과</small></button>
+          <button class="era-tab active" id="era-tab-prehistoric" role="tab" aria-controls="eraPanel" aria-selected="true" tabindex="0" data-era="prehistoric"><b>01</b><span>선사시대</span><small>주변을 살펴라</small></button>
+          <button class="era-tab" id="era-tab-gojoseon" role="tab" aria-controls="eraPanel" aria-selected="false" tabindex="-1" data-era="gojoseon"><b>02</b><span>고조선</span><small>영역을 지켜라</small></button>
+          <button class="era-tab" id="era-tab-three" role="tab" aria-controls="eraPanel" aria-selected="false" tabindex="-1" data-era="three"><b>03</b><span>삼국시대</span><small>연결하고 확장하라</small></button>
+          <button class="era-tab locked" id="era-tab-goryeo" role="tab" aria-controls="eraPanel" aria-selected="false" tabindex="-1" data-era="goryeo"><b>04</b><span>고려</span><small>균형을 잡아라</small></button>
+          <button class="era-tab locked" id="era-tab-joseon" role="tab" aria-controls="eraPanel" aria-selected="false" tabindex="-1" data-era="joseon"><b>05</b><span>조선</span><small>판 전체를 읽어라</small></button>
+          <button class="era-tab locked" id="era-tab-modern" role="tab" aria-controls="eraPanel" aria-selected="false" tabindex="-1" data-era="modern"><b>06</b><span>근현대</span><small>선택의 결과</small></button>
         </div>
 
-        <article class="era-detail reveal" id="eraPanel">
+        <article class="era-detail reveal" id="eraPanel" role="tabpanel" aria-labelledby="era-tab-prehistoric">
           <div class="era-visual" aria-hidden="true">
             <div class="sun"></div><div class="mountain m1"></div><div class="mountain m2"></div>
             <div class="dolmen"><i></i><i></i><b></b></div>
@@ -151,7 +151,7 @@
             <h3 id="eraTitle">주변을 살피면<br>살아갈 길이 보여요</h3>
             <p id="eraDescription">구석기 사람들은 자연을 세심히 살펴 도구와 먹을 것을 찾았어요. 바둑돌도 놓기 전에 주변의 ‘활로’를 먼저 확인해야 합니다.</p>
             <div class="lesson-tags" id="eraTags"><span>역사 이야기 2분</span><span>바둑 미션 3개</span><span>유물 카드 1장</span></div>
-            <button class="button button-dark mission-open" type="button">선사시대 여행 시작 <span>→</span></button>
+            <button class="button button-dark" id="eraCta" type="button" data-era-available="true">선사시대 여행 시작 <span>→</span></button>
           </div>
           <div class="era-reward"><span>완료 보상</span><div class="artifact-card"><i>🏺</i><strong>빗살무늬<br>토기 카드</strong><small>COLLECTIBLE 01</small></div></div>
         </article>
@@ -252,7 +252,7 @@
 
   <footer class="site-footer">
     <div class="container footer-top"><a class="brand footer-brand" href="#top"><span class="brand-mark" aria-hidden="true"><i></i><i></i><b>路</b></span><span class="brand-copy"><strong>바둑타고</strong><small>한국사 여행</small></span></a><div class="footer-links"><div><strong>학습하기</strong><a href="#journey">한국사 여행</a><a href="lecture.html">바둑 강의영상</a><a href="board.html?type=classHelper">지도자 수업도우미</a></div><div><strong>이용안내</strong><a href="board.html?type=resource">교재·자료실</a><a href="/dashboard">나의 여행지도</a><a href="board.html?type=consultation">기관 도입 문의</a></div><div><strong>고객센터</strong><a href="board.html?type=notice">공지사항</a><a href="board.html?type=faq">자주 묻는 질문</a><a href="board.html?type=inquiry">1:1 문의</a></div></div><div class="footer-contact"><span>평일 09:00–18:00</span><strong>1588-0000</strong><a href="board.html?type=consultation">상담 요청하기 →</a></div></div>
-    <div class="container footer-bottom"><p>상호명 바둑타고 한국사 여행 <span>·</span> 대표 홍길동 <span>·</span> 사업자등록번호 000-00-00000</p><div><a href="#">이용약관</a><a href="#"><strong>개인정보처리방침</strong></a></div><p>© <span id="year"></span> Baduk History Journey. All rights reserved.</p></div>
+    <div class="container footer-bottom"><p>상호명 바둑타고 한국사 여행 <span>·</span> 대표 홍길동 <span>·</span> 사업자등록번호 000-00-00000</p><div><a href="#">이용약관</a><a href="/privacy"><strong>개인정보처리방침</strong></a></div><p>© <span id="year"></span> Baduk History Journey. All rights reserved.</p></div>
   </footer>
 
   <div class="modal" id="loginModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
@@ -262,7 +262,7 @@
 
   <div class="modal" id="trialModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="trialTitle">
     <div class="modal-backdrop" data-close-modal></div>
-    <div class="modal-panel trial-panel"><button class="modal-close" type="button" aria-label="닫기" data-close-modal>×</button><span class="trial-icon">✦</span><p class="eyebrow">7-DAY FREE JOURNEY</p><h2 id="trialTitle">누가 여행을 시작하나요?</h2><p>역할에 맞는 여행 지도를 준비해 드릴게요.</p><div class="role-options"><button type="button" class="role-card" data-role="학생" data-role-id="student"><span>🎒</span><strong>학생</strong><small>미션을 풀고 배지를 모아요</small></button><button type="button" class="role-card" data-role="학부모" data-role-id="guardian"><span>🌱</span><strong>학부모</strong><small>아이의 성장을 확인해요</small></button><button type="button" class="role-card" data-role="지도자" data-role-id="teacher"><span>📚</span><strong>지도자</strong><small>수업 자료와 반을 관리해요</small></button></div><button class="button button-primary" id="trialContinue" type="button" disabled>선택하고 계속하기 <span>→</span></button><small class="trial-note">결제 정보 없이 체험할 수 있어요.</small></div>
+    <div class="modal-panel trial-panel"><button class="modal-close" type="button" aria-label="닫기" data-close-modal>×</button><span class="trial-icon" aria-hidden="true">✦</span><p class="eyebrow">7-DAY FREE JOURNEY</p><h2 id="trialTitle">누가 여행을 시작하나요?</h2><p>역할에 맞는 여행 지도를 준비해 드릴게요.</p><div class="role-options" role="group" aria-label="체험 역할 선택"><button type="button" class="role-card" aria-pressed="false" data-role="학생" data-role-id="student"><span aria-hidden="true">🎒</span><strong>학생</strong><small>미션을 풀고 배지를 모아요</small></button><button type="button" class="role-card" aria-pressed="false" data-role="학부모" data-role-id="guardian"><span aria-hidden="true">🌱</span><strong>학부모</strong><small>아이의 성장을 확인해요</small></button><button type="button" class="role-card" aria-pressed="false" data-role="지도자" data-role-id="teacher"><span aria-hidden="true">📚</span><strong>지도자</strong><small>수업 자료와 반을 관리해요</small></button></div><button class="button button-primary" id="trialContinue" type="button" disabled>선택하고 계속하기 <span aria-hidden="true">→</span></button><small class="trial-note">결제 정보 없이 체험할 수 있어요.</small></div>
   </div>
 
   <div class="modal" id="missionModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="missionTitle">
@@ -282,7 +282,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script vite-ignore src="config.js"></script>
-  <script src="https://js.tosspayments.com/v2/standard"></script>
   <script type="module" src="/script.js"></script>
 </body>
 </html>

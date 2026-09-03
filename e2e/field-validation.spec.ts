@@ -107,7 +107,7 @@ test("React 진입 화면이 데스크톱과 모바일에서 잘림 없이 표�
 
   await expect(page.getByRole("heading", { name: "React 전환 환경이 준비되었습니다." })).toBeVisible();
   await expect(page.getByRole("link", { name: "바둑미션" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "계정 API 확인" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "로그인·계정" })).toBeVisible();
   await expectNoDocumentOverflow(page);
 
   await page.screenshot({ path: testInfo.outputPath("react-entry.png"), fullPage: true });

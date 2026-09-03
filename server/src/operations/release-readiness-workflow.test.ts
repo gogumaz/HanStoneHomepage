@@ -13,6 +13,7 @@ describe("release readiness workflow contract", () => {
     expect(workflow).toContain("contents: read");
     expect(workflow).toContain("deployments: read");
     expect(workflow).toContain("GH_TOKEN: ${{ secrets.RELEASE_READINESS_TOKEN }}");
+    expect(workflow).toContain("RELEASE_TRIGGER_ACTOR: ${{ github.actor }}");
     expect(workflow).not.toContain("GH_TOKEN: ${{ github.token }}");
     expect(workflow).not.toContain("pull_request_target");
     expect(workflow).not.toContain("environment: production");

@@ -6,6 +6,7 @@ export const REQUIRED_RELEASE_WORKFLOWS = [
   "Release candidate acceptance",
   "Production deployment verification",
   "Release closeout",
+  "Rollback rehearsal verification",
 ] as const;
 
 export const REQUIRED_PRODUCTION_SECRETS = [
@@ -15,21 +16,32 @@ export const REQUIRED_PRODUCTION_SECRETS = [
   "PRODUCTION_API_BASE_URL",
   "PRODUCTION_WEB_BASE_URL",
   "PRODUCTION_OPERATIONS_METRICS_TOKEN",
+  "PRODUCTION_MAIL_BOUNCE_RESPONSE_BASE64",
+  "PRODUCTION_MAIL_PROVIDER_EVENT_ID",
+  "PRODUCTION_LEGAL_APPROVAL_EVIDENCE_BASE64",
 ] as const;
 
 export const REQUIRED_REPOSITORY_SECRETS = [
   "RELEASE_READINESS_TOKEN",
+  "STAGING_API_BASE_URL",
+  "STAGING_OPERATIONS_METRICS_TOKEN",
+  "ROLLBACK_DRILL_API_BASE_URL",
+  "ROLLBACK_DRILL_WEB_BASE_URL",
+  "ROLLBACK_DRILL_OPERATIONS_METRICS_TOKEN",
 ] as const;
 
 export type ReleaseReadinessInput = {
   repository: string;
   defaultBranch: string;
+  actorLogin: string;
+  approvalMode: "solo";
+  soloOperatorLogin: string;
   localCommitSha: string;
   remoteDefaultCommitSha: string | null;
   dirtyFileCount: number;
   workflows: Array<{ name: string; state: string }>;
   productionEnvironmentExists: boolean;
-  productionReviewerCount: number;
+  productionReviewers: Array<{ type: "User" | "Team"; identity: string }>;
   productionPreventSelfReview: boolean;
   productionProtectedBranchesOnly: boolean;
   productionCustomDeploymentBranchNames: string[];
@@ -87,8 +99,20 @@ export class ReleaseReadinessService {
     if (!Number.isSafeInteger(input.dirtyFileCount) || input.dirtyFileCount < 0) {
       throw readinessError("RELEASE_READINESS_DIRTY_COUNT_INVALID");
     }
-    if (!Number.isSafeInteger(input.productionReviewerCount) || input.productionReviewerCount < 0) {
-      throw readinessError("RELEASE_READINESS_REVIEWER_COUNT_INVALID");
+    if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,98}[A-Za-z0-9])?$/u.test(input.actorLogin)) {
+      throw readinessError("RELEASE_READINESS_ACTOR_LOGIN_INVALID");
+    }
+    if (input.approvalMode !== "solo") {
+      throw readinessError("RELEASE_READINESS_APPROVAL_MODE_INVALID");
+    }
+    if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,98}[A-Za-z0-9])?$/u.test(input.soloOperatorLogin)) {
+      throw readinessError("RELEASE_READINESS_SOLO_OPERATOR_INVALID");
+    }
+    if (input.productionReviewers.some(({ type, identity }) => (
+      (type !== "User" && type !== "Team")
+      || !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,98}[A-Za-z0-9])?$/u.test(identity)
+    ))) {
+      throw readinessError("RELEASE_READINESS_REVIEWER_INVALID");
     }
 
     const localCommitSha = input.localCommitSha.toLowerCase();
@@ -99,6 +123,7 @@ export class ReleaseReadinessService {
     const secretNames = new Set(input.productionSecretNames);
     const repositorySecretNames = new Set(input.repositorySecretNames);
     const customDeploymentBranchNames = new Set(input.productionCustomDeploymentBranchNames);
+    const soloOperatorMatches = input.actorLogin.toLowerCase() === input.soloOperatorLogin.toLowerCase();
     const deploymentBranchPolicySafe = input.productionProtectedBranchesOnly || (
       customDeploymentBranchNames.size === 1 && customDeploymentBranchNames.has(input.defaultBranch)
     );
@@ -117,13 +142,18 @@ export class ReleaseReadinessService {
       check("environment:production", input.productionEnvironmentExists, "PRODUCTION_ENVIRONMENT_MISSING"),
       check(
         "environment:production:reviewers",
-        input.productionEnvironmentExists && input.productionReviewerCount > 0,
-        "PRODUCTION_REVIEWER_MISSING",
+        input.productionEnvironmentExists && input.productionReviewers.length === 0,
+        "PRODUCTION_SOLO_REVIEWERS_PRESENT",
+      ),
+      check(
+        "environment:production:soloOperator",
+        soloOperatorMatches,
+        "PRODUCTION_SOLO_OPERATOR_MISMATCH",
       ),
       check(
         "environment:production:preventSelfReview",
-        input.productionEnvironmentExists && input.productionReviewerCount > 0 && input.productionPreventSelfReview,
-        "PRODUCTION_SELF_REVIEW_NOT_BLOCKED",
+        input.productionEnvironmentExists && input.productionReviewers.length === 0 && !input.productionPreventSelfReview,
+        "PRODUCTION_SOLO_SELF_REVIEW_POLICY_INVALID",
       ),
       check(
         "environment:production:deploymentBranch",

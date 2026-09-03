@@ -12,6 +12,9 @@ export type CurrentUser = {
   emailVerified: boolean;
   displayName: string;
   roles: UserRole[];
+  ageBand?: 'unknown' | 'under_14' | 'age_14_to_18' | 'adult';
+  minorAccountStatus?: 'age_declaration_required' | 'guardian_consent_pending' | 'active' | 'not_applicable';
+  guardianConsentVerifiedAt?: string | null;
 };
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
@@ -82,10 +85,18 @@ export async function signup(input: {
   password: string;
   displayName: string;
   role: 'student' | 'guardian';
+  ageBand: 'under_14' | 'age_14_to_18' | 'adult';
 }): Promise<AuthResponse> {
   return apiRequest<AuthResponse>('/auth/signup', {
     method: 'POST',
     body: JSON.stringify(input),
+  });
+}
+
+export function declareAgeBand(ageBand: 'under_14' | 'age_14_to_18' | 'adult') {
+  return apiRequest<{ user: CurrentUser }>('/me/age-band', {
+    method: 'PATCH',
+    body: JSON.stringify({ ageBand }),
   });
 }
 

@@ -1,8 +1,14 @@
 name: Staging read-only load test
+run-name: Staging read-only load · ${{ inputs.evidence_id }}
 
 on:
   workflow_dispatch:
     inputs:
+      evidence_id:
+        description: Correlation identifier for release evidence coordination
+        required: true
+        default: manual
+        type: string
       requests:
         description: Total read-only requests
         required: true

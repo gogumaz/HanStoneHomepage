@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { createContext, Script } from "node:vm";
 
 const MAX_FILES = 50_000;
 const MAX_TEXT_FILE_BYTES = 10 * 1024 * 1024;
@@ -27,10 +28,22 @@ const profiles = {
   web: [
     "index.html",
     "app.html",
+    "config.js",
     "payment/success.html",
     "payment/fail.html",
   ],
 };
+const publicConfigKeys = new Set([
+  "apiBaseUrl",
+  "oauthEnabled",
+  "oauthProviders",
+  "boardApiEnabled",
+  "lectureApiEnabled",
+  "demoRoleSwitcher",
+  "paymentProvider",
+  "tossPayments",
+]);
+const oauthProviders = new Set(["naver", "kakao", "google"]);
 
 function fail(code) {
   const error = new Error(code);
@@ -47,6 +60,66 @@ function parseArguments(argv) {
 
 function normalizePath(path) {
   return path.split(sep).join("/");
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function validateWebConfig(source) {
+  const sandbox = { window: {} };
+  try {
+    new Script(source, { filename: "config.js" }).runInContext(createContext(sandbox), { timeout: 100 });
+  } catch {
+    fail("ARTIFACT_WEB_CONFIG_INVALID");
+  }
+  const config = sandbox.window.APP_CONFIG;
+  if (!isRecord(config)) {
+    fail("ARTIFACT_WEB_CONFIG_INVALID");
+  }
+  if (/(?:test|live)_gsk_[A-Za-z0-9_-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----/i.test(source)) {
+    fail("ARTIFACT_WEB_CONFIG_SECRET_FOUND");
+  }
+  const forbiddenKey = /(?:secret|password|private.?key|access.?token|authorization)/i;
+  const pending = [config];
+  while (pending.length) {
+    const value = pending.pop();
+    for (const [key, child] of Object.entries(value)) {
+      if (forbiddenKey.test(key)) fail("ARTIFACT_WEB_CONFIG_SECRET_FOUND");
+      if (isRecord(child)) pending.push(child);
+    }
+  }
+  if (Object.keys(config).some((key) => !publicConfigKeys.has(key))) {
+    fail("ARTIFACT_WEB_CONFIG_INVALID");
+  }
+  const apiBaseUrl = config.apiBaseUrl;
+  const apiUrlAllowed = typeof apiBaseUrl === "string" && (
+    apiBaseUrl.startsWith("/")
+    || /^https:\/\/[A-Za-z0-9.-]+(?::\d+)?(?:\/|$)/.test(apiBaseUrl)
+    || /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|$)/.test(apiBaseUrl)
+  );
+  if (
+    !apiUrlAllowed
+    || typeof config.oauthEnabled !== "boolean"
+    || !Array.isArray(config.oauthProviders)
+    || config.oauthProviders.some((provider) => !oauthProviders.has(provider))
+    || typeof config.boardApiEnabled !== "boolean"
+    || typeof config.lectureApiEnabled !== "boolean"
+    || typeof config.demoRoleSwitcher !== "boolean"
+    || config.paymentProvider !== "toss-payments"
+    || !isRecord(config.tossPayments)
+  ) fail("ARTIFACT_WEB_CONFIG_INVALID");
+
+  const toss = config.tossPayments;
+  const clientKey = toss.clientKey;
+  if (
+    (toss.mode !== "test" && toss.mode !== "live")
+    || typeof clientKey !== "string"
+    || (clientKey !== "" && !clientKey.startsWith(`${toss.mode}_gck_`))
+    || typeof toss.paymentMethodVariantKey !== "string"
+    || typeof toss.agreementVariantKey !== "string"
+  ) fail("ARTIFACT_WEB_CONFIG_INVALID");
+
 }
 
 async function collectFiles(root) {
@@ -85,6 +158,11 @@ async function main() {
   const inventory = new Set(files.map((file) => normalizePath(relative(root, file))));
   const requiredFiles = profiles[profile];
   if (requiredFiles.some((file) => !inventory.has(file))) fail("ARTIFACT_ENTRYPOINT_MISSING");
+  if (profile === "web") {
+    const configSource = await readFile(resolve(root, "config.js"), "utf8");
+    if (Buffer.byteLength(configSource) > MAX_TEXT_FILE_BYTES) fail("ARTIFACT_TEXT_FILE_TOO_LARGE");
+    validateWebConfig(configSource);
+  }
 
   let textFiles = 0;
   for (const file of files) {
@@ -110,6 +188,7 @@ async function main() {
     profile,
     fileCount: files.length,
     checkedTextFileCount: textFiles,
+    ...(profile === "web" ? { webConfigValidated: true } : {}),
   })}\n`);
 }
 

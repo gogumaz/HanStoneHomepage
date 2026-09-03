@@ -523,7 +523,7 @@ function renderClassHelperDetail(record) {
     </div>
     <div class="class-helper-launchers">
       <a class="button button-outline" href="${escapeHtml(record.lessonVideo?.appUrl || `/lessons/${encodeURIComponent(record.lessonId || '')}`)}">연결 강의 열기</a>
-      <a class="button button-primary" href="${escapeHtml(record.missionUrl || `/missions?lessonId=${encodeURIComponent(record.lessonId || '')}&missionId=${encodeURIComponent(record.badukMissionId || '')}`)}">바둑미션 게임 실행</a>
+      <a class="button button-primary" href="${escapeHtml(record.missionUrl || `/missions?lessonId=${encodeURIComponent(record.lessonId || '')}&missionId=${encodeURIComponent(record.badukMissionId || '')}&mode=classroom`)}">바둑미션 게임 실행</a>
     </div>
     <ol class="class-helper-flow">
       ${steps.map(([number, type, title, minutes, description]) => `

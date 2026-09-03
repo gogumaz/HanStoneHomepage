@@ -28,6 +28,14 @@ describe("release closeout workflow contract", () => {
     expect(workflow).toContain(".expected.imageDigest == $imageDigest");
     expect(workflow).toContain('.name == "webDeployment" and .status == "pass"');
     expect(workflow).toContain(".web.expected.manifestSha256 == $webManifestSha256");
+    expect(workflow).toContain("evidence/deployment/transport-security-evidence.json");
+    expect(workflow).toContain("RELEASE_CLOSEOUT_TRANSPORT_SECURITY_REPORT");
+    expect(workflow).toContain(".schemaVersion == 2");
+    expect(workflow).toContain("evidence/deployment/mail-operations-evidence.json");
+    expect(workflow).toContain("RELEASE_CLOSEOUT_MAIL_OPERATIONS_REPORT");
+    expect(workflow).toContain('(has("providerEventId") | not)');
+    expect(workflow).toContain("evidence/deployment/legal-approval-binding.json");
+    expect(workflow).toContain("RELEASE_CLOSEOUT_LEGAL_APPROVAL_BINDING_REPORT");
   });
 
   it("runs closeout in the accepted image and uploads only the final input records", async () => {
@@ -42,6 +50,9 @@ describe("release closeout workflow contract", () => {
     expect(upload).toBeGreaterThan(0);
     expect(uploadEnd).toBeGreaterThan(upload);
     expect(uploadBlock).toContain("release-closeout.json");
+    expect(uploadBlock).toContain("transport-security-evidence.json");
+    expect(uploadBlock).toContain("mail-operations-evidence.json");
+    expect(uploadBlock).toContain("legal-approval-binding.json");
     expect(uploadBlock).not.toMatch(/^\s+evidence\s*$/m);
   });
 });

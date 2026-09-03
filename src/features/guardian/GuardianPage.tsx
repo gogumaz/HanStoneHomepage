@@ -18,6 +18,7 @@ export function GuardianPage() {
   const [email, setEmail] = useState('');
   const [tokenInput, setTokenInput] = useState(searchParams.get('token') ?? '');
   const [agreed, setAgreed] = useState(false);
+  const [paidSubscriptionAgreed, setPaidSubscriptionAgreed] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const token = searchParams.get('token') ?? '';
 
@@ -44,7 +45,12 @@ export function GuardianPage() {
   });
   const createMutation = useMutation({ mutationFn: () => createGuardianInvitation(email) });
   const acceptMutation = useMutation({
-    mutationFn: () => acceptGuardianInvitation(token),
+    mutationFn: () => acceptGuardianInvitation(
+      token,
+      invitationQuery.data?.consent.policyVersion ?? '',
+      invitationQuery.data?.consent.scopes ?? [],
+      paidSubscriptionAgreed,
+    ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['guardian-students'] });
       queryClient.invalidateQueries({ queryKey: ['guardian-invitation', token] });
@@ -74,6 +80,11 @@ export function GuardianPage() {
     revokeMutation.error,
   ];
   const error = errors.find((item): item is ApiClientError => item instanceof ApiClientError);
+  const reportWeekly = reportQuery.data?.summary.weekly ?? {
+    studyDays: 0,
+    firstAttemptMissions: 0,
+    firstAttemptAccuracy: 0,
+  };
 
   return (
     <main className="auth-page guardian-page">
@@ -119,8 +130,16 @@ export function GuardianPage() {
                 <>
                   <label className="consent-check">
                     <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} />
-                    학생의 학습 진도와 학습 리포트 조회에 동의합니다.
+                    {invitationQuery.data.consent.requiresChildAccountConsent
+                      ? '아동 계정 생성과 학습 진도·리포트 처리에 동의합니다.'
+                      : '학생의 학습 진도와 학습 리포트 조회에 동의합니다.'}
                   </label>
+                  {invitationQuery.data.consent.paidSubscriptionConsentAvailable ? (
+                    <label className="consent-check">
+                      <input type="checkbox" checked={paidSubscriptionAgreed} onChange={(event) => setPaidSubscriptionAgreed(event.target.checked)} />
+                      미성년 학생의 유료 구독 결제에 별도로 동의합니다. 선택하지 않아도 보호자 연결은 가능합니다.
+                    </label>
+                  ) : null}
                   <button type="button" disabled={!agreed || acceptMutation.isPending} onClick={() => acceptMutation.mutate()}>
                     보호자로 연결하기
                   </button>
@@ -170,6 +189,8 @@ export function GuardianPage() {
                   <div><span>시작한 강의</span><strong>{reportQuery.data.summary.startedLessons}개</strong></div>
                   <div><span>완료 단계</span><strong>{reportQuery.data.summary.completedSteps} / {reportQuery.data.summary.totalSteps}</strong></div>
                   <div><span>최근 학습</span><strong>{reportQuery.data.summary.lastActivityAt ? new Date(reportQuery.data.summary.lastActivityAt).toLocaleDateString('ko-KR') : '아직 없음'}</strong></div>
+                  <div><span>이번 주 학습</span><strong>{reportWeekly.studyDays}일</strong></div>
+                  <div><span>첫 시도 정답률</span><strong>{reportWeekly.firstAttemptMissions ? `${reportWeekly.firstAttemptAccuracy}%` : '기록 없음'}</strong></div>
                 </div>
                 <div className="guardian-progress-overview">
                   <span><strong>전체 단계 진행률</strong><b>{reportQuery.data.summary.stepCompletionRate}%</b></span>

@@ -3,6 +3,7 @@ import { ApiError } from "../common/api-error.js";
 import { loadAppConfig, type AppConfig } from "../config/app-config.js";
 import { PrismaService } from "../database/prisma.service.js";
 import {
+  MinorAccountStatus,
   ConsentStatus,
   GuardianLinkStatus,
   InvitationStatus,
@@ -10,12 +11,16 @@ import {
 } from "../generated/prisma/enums.js";
 import type { CurrentUser } from "../auth/auth.types.js";
 import {
+  CHILD_ACCOUNT_CONSENT_SCOPE,
   GUARDIAN_CONSENT_POLICY_VERSION,
   GUARDIAN_CONSENT_SCOPES,
+  PAID_SUBSCRIPTION_CONSENT_SCOPE,
   type GuardianInvitationView,
   type GuardianLinkView,
 } from "./guardian.types.js";
 import { generateInvitationToken, hashInvitationToken } from "./invitation-token.js";
+import { calculateWeeklyLearningMetrics, koreanWeekWindow } from "./learning-metrics.js";
+import { summarizeLessonProgress } from "../common/learning-summary.js";
 
 function readEmail(body: unknown): string {
   const email = body && typeof body === "object" && "email" in body && typeof body.email === "string"
@@ -27,7 +32,7 @@ function readEmail(body: unknown): string {
   return email;
 }
 
-function validateConsent(body: unknown): void {
+function validateConsent(body: unknown, requiredScopes: readonly string[]): { paidSubscriptionConsent: boolean } {
   if (!body || typeof body !== "object") {
     throw new ApiError("CONSENT_REQUIRED", "보호자 연결 동의가 필요합니다.", HttpStatus.BAD_REQUEST);
   }
@@ -41,9 +46,16 @@ function validateConsent(body: unknown): void {
   if (value.policyVersion !== GUARDIAN_CONSENT_POLICY_VERSION) {
     throw new ApiError("CONSENT_VERSION_MISMATCH", "최신 보호자 동의 내용을 다시 확인해 주세요.", HttpStatus.CONFLICT);
   }
-  if (!GUARDIAN_CONSENT_SCOPES.every((scope) => scopes.includes(scope))) {
+  if (!requiredScopes.every((scope) => scopes.includes(scope))) {
     throw new ApiError("CONSENT_SCOPE_REQUIRED", "필수 학습정보 조회 범위에 동의해 주세요.", HttpStatus.BAD_REQUEST);
   }
+  return { paidSubscriptionConsent: value.paidSubscriptionConsent === true };
+}
+
+function consentScopes(minorAccountStatus?: MinorAccountStatus): string[] {
+  return minorAccountStatus === MinorAccountStatus.GUARDIAN_CONSENT_PENDING
+    ? [...GUARDIAN_CONSENT_SCOPES, CHILD_ACCOUNT_CONSENT_SCOPE]
+    : [...GUARDIAN_CONSENT_SCOPES];
 }
 
 function maskEmail(email: string): string {
@@ -82,11 +94,11 @@ export class GuardianService {
           inviteeEmail,
           status: InvitationStatus.PENDING,
         },
-        data: { status: InvitationStatus.REVOKED },
+        data: { status: InvitationStatus.REVOKED, inviteeEmail: null },
       });
       const created = await transaction.guardianInvitation.create({
         data: { studentId: student.id, inviteeEmail, tokenHash, expiresAt },
-        include: { student: { select: { id: true, displayName: true } } },
+        include: { student: { select: { id: true, displayName: true, minorAccountStatus: true } } },
       });
       await transaction.auditLog.create({
         data: {
@@ -95,7 +107,6 @@ export class GuardianService {
           resourceType: "GuardianInvitation",
           resourceId: created.id,
           requestId: requestId ?? null,
-          metadata: { inviteeEmail },
         },
       });
       return created;
@@ -115,7 +126,7 @@ export class GuardianService {
     const tokenHash = hashInvitationToken(token);
     const invitation = await this.prisma.guardianInvitation.findUnique({
       where: { tokenHash },
-      include: { student: { select: { id: true, displayName: true } } },
+      include: { student: { select: { id: true, displayName: true, minorAccountStatus: true } } },
     });
     if (!invitation) {
       throw new ApiError("INVITATION_NOT_FOUND", "유효한 보호자 초대를 찾을 수 없습니다.", HttpStatus.NOT_FOUND);
@@ -123,7 +134,7 @@ export class GuardianService {
     if (invitation.status === InvitationStatus.PENDING && invitation.expiresAt.getTime() <= Date.now()) {
       await this.prisma.guardianInvitation.updateMany({
         where: { id: invitation.id, status: InvitationStatus.PENDING },
-        data: { status: InvitationStatus.EXPIRED },
+        data: { status: InvitationStatus.EXPIRED, inviteeEmail: null },
       });
       throw new ApiError("INVITATION_EXPIRED", "보호자 초대가 만료되었습니다.", HttpStatus.GONE);
     }
@@ -139,8 +150,9 @@ export class GuardianService {
     body: unknown,
     requestId?: string,
   ): Promise<{ link: GuardianLinkView }> {
-    validateConsent(body);
     const invitation = await this.getInvitation(token);
+    const scopes = invitation.consent.scopes;
+    const { paidSubscriptionConsent } = validateConsent(body, scopes);
     const stored = await this.prisma.guardianInvitation.findUnique({
       where: { tokenHash: hashInvitationToken(token) },
     });
@@ -162,7 +174,7 @@ export class GuardianService {
           status: InvitationStatus.PENDING,
           expiresAt: { gt: now },
         },
-        data: { status: InvitationStatus.ACCEPTED, acceptedAt: now },
+        data: { status: InvitationStatus.ACCEPTED, acceptedAt: now, inviteeEmail: null },
       });
       if (claimed.count !== 1) {
         throw new ApiError("INVITATION_UNAVAILABLE", "이미 사용했거나 만료된 보호자 초대입니다.", HttpStatus.CONFLICT);
@@ -207,6 +219,48 @@ export class GuardianService {
           auditMetadata: { invitationId: stored.id, requestId: requestId ?? null },
         },
       });
+      if (invitation.consent.requiresChildAccountConsent) {
+        await transaction.guardianConsent.create({
+          data: {
+            guardianLinkId: activeLink.id,
+            studentId: invitation.student.id,
+            guardianId: guardian.id,
+            consentType: "child_account",
+            policyVersion: GUARDIAN_CONSENT_POLICY_VERSION,
+            scope: [CHILD_ACCOUNT_CONSENT_SCOPE],
+            verificationMethod: "authenticated_email",
+            consentedAt: now,
+            auditMetadata: { invitationId: stored.id, requestId: requestId ?? null },
+          },
+        });
+      }
+      if (paidSubscriptionConsent) {
+        await transaction.guardianConsent.create({
+          data: {
+            guardianLinkId: activeLink.id,
+            studentId: invitation.student.id,
+            guardianId: guardian.id,
+            consentType: "minor_paid_subscription",
+            policyVersion: GUARDIAN_CONSENT_POLICY_VERSION,
+            scope: [PAID_SUBSCRIPTION_CONSENT_SCOPE],
+            verificationMethod: "authenticated_email",
+            consentedAt: now,
+            auditMetadata: { invitationId: stored.id, requestId: requestId ?? null },
+          },
+        });
+      }
+      if (invitation.consent.requiresChildAccountConsent) {
+        await transaction.user.updateMany({
+          where: {
+            id: invitation.student.id,
+            minorAccountStatus: MinorAccountStatus.GUARDIAN_CONSENT_PENDING,
+          },
+          data: {
+            minorAccountStatus: MinorAccountStatus.ACTIVE,
+            guardianConsentVerifiedAt: now,
+          },
+        });
+      }
       await transaction.auditLog.create({
         data: {
           actorId: guardian.id,
@@ -262,25 +316,50 @@ export class GuardianService {
       );
     }
 
-    const lessons = await this.prisma.lesson.findMany({
-      where: { status: LessonStatus.PUBLISHED },
-      orderBy: [{ era: { order: "asc" } }, { order: "asc" }],
-      include: {
-        era: { select: { id: true, name: true } },
-        _count: { select: { steps: true } },
-        progress: {
-          where: { userId: studentId },
-          select: {
-            status: true,
-            startedAt: true,
-            completedAt: true,
-            updatedAt: true,
-            lastPositionSeconds: true,
-            _count: { select: { stepCompletions: true } },
+    const generatedAt = new Date();
+    const week = koreanWeekWindow(generatedAt);
+    const [lessons, stepActivities, missionAttempts] = await Promise.all([
+      this.prisma.lesson.findMany({
+        where: { status: LessonStatus.PUBLISHED },
+        orderBy: [{ era: { order: "asc" } }, { order: "asc" }],
+        include: {
+          era: { select: { id: true, name: true } },
+          _count: { select: { steps: true } },
+          progress: {
+            where: { userId: studentId },
+            select: {
+              status: true,
+              startedAt: true,
+              completedAt: true,
+              updatedAt: true,
+              lastPositionSeconds: true,
+              _count: { select: { stepCompletions: true } },
+            },
           },
         },
-      },
-    });
+      }),
+      this.prisma.lessonStepCompletion.findMany({
+        where: {
+          progress: { userId: studentId },
+          completedAt: { gte: week.start, lt: week.end },
+        },
+        select: { completedAt: true },
+      }),
+      this.prisma.missionAttempt.findMany({
+        where: {
+          userId: studentId,
+          lastPlayedAt: { gte: week.start, lt: week.end },
+        },
+        select: {
+          missionId: true,
+          status: true,
+          wrongMoveCount: true,
+          startedAt: true,
+          lastPlayedAt: true,
+        },
+        orderBy: { startedAt: "asc" },
+      }),
+    ]);
     const items = lessons.map((lesson) => {
       const progress = lesson.progress[0] ?? null;
       return {
@@ -303,14 +382,15 @@ export class GuardianService {
         },
       };
     });
-    const startedItems = items.filter((item) => item.progress.status !== "not_started");
-    const completedItems = items.filter((item) => item.progress.status === "completed");
-    const totalSteps = items.reduce((sum, item) => sum + item.progress.totalSteps, 0);
-    const completedSteps = items.reduce((sum, item) => sum + item.progress.completedSteps, 0);
-    const lastActivityAt = startedItems.reduce<Date | null>((latest, item) => {
-      const current = item.progress.lastActivityAt;
-      return current && (!latest || current > latest) ? current : latest;
-    }, null);
+    const { startedItems, summary } = summarizeLessonProgress(items);
+    const weekly = calculateWeeklyLearningMetrics({
+      now: generatedAt,
+      lessonActivityAt: [
+        ...stepActivities.map((item) => item.completedAt),
+        ...startedItems.flatMap((item) => item.progress.lastActivityAt ? [item.progress.lastActivityAt] : []),
+      ],
+      missionAttempts,
+    });
     await this.prisma.auditLog.create({
       data: {
         actorId: guardian.id,
@@ -323,16 +403,10 @@ export class GuardianService {
     });
     return {
       student: link.student,
-      generatedAt: new Date(),
+      generatedAt,
       summary: {
-        totalLessons: items.length,
-        startedLessons: startedItems.length,
-        completedLessons: completedItems.length,
-        completionRate: items.length ? Math.round((completedItems.length / items.length) * 100) : 0,
-        completedSteps,
-        totalSteps,
-        stepCompletionRate: totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0,
-        lastActivityAt,
+        ...summary,
+        weekly,
       },
       items,
     };
@@ -388,7 +462,7 @@ export class GuardianService {
     inviteeEmail: string | null;
     status: InvitationStatus;
     expiresAt: Date;
-    student: { id: string; displayName: string };
+    student: { id: string; displayName: string; minorAccountStatus?: MinorAccountStatus };
   }): GuardianInvitationView {
     return {
       id: invitation.id,
@@ -398,7 +472,9 @@ export class GuardianService {
       expiresAt: invitation.expiresAt,
       consent: {
         policyVersion: GUARDIAN_CONSENT_POLICY_VERSION,
-        scopes: [...GUARDIAN_CONSENT_SCOPES],
+        scopes: consentScopes(invitation.student.minorAccountStatus),
+        requiresChildAccountConsent: invitation.student.minorAccountStatus === MinorAccountStatus.GUARDIAN_CONSENT_PENDING,
+        paidSubscriptionConsentAvailable: true,
       },
     };
   }

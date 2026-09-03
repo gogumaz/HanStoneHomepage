@@ -19,6 +19,9 @@ export type ReleaseAcceptanceInput = {
   reports: Record<ReleaseEvidenceName, unknown>;
   evidenceSha256: Record<ReleaseEvidenceName, string>;
   maximumAgeHours: Record<ReleaseEvidenceName, number>;
+  stagingEvidenceBundle: unknown;
+  stagingEvidenceBundleSha256: string;
+  stagingEvidenceBundleMaximumAgeHours: number;
 };
 
 export type ReleaseAcceptanceReport = {
@@ -29,6 +32,14 @@ export type ReleaseAcceptanceReport = {
   imageDigest: string;
   manifestSha256: string;
   checkedAt: string;
+  stagingEvidenceBundle: {
+    status: "pass" | "fail";
+    observedAt: string | null;
+    ageHours: number | null;
+    maximumAgeHours: number;
+    sha256: string;
+    checks: Array<{ name: string; status: "pass" | "fail"; code: string }>;
+  };
   evidence: Array<{
     name: ReleaseEvidenceName;
     status: "pass" | "fail";
@@ -73,6 +84,18 @@ const FIELD_VALIDATION_PROJECTS = [
   "field-mobile-safari",
 ] as const;
 const SUPPLY_CHAIN_VULNERABILITY_POLICY = "npm-audit-production-high-critical-zero";
+const STAGING_BUNDLE_CHECKS = [
+  "sourceInventory",
+  "candidateIdentity",
+  "readOnlyLoad",
+  "workerSoak",
+  "controlledLoad",
+  "execution",
+  "concurrentObservation",
+  "executionTimeline",
+  "freshness",
+] as const;
+const STAGING_BUNDLE_SOURCES = ["readOnlyLoad", "workerSoak", "controlledLoad", "execution"] as const;
 
 function acceptanceError(code: string): Error {
   const error = new Error(code);
@@ -350,6 +373,15 @@ export class ReleaseAcceptanceService {
     if (!/^[a-fA-F0-9]{40}$/.test(input.commitSha)) throw acceptanceError("RELEASE_COMMIT_SHA_INVALID");
     const imageMatch = /^([A-Za-z0-9][A-Za-z0-9._:/-]{1,300})@(sha256:[a-fA-F0-9]{64})$/.exec(input.imageReference);
     if (!imageMatch || input.imageReference.includes("://")) throw acceptanceError("RELEASE_IMAGE_REFERENCE_INVALID");
+    const stagingBundleSha256 = input.stagingEvidenceBundleSha256?.toLowerCase();
+    if (!/^[a-f0-9]{64}$/u.test(stagingBundleSha256)) {
+      throw acceptanceError("RELEASE_STAGING_BUNDLE_SHA256_INVALID");
+    }
+    if (!Number.isInteger(input.stagingEvidenceBundleMaximumAgeHours)
+        || input.stagingEvidenceBundleMaximumAgeHours < 1
+        || input.stagingEvidenceBundleMaximumAgeHours > 24 * 30) {
+      throw acceptanceError("RELEASE_STAGING_BUNDLE_MAXIMUM_AGE_INVALID");
+    }
     const checkedAt = this.now();
     const evidence = RELEASE_EVIDENCE_NAMES.map((name) => {
       const sha256 = input.evidenceSha256[name]?.toLowerCase();
@@ -393,12 +425,81 @@ export class ReleaseAcceptanceService {
     const commitSha = input.commitSha.toLowerCase();
     const imageReference = `${imageMatch[1]}@${imageMatch[2]!.toLowerCase()}`;
     const imageDigest = imageMatch[2]!.toLowerCase();
+    const stagingBundle = object(input.stagingEvidenceBundle);
+    const bundleChecks = Array.isArray(stagingBundle?.checks) ? stagingBundle.checks.map(object) : [];
+    const bundleCheckNames = new Set(bundleChecks.flatMap((entry) => typeof entry?.name === "string" ? [entry.name] : []));
+    const bundleSources = Array.isArray(stagingBundle?.sources) ? stagingBundle.sources.map(object) : [];
+    const sourceByName = new Map(bundleSources.flatMap((entry) => (
+      typeof entry?.name === "string" ? [[entry.name, entry] as const] : []
+    )));
+    const embeddedDigest = typeof stagingBundle?.evidenceSha256 === "string"
+      ? stagingBundle.evidenceSha256.toLowerCase() : null;
+    const { evidenceSha256: _embeddedEvidenceSha256, ...bundleBase } = stagingBundle ?? {};
+    const recalculatedDigest = createHash("sha256").update(JSON.stringify(bundleBase)).digest("hex");
+    const bundleObservedMs = typeof stagingBundle?.checkedAt === "string" ? Date.parse(stagingBundle.checkedAt) : Number.NaN;
+    const bundleAgeHours = Number.isFinite(bundleObservedMs)
+      ? rounded((checkedAt.getTime() - bundleObservedMs) / 3_600_000) : null;
+    const bundleFresh = bundleAgeHours !== null && bundleAgeHours >= -(5 / 60)
+      && bundleAgeHours <= input.stagingEvidenceBundleMaximumAgeHours;
+    const stagingChecks: EvidenceCheck[] = [
+      booleanCheck(
+        "identity",
+        stagingBundle?.schemaVersion === 1 && stagingBundle?.ok === true
+          && stagingBundle?.releaseId === input.releaseId && stagingBundle?.candidateCommitSha === commitSha,
+        "STAGING_BUNDLE_IDENTITY_INVALID",
+      ),
+      booleanCheck(
+        "checks",
+        bundleChecks.length === STAGING_BUNDLE_CHECKS.length
+          && STAGING_BUNDLE_CHECKS.every((name) => bundleCheckNames.has(name))
+          && bundleChecks.every((entry) => entry?.status === "pass" && entry?.code === "OK"),
+        "STAGING_BUNDLE_CHECKS_INVALID",
+      ),
+      booleanCheck(
+        "sources",
+        bundleSources.length === STAGING_BUNDLE_SOURCES.length
+          && STAGING_BUNDLE_SOURCES.every((name) => {
+            const source = sourceByName.get(name);
+            return typeof source?.sha256 === "string" && /^[a-fA-F0-9]{64}$/u.test(source.sha256);
+          }),
+        "STAGING_BUNDLE_SOURCES_INVALID",
+      ),
+      booleanCheck(
+        "loadSource",
+        sourceByName.get("readOnlyLoad")?.sha256 === input.evidenceSha256.readOnlyLoad.toLowerCase(),
+        "STAGING_BUNDLE_LOAD_SOURCE_MISMATCH",
+      ),
+      booleanCheck(
+        "workerSource",
+        sourceByName.get("workerSoak")?.sha256 === input.evidenceSha256.workerSoak.toLowerCase(),
+        "STAGING_BUNDLE_WORKER_SOURCE_MISMATCH",
+      ),
+      booleanCheck(
+        "selfDigest",
+        embeddedDigest !== null && /^[a-f0-9]{64}$/u.test(embeddedDigest) && embeddedDigest === recalculatedDigest,
+        "STAGING_BUNDLE_SELF_DIGEST_INVALID",
+      ),
+      booleanCheck("freshness", bundleFresh, "STAGING_BUNDLE_EXPIRED_OR_FUTURE"),
+    ];
+    const stagingEvidenceBundle = {
+      status: stagingChecks.every(({ status }) => status === "pass") ? "pass" as const : "fail" as const,
+      observedAt: Number.isFinite(bundleObservedMs) ? new Date(bundleObservedMs).toISOString() : null,
+      ageHours: bundleAgeHours,
+      maximumAgeHours: input.stagingEvidenceBundleMaximumAgeHours,
+      sha256: stagingBundleSha256,
+      checks: stagingChecks,
+    };
     const manifestSource = JSON.stringify({
       releaseId: input.releaseId,
       commitSha,
       imageReference,
       imageDigest,
       checkedAt: checkedAt.toISOString(),
+      stagingEvidenceBundle: {
+        status: stagingEvidenceBundle.status,
+        sha256: stagingEvidenceBundle.sha256,
+        maximumAgeHours: stagingEvidenceBundle.maximumAgeHours,
+      },
       evidence: evidence.map(({ name, sha256, maximumAgeHours, status }) => ({
         name,
         sha256,
@@ -408,13 +509,14 @@ export class ReleaseAcceptanceService {
     });
     const manifestSha256 = createHash("sha256").update(manifestSource, "utf8").digest("hex");
     return {
-      ok: evidence.every(({ status }) => status === "pass"),
+      ok: evidence.every(({ status }) => status === "pass") && stagingEvidenceBundle.status === "pass",
       releaseId: input.releaseId,
       commitSha,
       imageReference,
       imageDigest,
       manifestSha256,
       checkedAt: checkedAt.toISOString(),
+      stagingEvidenceBundle,
       evidence,
     };
   }

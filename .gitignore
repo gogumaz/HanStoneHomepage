@@ -3,6 +3,10 @@ reference/
 node_modules/
 dist/
 build/
+artifacts/
+reports/
+__pycache__/
+*.py[cod]
 *.zip
 *.tgz
 *.tsbuildinfo

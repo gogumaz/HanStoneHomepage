@@ -1,10 +1,11 @@
 import { type FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiClientError } from '../../lib/api-client';
 import {
   confirmEmailVerification,
   confirmPasswordReset,
+  declareAgeBand,
   deleteAccount,
   getCurrentUser,
   login,
@@ -20,6 +21,8 @@ import {
   type AuthResponse,
   type OAuthProviderName,
 } from './api';
+import { clearSessionQueryCache } from './session-cache';
+import { normalizeAppReturnTo } from './return-to';
 
 const roleLabels: Record<string, string> = {
   student: '학생',
@@ -35,7 +38,9 @@ const oauthLabels = { naver: '네이버', kakao: '카카오', google: 'Google' }
 
 export function AuthPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const returnTo = normalizeAppReturnTo(searchParams.get('returnTo'));
   const initialResetToken = searchParams.get('resetToken') ?? '';
   const initialVerificationToken = searchParams.get('verifyEmailToken') ?? '';
   const oauthLinked = searchParams.get('oauthLinked');
@@ -48,6 +53,7 @@ export function AuthPage() {
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [role, setRole] = useState<'student' | 'guardian'>('student');
+  const [ageBand, setAgeBand] = useState<'under_14' | 'age_14_to_18' | 'adult'>('adult');
   const [resetToken, setResetToken] = useState(initialResetToken);
   const [verificationToken, setVerificationToken] = useState(initialVerificationToken);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
@@ -74,18 +80,29 @@ export function AuthPage() {
   const authMutation = useMutation({
     mutationFn: (): Promise<AuthResponse> => mode === 'login'
       ? login({ email, password })
-      : signup({ email, password, displayName, role }),
-    onSuccess: (result) => {
+      : signup({ email, password, displayName, role, ageBand: role === 'guardian' ? 'adult' : ageBand }),
+    onSuccess: async (result) => {
+      await clearSessionQueryCache(queryClient);
       queryClient.setQueryData(['current-user'], result.user);
       setPassword('');
       if (result.developmentVerificationToken) setVerificationToken(result.developmentVerificationToken);
       setNotice(result.user.emailVerified ? '' : '로그인했습니다. 이메일 인증을 완료해 주세요.');
+      navigate(result.user.minorAccountStatus === 'guardian_consent_pending' ? '/account' : returnTo, { replace: true });
+    },
+  });
+  const ageDeclarationMutation = useMutation({
+    mutationFn: () => declareAgeBand(ageBand),
+    onSuccess: (result) => {
+      queryClient.setQueryData(['current-user'], result.user);
+      setNotice(result.user.minorAccountStatus === 'guardian_consent_pending'
+        ? '보호자 동의를 요청해 주세요. 동의 확인 전에는 계정 이용이 제한됩니다.'
+        : '연령대 확인을 완료했습니다.');
     },
   });
   const logoutMutation = useMutation({
     mutationFn: logout,
-    onSuccess: () => {
-      queryClient.setQueryData(['current-user'], null);
+    onSuccess: async () => {
+      await clearSessionQueryCache(queryClient);
       setVerificationToken('');
       setNotice('로그아웃했습니다.');
     },
@@ -99,9 +116,8 @@ export function AuthPage() {
   });
   const deleteAccountMutation = useMutation({
     mutationFn: deleteAccount,
-    onSuccess: () => {
-      queryClient.setQueryData(['current-user'], null);
-      queryClient.removeQueries({ queryKey: ['oauth-accounts'] });
+    onSuccess: async () => {
+      await clearSessionQueryCache(queryClient);
       setDeleteConfirmation('');
       setDeletePassword('');
       setNotice('계정 탈퇴와 개인정보 익명화를 완료했습니다.');
@@ -116,8 +132,8 @@ export function AuthPage() {
   });
   const resetConfirmMutation = useMutation({
     mutationFn: () => confirmPasswordReset({ token: resetToken, password }),
-    onSuccess: () => {
-      queryClient.setQueryData(['current-user'], null);
+    onSuccess: async () => {
+      await clearSessionQueryCache(queryClient);
       setResetToken('');
       setPassword('');
       setMode('login');
@@ -196,6 +212,29 @@ export function AuthPage() {
             <ul aria-label="계정 역할">
               {meQuery.data.roles.map((item) => <li key={item}>{roleLabels[item] ?? item}</li>)}
             </ul>
+            {meQuery.data.minorAccountStatus === 'age_declaration_required' ? (
+              <form className="auth-form account-security" onSubmit={(event) => { event.preventDefault(); ageDeclarationMutation.mutate(); }}>
+                <h2>서비스 이용 연령 확인</h2>
+                <p>소셜 가입을 마치려면 연령대를 선택해 주세요. 만 14세 미만은 보호자 동의 확인 전까지 계정이 제한됩니다.</p>
+                <label>연령대
+                  <select value={ageBand} onChange={(event) => setAgeBand(event.target.value as typeof ageBand)}>
+                    <option value="under_14">만 14세 미만</option>
+                    <option value="age_14_to_18">만 14세 이상 19세 미만</option>
+                    <option value="adult">만 19세 이상</option>
+                  </select>
+                </label>
+                <button type="submit" disabled={ageDeclarationMutation.isPending}>연령대 확인</button>
+                <Link to="/privacy">어린이용 개인정보 안내 보기</Link>
+              </form>
+            ) : null}
+            {meQuery.data.minorAccountStatus === 'guardian_consent_pending' ? (
+              <section className="account-security minor-consent-pending" aria-labelledby="minor-consent-title">
+                <h2 id="minor-consent-title">보호자 동의를 기다리고 있어요</h2>
+                <p>보호자 동의가 확인될 때까지 학습·커뮤니티·결제 기능을 사용할 수 없습니다. 보호자 이메일 주소 하나로 동의를 요청해 주세요.</p>
+                <Link to="/guardian">보호자 동의 요청하기</Link>
+                <Link to="/privacy">어린이용 쉬운 안내 보기</Link>
+              </section>
+            ) : null}
             {!meQuery.data.emailVerified ? (
               <section className="account-security" aria-labelledby="email-verification-title">
                 <h2 id="email-verification-title">이메일 인증</h2>
@@ -351,7 +390,7 @@ export function AuthPage() {
                 <p>간편 로그인</p>
                 <div>
                   {window.APP_CONFIG.oauthProviders.map((provider) => (
-                    <a key={provider} href={oauthStartUrl(provider)}>{oauthLabels[provider]}로 계속하기</a>
+                    <a key={provider} href={oauthStartUrl(provider, returnTo)}>{oauthLabels[provider]}로 계속하기</a>
                   ))}
                 </div>
               </section>
@@ -397,11 +436,25 @@ export function AuthPage() {
                   <>
                     <label>이름<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} minLength={2} maxLength={40} required /></label>
                     <label>가입 역할
-                      <select value={role} onChange={(event) => setRole(event.target.value as 'student' | 'guardian')}>
+                      <select value={role} onChange={(event) => {
+                        const nextRole = event.target.value as 'student' | 'guardian';
+                        setRole(nextRole);
+                        if (nextRole === 'guardian') setAgeBand('adult');
+                      }}>
                         <option value="student">학생</option>
                         <option value="guardian">보호자</option>
                       </select>
                     </label>
+                    {role === 'student' ? (
+                      <label>연령대
+                        <select value={ageBand} onChange={(event) => setAgeBand(event.target.value as typeof ageBand)}>
+                          <option value="under_14">만 14세 미만</option>
+                          <option value="age_14_to_18">만 14세 이상 19세 미만</option>
+                          <option value="adult">만 19세 이상</option>
+                        </select>
+                      </label>
+                    ) : <p className="auth-policy-note">보호자 가입은 만 19세 이상 성인만 가능합니다.</p>}
+                    <p className="auth-policy-note">만 14세 미만은 보호자 동의 확인 전까지 제한 상태로 가입합니다. <Link to="/privacy">개인정보 안내</Link></p>
                   </>
                 ) : null}
                 <label>이메일<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>

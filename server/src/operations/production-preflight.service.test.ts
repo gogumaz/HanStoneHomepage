@@ -14,13 +14,15 @@ import { HlsTranscoderService } from "../content/hls-transcoder.service.js";
 function productionEnv(): NodeJS.ProcessEnv {
   return {
     NODE_ENV: "production",
-    DATABASE_URL: "postgresql://user:password@database.example.com:5432/app",
+    DATABASE_URL: "postgresql://user:password@database.example.com:5432/app?sslmode=require",
     CORS_ORIGINS: "https://www.example.com",
     PUBLIC_APP_URL: "https://www.example.com",
     SMTP_HOST: "smtp.example.com",
     SMTP_PORT: "587",
     SMTP_REQUIRE_TLS: "true",
     MAIL_FROM: "바둑타고 <no-reply@example.com>",
+    MAIL_DKIM_SELECTOR: "mail2026",
+    MAIL_BOUNCE_WEBHOOK_SECRET: "bounce_webhook_secret_1234567890_abcd",
     OBJECT_STORAGE_BUCKET: "private-media",
     MALWARE_SCANNER_HOST: "clamav.internal",
     TOSS_PAYMENTS_SECRET_KEY: "toss-secret",
@@ -45,6 +47,9 @@ function productionEnv(): NodeJS.ProcessEnv {
     OPERATIONS_METRICS_TOKEN: "metrics_token_1234567890_abcdefghij",
     DEPLOYMENT_COMMIT_SHA: "a".repeat(40),
     DEPLOYMENT_IMAGE_DIGEST: `sha256:${"a".repeat(64)}`,
+    LEGAL_POLICY_VERSION: "guardian-link-v1",
+    LEGAL_POLICY_APPROVED_AT: "2026-08-01T00:00:00.000Z",
+    LEGAL_POLICY_APPROVAL_SHA256: "b".repeat(64),
   };
 }
 
@@ -81,6 +86,8 @@ function harness(
     storeOrder: { findFirst: vi.fn(async () => null) },
     storeCartItem: { findFirst: vi.fn(async () => null) },
     accountMailJob: { findFirst: vi.fn(async () => null) },
+    organizationMembership: { findFirst: vi.fn(async () => null) },
+    organizationClassTeacherAssignment: { findFirst: vi.fn(async () => null) },
   };
   const storage = {
     verifyVideoStorageAccess: storageError
@@ -90,7 +97,17 @@ function harness(
   const scanner = {
     scan: vi.fn(async () => ({ clean: true, provider: "clamav", result: "OK" })),
   };
-  const mail = { verifyConnection: vi.fn(async () => undefined) };
+  const mail = {
+    verifyConnection: vi.fn(async () => undefined),
+    verifyDomainAuthentication: vi.fn(async () => ({
+      domain: "example.com",
+      dkimSelector: "mail2026",
+      dmarcPolicy: "reject" as const,
+      domainSha256: "1".repeat(64),
+      dkimSelectorSha256: "2".repeat(64),
+      dnsRecordsSha256: "3".repeat(64),
+    })),
+  };
   const delivery = { verifyCdnConnection: vi.fn(async () => cdnProvider) };
   const transcoder = { verifyBinaries: vi.fn(async () => undefined) };
   const rateLimitStore = {
@@ -146,6 +163,8 @@ describe("ProductionPreflightService", () => {
     expect(report.checks.every((check) => check.status === "pass")).toBe(true);
     expect(report.checks.find((check) => check.name === "smtp")?.detail).toContain("messageSent=false");
     expect(test.storage.verifyVideoStorageAccess).toHaveBeenCalledOnce();
+    expect(report.checks.find((check) => check.name === "objectStorage")?.detail)
+      .toBe("put=get=delete=ok; anonymousRead=denied");
     expect(test.delivery.verifyCdnConnection).toHaveBeenCalledOnce();
     expect(test.transcoder.verifyBinaries).toHaveBeenCalledOnce();
     expect(report.checks.find((check) => check.name === "cdn")?.detail).toBe("disabled");
@@ -153,6 +172,7 @@ describe("ProductionPreflightService", () => {
       .toContain("databasePitr=declared");
     expect(test.scanner.scan).toHaveBeenCalledOnce();
     expect(test.mail.verifyConnection).toHaveBeenCalledOnce();
+    expect(test.mail.verifyDomainAuthentication).toHaveBeenCalledOnce();
     expect(test.rateLimitStore.verifyConnection).toHaveBeenCalledOnce();
     expect(test.prisma.$queryRaw).toHaveBeenCalledWith(
       expect.arrayContaining([expect.stringContaining("_prisma_migrations")]),
@@ -238,6 +258,44 @@ describe("ProductionPreflightService", () => {
       status: "fail",
       detail: "OAUTH_PROVIDERS_MISSING",
     });
+  });
+
+  it.each([
+    ["MAIL_DKIM_SELECTOR", "MAIL_DKIM_SELECTOR_REQUIRED"],
+    ["MAIL_BOUNCE_WEBHOOK_SECRET", "MAIL_BOUNCE_WEBHOOK_SECRET_REQUIRED"],
+  ])("requires the production mail control %s", async (key, code) => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      code: 0,
+      response: { access_token: "token" },
+    }), { status: 200 })));
+    const env = productionEnv();
+    delete env[key];
+
+    const report = await harness().service.run(env);
+
+    expect(report.checks.find((check) => check.name === "configuration")).toMatchObject({
+      status: "fail",
+      detail: code,
+    });
+  });
+
+  it("reports a mail authentication DNS failure without leaking DNS details", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      code: 0,
+      response: { access_token: "token" },
+    }), { status: 200 })));
+    const test = harness();
+    const failure = new Error("private resolver response");
+    failure.name = "MAIL_SPF_MISSING";
+    test.mail.verifyDomainAuthentication.mockRejectedValueOnce(failure);
+
+    const report = await test.service.run(productionEnv());
+
+    expect(report.checks.find((check) => check.name === "smtp")).toMatchObject({
+      status: "fail",
+      detail: "MAIL_SPF_MISSING",
+    });
+    expect(JSON.stringify(report)).not.toContain("private resolver response");
   });
 
   it("requires Redis and reports connection failures without leaking details", async () => {

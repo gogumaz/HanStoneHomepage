@@ -10,6 +10,7 @@ import { ApiResponseInterceptor } from "../common/api-response.interceptor.js";
 import { RequestIdMiddleware } from "../common/request-id.middleware.js";
 import { PAYMENT_PROVIDER } from "../components/payments/index.js";
 import { PrismaService } from "../database/prisma.service.js";
+import { listenForHttpTest } from "../test-utils/listen-test-app.js";
 import { StoreOrderStatus } from "../generated/prisma/enums.js";
 import { StoreController } from "./store.controller.js";
 import { StoreService } from "./store.service.js";
@@ -202,8 +203,7 @@ describe("store order and Toss confirmation HTTP API", () => {
     app.use(requestId.use.bind(requestId));
     app.useGlobalFilters(new ApiExceptionFilter());
     app.useGlobalInterceptors(new ApiResponseInterceptor());
-    await app.listen(0, "127.0.0.1");
-    baseUrl = await app.getUrl();
+    baseUrl = await listenForHttpTest(app);
   });
 
   afterAll(async () => app.close());

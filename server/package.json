@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
+    "dev": "nest start --watch",
     "clean": "node scripts/clean-dist.mjs",
     "build": "npm run clean && npm run prisma:generate && tsc -p tsconfig.build.json",
     "build:components": "npm --prefix src/components run build",
@@ -23,7 +23,19 @@
     "verify:deployment": "node dist/deployment-verification.js",
     "close:release": "node dist/release-closeout.js",
     "plan:rollback": "node dist/release-rollback-plan.js",
+    "verify:rollback-rehearsal": "node dist/rollback-rehearsal-evidence.js",
+    "coordinate:rollback-rehearsal": "node dist/rollback-rehearsal-coordinator.js",
     "audit:release-readiness": "node dist/release-readiness.js",
+    "configure:release-governance": "node dist/release-governance.js",
+    "prepare:legal-approval": "node dist/legal-approval-evidence.js",
+    "verify:legal-approval-binding": "node dist/legal-approval-binding.js",
+    "verify:mail-operations": "node dist/mail-operations-evidence.js",
+    "verify:transport-security": "node dist/transport-security-evidence.js",
+    "configure:release-secrets": "node dist/release-secret-setup.js",
+    "coordinate:staging-evidence": "node dist/staging-evidence-coordinator.js",
+    "verify:staging-evidence": "node dist/staging-evidence-bundle.js",
+    "coordinate:release-acceptance": "node dist/release-acceptance-coordinator.js",
+    "coordinate:release-finalization": "node dist/release-finalization-coordinator.js",
     "verify:runtime-artifacts": "node scripts/verify-release-artifacts.mjs --profile api dist",
     "smoke:hls-transcode": "node scripts/hls-transcode-smoke.mjs",
     "smoke:database": "node scripts/require-database-url.mjs && node scripts/database-integration-smoke.mjs",
@@ -56,15 +68,16 @@
     "rxjs": "^7.8.2"
   },
   "devDependencies": {
+    "@nestjs/cli": "11.0.24",
     "@nestjs/testing": "^11.2.1",
     "@types/node": "^24.10.1",
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.15.6",
-    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   },
   "overrides": {
-    "deepmerge-ts": "^8.0.0"
+    "deepmerge-ts": "^8.0.0",
+    "mysql2": "^3.22.0"
   }
 }

@@ -3,12 +3,14 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const workflowPath = resolve(process.cwd(), "../.github/workflows/release-candidate-acceptance.yml");
+const workerSoakWorkflowPath = resolve(process.cwd(), "../.github/workflows/staging-worker-soak.yml");
 
 describe("release candidate acceptance workflow contract", () => {
   it("uses protected immutable inputs and read-only repository permissions", async () => {
     const workflow = await readFile(workflowPath, "utf8");
 
     expect(workflow).toContain("environment: production");
+    expect(workflow).toContain("run-name: Release candidate acceptance · ${{ inputs.release_id }}");
     expect(workflow).toContain("actions: read");
     expect(workflow).toContain("contents: read");
     expect(workflow).toContain("packages: read");
@@ -49,5 +51,31 @@ describe("release candidate acceptance workflow contract", () => {
     expect(uploadEnd).toBeGreaterThan(upload);
     expect(uploadBlock).not.toMatch(/^\s+evidence\s*$/m);
     expect(uploadBlock).not.toContain("evidence/preflight.env");
+  });
+
+  it("runs a bounded read-only load while worker queue metrics are sampled", async () => {
+    const workflow = await readFile(workerSoakWorkflowPath, "utf8");
+
+    expect(workflow).toContain("node dist/worker-soak.js > staging-worker-soak-report.json 2>&1 &");
+    expect(workflow).toContain("node dist/read-only-load-test.js > staging-worker-controlled-load-report.json 2>&1");
+    expect(workflow).toContain('wait "$soak_pid"');
+    expect(workflow).toContain("staging-worker-soak-execution.json");
+    expect(workflow).toContain("server/staging-worker-controlled-load-report.json");
+    expect(workflow).toContain("run-name: Staging worker queue soak · ${{ inputs.evidence_id }}");
+    expect(workflow).toContain("evidence_id:");
+  });
+
+  it("cryptographically binds all staging workload reports before release acceptance", async () => {
+    const workflow = await readFile(workflowPath, "utf8");
+    const verify = workflow.indexOf("name: Verify staging workload evidence bundle");
+    const acceptance = workflow.indexOf("name: Evaluate the complete release evidence set");
+
+    expect(verify).toBeGreaterThan(0);
+    expect(acceptance).toBeGreaterThan(verify);
+    expect(workflow).toContain("STAGING_BUNDLE_CONTROLLED_LOAD_REPORT=/evidence/worker-soak/staging-worker-controlled-load-report.json");
+    expect(workflow).toContain("STAGING_BUNDLE_EXECUTION_REPORT=/evidence/worker-soak/staging-worker-soak-execution.json");
+    expect(workflow).toContain("evidence/staging-evidence-bundle.json");
+    expect(workflow).toContain("RELEASE_STAGING_BUNDLE_REPORT=/evidence/staging-evidence-bundle.json");
+    expect(workflow).toContain("steps.staging_evidence.outcome != 'success'");
   });
 });

@@ -8,7 +8,9 @@ import {
   resolveTossBrowserConfig,
   stableTossConfirmationId,
   tossPaymentReadyMessage,
+  type TossBrowserConfig,
 } from '../../payments/toss-browser';
+import { loadTossPaymentsSdk } from '../../payments/load-toss-sdk';
 import {
   createSubscriptionCheckout,
   listMyOrders,
@@ -52,7 +54,9 @@ export function SubscriptionsPage() {
   const [searchParams] = useSearchParams();
   const redirectHandled = useRef(false);
   const tossWidgets = useRef<TossPaymentWidgets | null>(null);
+  const tossConfig = useRef<TossBrowserConfig | null>(null);
   const [pendingCheckout, setPendingCheckout] = useState<Checkout | null>(null);
+  const [widgetReady, setWidgetReady] = useState(false);
   const [notice, setNotice] = useState('');
   const userQuery = useQuery({ queryKey: ['current-user'], queryFn: getCurrentUser, retry: false });
   const plansQuery = useQuery({ queryKey: ['subscription-plans'], queryFn: listSubscriptionPlans, retry: false });
@@ -89,7 +93,42 @@ export function SubscriptionsPage() {
     onSuccess: (checkout) => requestPayment(checkout),
   });
 
+  useEffect(() => {
+    const widgets = tossWidgets.current;
+    const config = tossConfig.current;
+    if (!pendingCheckout || !widgets || !config) return;
+
+    let current = true;
+    void Promise.all([
+      widgets.renderPaymentMethods({
+        selector: '#subscription-payment-method',
+        variantKey: config.paymentMethodVariantKey,
+      }),
+      widgets.renderAgreement({
+        selector: '#subscription-agreement',
+        variantKey: config.agreementVariantKey,
+      }),
+    ]).then(() => {
+      if (!current) return;
+      setWidgetReady(true);
+      setNotice(tossPaymentReadyMessage(config.mode));
+    }).catch(() => {
+      if (!current) return;
+      tossWidgets.current = null;
+      setWidgetReady(false);
+      setNotice('결제위젯을 표시하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.');
+    });
+
+    return () => {
+      current = false;
+    };
+  }, [pendingCheckout]);
+
   async function requestPayment(checkout: Checkout) {
+    setWidgetReady(false);
+    setPendingCheckout(null);
+    tossWidgets.current = null;
+    tossConfig.current = null;
     let config;
     try {
       config = resolveTossBrowserConfig(window.APP_CONFIG?.tossPayments);
@@ -97,26 +136,29 @@ export function SubscriptionsPage() {
       setNotice('토스페이먼츠 테스트·라이브 클라이언트 키와 결제 모드가 일치하지 않습니다.');
       return;
     }
-    if (!config || !window.TossPayments) {
+    if (!config) {
       setNotice('토스페이먼츠 브라우저 설정이 필요합니다. 생성된 주문은 주문 내역에서 확인할 수 있습니다.');
       void queryClient.invalidateQueries({ queryKey: ['my-orders'] });
       return;
     }
-    const toss = window.TossPayments(config.clientKey);
-    const widgets = toss.widgets({ customerKey: checkout.customerKey || window.TossPayments.ANONYMOUS || 'ANONYMOUS' });
+    let tossPaymentsFactory;
+    try {
+      tossPaymentsFactory = await loadTossPaymentsSdk();
+    } catch {
+      setNotice('결제 모듈을 불러오지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.');
+      void queryClient.invalidateQueries({ queryKey: ['my-orders'] });
+      return;
+    }
+    const toss = tossPaymentsFactory(config.clientKey);
+    const widgets = toss.widgets({ customerKey: checkout.customerKey || tossPaymentsFactory.ANONYMOUS || 'ANONYMOUS' });
     await widgets.setAmount({ currency: 'KRW', value: checkout.amount });
-    setPendingCheckout(checkout);
     tossWidgets.current = widgets;
-    queueMicrotask(() => {
-      void Promise.all([
-        widgets.renderPaymentMethods({ selector: '#subscription-payment-method', variantKey: config.paymentMethodVariantKey }),
-        widgets.renderAgreement({ selector: '#subscription-agreement', variantKey: config.agreementVariantKey }),
-      ]).then(() => setNotice(tossPaymentReadyMessage(config.mode)));
-    });
+    tossConfig.current = config;
+    setPendingCheckout(checkout);
   }
 
   async function openTossPayment() {
-    if (!pendingCheckout || !tossWidgets.current) return;
+    if (!pendingCheckout || !tossWidgets.current || !widgetReady) return;
     await tossWidgets.current.requestPayment({
       orderId: pendingCheckout.orderId,
       orderName: pendingCheckout.orderName,
@@ -175,10 +217,12 @@ export function SubscriptionsPage() {
           </section>
 
           {pendingCheckout ? (
-            <section className="subscription-payment-widget" aria-label="토스페이먼츠 결제">
-              <div id="subscription-payment-method" />
-              <div id="subscription-agreement" />
-              <button type="button" onClick={() => void openTossPayment()}>토스로 {formatKrw(pendingCheckout.amount)} 결제</button>
+            <section className="subscription-payment-widget" aria-label="토스페이먼츠 결제" aria-busy={!widgetReady}>
+              <div id="subscription-payment-method" aria-label="결제수단 선택" />
+              <div id="subscription-agreement" aria-label="결제 약관" />
+              <button type="button" disabled={!widgetReady} onClick={() => void openTossPayment()}>
+                {widgetReady ? `토스로 ${formatKrw(pendingCheckout.amount)} 결제` : '결제위젯 준비 중…'}
+              </button>
             </section>
           ) : null}
 

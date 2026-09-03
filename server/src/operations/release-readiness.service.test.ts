@@ -11,13 +11,16 @@ function validInput(): ReleaseReadinessInput {
   return {
     repository: "example/baduk-history",
     defaultBranch: "main",
+    actorLogin: "release-operator",
+    approvalMode: "solo",
+    soloOperatorLogin: "release-operator",
     localCommitSha: "a".repeat(40),
     remoteDefaultCommitSha: "a".repeat(40),
     dirtyFileCount: 0,
     workflows: REQUIRED_RELEASE_WORKFLOWS.map((name) => ({ name, state: "active" })),
     productionEnvironmentExists: true,
-    productionReviewerCount: 1,
-    productionPreventSelfReview: true,
+    productionReviewers: [],
+    productionPreventSelfReview: false,
     productionProtectedBranchesOnly: false,
     productionCustomDeploymentBranchNames: ["main"],
     productionSecretNames: [...REQUIRED_PRODUCTION_SECRETS],
@@ -40,7 +43,7 @@ describe("ReleaseReadinessService", () => {
     input.dirtyFileCount = 3;
     input.workflows = input.workflows.slice(0, 1);
     input.productionEnvironmentExists = false;
-    input.productionReviewerCount = 0;
+    input.productionReviewers = [];
     input.productionPreventSelfReview = false;
     input.productionCustomDeploymentBranchNames = [];
     input.productionSecretNames = [];
@@ -58,13 +61,23 @@ describe("ReleaseReadinessService", () => {
       status: "fail",
       code: "WORKING_TREE_NOT_CLEAN",
     });
-    expect(report.checks.filter(({ code }) => code === "REQUIRED_WORKFLOW_NOT_ACTIVE")).toHaveLength(6);
-    expect(report.checks.filter(({ code }) => code === "PRODUCTION_SECRET_MISSING")).toHaveLength(6);
-    expect(report.checks.filter(({ code }) => code === "REPOSITORY_SECRET_MISSING")).toHaveLength(1);
+    expect(report.checks.filter(({ code }) => code === "REQUIRED_WORKFLOW_NOT_ACTIVE")).toHaveLength(7);
+    expect(report.checks.filter(({ code }) => code === "PRODUCTION_SECRET_MISSING")).toHaveLength(9);
+    expect(report.checks.filter(({ code }) => code === "REPOSITORY_SECRET_MISSING")).toHaveLength(6);
+    expect(report.checks).toContainEqual({
+      name: "secret:repository:STAGING_API_BASE_URL",
+      status: "fail",
+      code: "REPOSITORY_SECRET_MISSING",
+    });
+    expect(report.checks).toContainEqual({
+      name: "secret:repository:STAGING_OPERATIONS_METRICS_TOKEN",
+      status: "fail",
+      code: "REPOSITORY_SECRET_MISSING",
+    });
     expect(report.checks).toContainEqual({
       name: "environment:production:preventSelfReview",
       status: "fail",
-      code: "PRODUCTION_SELF_REVIEW_NOT_BLOCKED",
+      code: "PRODUCTION_SOLO_SELF_REVIEW_POLICY_INVALID",
     });
     expect(report.checks).toContainEqual({
       name: "environment:production:deploymentBranch",
@@ -84,6 +97,35 @@ describe("ReleaseReadinessService", () => {
       .toThrowError(expect.objectContaining({ name: "RELEASE_READINESS_DEFAULT_BRANCH_INVALID" }));
     expect(() => service.run({ ...validInput(), dirtyFileCount: -1 }))
       .toThrowError(expect.objectContaining({ name: "RELEASE_READINESS_DIRTY_COUNT_INVALID" }));
+    expect(() => service.run({ ...validInput(), actorLogin: "../unsafe" }))
+      .toThrowError(expect.objectContaining({ name: "RELEASE_READINESS_ACTOR_LOGIN_INVALID" }));
+    expect(() => service.run({
+      ...validInput(),
+      productionReviewers: [{ type: "User", identity: "../unsafe" }],
+    })).toThrowError(expect.objectContaining({ name: "RELEASE_READINESS_REVIEWER_INVALID" }));
+  });
+
+  it("rejects a solo environment with reviewers or a different triggering actor", () => {
+    const input = validInput();
+    input.productionReviewers = [{ type: "User", identity: "another-user" }];
+
+    const report = new ReleaseReadinessService().run(input);
+
+    expect(report.ok).toBe(false);
+    expect(report.checks).toContainEqual({
+      name: "environment:production:reviewers",
+      status: "fail",
+      code: "PRODUCTION_SOLO_REVIEWERS_PRESENT",
+    });
+    const actorMismatch = new ReleaseReadinessService().run({
+      ...validInput(),
+      actorLogin: "different-operator",
+    });
+    expect(actorMismatch.checks).toContainEqual({
+      name: "environment:production:soloOperator",
+      status: "fail",
+      code: "PRODUCTION_SOLO_OPERATOR_MISMATCH",
+    });
   });
 
   it("accepts protected branches and rejects broad custom deployment policies", () => {

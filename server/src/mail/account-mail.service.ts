@@ -2,6 +2,10 @@ import { HttpStatus, Inject, Injectable, Optional } from "@nestjs/common";
 import nodemailer, { type Transporter } from "nodemailer";
 import { ApiError } from "../common/api-error.js";
 import { loadAppConfig, type AppConfig } from "../config/app-config.js";
+import {
+  verifyMailDomainAuthentication,
+  type MailDomainAuthenticationResult,
+} from "./mail-domain-authentication.js";
 
 export const MAIL_TRANSPORT = Symbol("MAIL_TRANSPORT");
 
@@ -79,6 +83,20 @@ export class AccountMailService {
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
+  }
+
+  async verifyDomainAuthentication(): Promise<MailDomainAuthenticationResult> {
+    if (!this.config.smtpFrom || !this.config.mailDkimSelector) {
+      throw new ApiError(
+        "MAIL_DOMAIN_AUTH_NOT_CONFIGURED",
+        "메일 발신 도메인과 DKIM 선택자 설정이 필요합니다.",
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    return verifyMailDomainAuthentication({
+      mailFrom: this.config.smtpFrom,
+      dkimSelector: this.config.mailDkimSelector,
+    });
   }
 
   private createTransport(): Transporter | null {

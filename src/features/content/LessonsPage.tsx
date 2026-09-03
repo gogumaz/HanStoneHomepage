@@ -22,7 +22,15 @@ function LessonThumbnail({ lessonId, title }: { lessonId: string; title: string 
     retry: false,
   });
   if (!thumbnailQuery.data) return <div className="lesson-thumbnail-placeholder" aria-hidden="true" />;
-  return <img className="lesson-thumbnail" src={thumbnailQuery.data.url} alt={`${title} 강의 썸네일`} />;
+  return (
+    <img
+      className="lesson-thumbnail"
+      src={thumbnailQuery.data.url}
+      alt={`${title} 강의 썸네일`}
+      loading="lazy"
+      decoding="async"
+    />
+  );
 }
 
 export function LessonsPage() {

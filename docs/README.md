@@ -7,6 +7,8 @@
 | 문서 | 설명 |
 |---|---|
 | [개발 가이드](./DEVELOPMENT_GUIDE.md) | 로컬 실행, 파일 구조, 코딩 규칙, 배포 방법 |
+| [홈페이지 테스트 및 서버 설치 매뉴얼](./HOMEPAGE_TEST_AND_SERVER_INSTALLATION.md) | 빠른 화면 확인, 자동 테스트, 로컬·Docker·운영 서버 설치와 장애 대응 절차 |
+| [uzdream.com PHPS 서버 호스팅 테스트 매뉴얼](./UZDREAM_PHPS_HOSTING_TEST_MANUAL.md) | 512MB PHPS 서버의 Ubuntu 재설치, 정적 배포, SSL과 실제 도메인 브라우저 확인 절차 |
 | [아키텍처](./ARCHITECTURE.md) | 현재 구조와 목표 시스템 구성, 주요 데이터 흐름 |
 | [React 프런트엔드 기술 스택](./FRONTEND_STACK.md) | React·TypeScript·Vite 전환 구조와 개발 기준 |
 | [기능 명세](./FEATURE_SPEC.md) | 화면별 기능, 사용자 역할, 완료 조건 |
@@ -18,6 +20,8 @@
 | [서비스 운영 정책](./OPERATIONS_POLICY.md) | 점수·재도전·분류·통계·파일·게시판·개인정보·알림·분석 채택 정책 |
 | [구현·개발·배포 제안서](./IMPLEMENTATION_PROPOSAL.md) | 확정 기술 스택, 단계별 구현, 테스트·CI/CD·백업 실행안 |
 | [사업자·운영자 작성안](./EXTERNAL_PREPARATION.md) | 상상바둑을 참고한 사업자 표시·서비스 소개·개인정보·환불·운영 역할 초안 |
+| [미성년자·보호자 동의 정책 법무 검토 체크시트](./LEGAL_REVIEW_CHECKLIST.md) | 법무 검토 대상·필수 판단·서명 승인 메타데이터 기록 절차 |
+| [운영 릴리스 변경승인 기록 양식](./RELEASE_CHANGE_APPROVAL_TEMPLATE.md) | 후보 식별, 일곱 증빙, 운영 검증, closeout과 롤백 훈련을 결합하는 승인 양식 |
 | [게시판 입력·권한 설계](./BOARD_CMS.md) | 게시판별 입력 필드, 작성 권한, 저장 및 API 구조 |
 | [계정 구독형 강의 CMS·시청 권한 설계](./LECTURE_CMS.md) | 강의 업로드, 고정 구독 플랜, 결제·종료·전체영상 권한 구조 |
 | [사용자 착수형 바둑문제·바둑미션 게임 기획](./BADUK_MISSION_GAME.md) | 9·13·19줄 문제 입력기, 수순 트리, 문제 카드·확대창, 자동채점·학습기록 설계 |

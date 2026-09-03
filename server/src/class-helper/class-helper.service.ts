@@ -421,7 +421,7 @@ function view(item: HelperViewInput) {
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
     lessonVideo: { kind: "video", originalName: "연결 강의 영상", appUrl: `/lessons/${encodeURIComponent(item.lessonId)}` },
-    missionUrl: `/missions?lessonId=${encodeURIComponent(item.lessonId)}&missionId=${encodeURIComponent(item.badukMissionId)}`,
+    missionUrl: `/missions?lessonId=${encodeURIComponent(item.lessonId)}&missionId=${encodeURIComponent(item.badukMissionId)}&mode=classroom`,
   };
   for (const asset of item.assets) {
     const field = kindField(asset.kind);

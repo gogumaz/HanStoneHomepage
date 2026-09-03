@@ -24,6 +24,7 @@ export function MissionPage() {
   const [searchParams] = useSearchParams();
   const linkedLessonId = searchParams.get('lessonId')?.trim() ?? '';
   const linkedMissionId = searchParams.get('missionId')?.trim() || null;
+  const classroomMode = searchParams.get('mode') === 'classroom' && Boolean(linkedMissionId);
   const queryClient = useQueryClient();
   const [boardSize, setBoardSize] = useState<0 | 9 | 13 | 19>(0);
   const [filterDraft, setFilterDraft] = useState({ q: '', level: '', volume: '', lessonNumber: '', category: '', problemGroup: '', missionType: '', difficulty: '', progress: '', favorite: false });
@@ -111,7 +112,9 @@ export function MissionPage() {
         ))}
       </nav>
 
-      {linkedLessonId ? <p className="mission-linked-context">강의 {linkedLessonId}에 연결된 바둑미션입니다. <Link to="/missions">전체 미션 보기</Link></p> : null}
+      {classroomMode ? (
+        <p className="mission-linked-context">지도자 수업 화면입니다. 기존 문제풀이의 판과 시도 상태를 그대로 이어갑니다. <Link to="/missions">전체 미션 보기</Link></p>
+      ) : linkedLessonId ? <p className="mission-linked-context">강의 {linkedLessonId}에 연결된 바둑미션입니다. <Link to="/missions">전체 미션 보기</Link></p> : null}
 
       <form className="mission-search-filters" aria-label="바둑미션 상세 검색" onSubmit={(event) => { event.preventDefault(); setAppliedFilters(filterDraft); }}>
         <label className="mission-search-field">검색어<input value={filterDraft.q} maxLength={80} onChange={(event) => setFilterDraft({ ...filterDraft, q: event.target.value })} placeholder="제목·지시문·카테고리" /></label>
@@ -139,7 +142,8 @@ export function MissionPage() {
       {selectedMission ? (
         <MissionDialog
           summary={selectedMission}
-          source={linkedLessonId ? 'lesson' : 'mission_list'}
+          source={classroomMode ? 'class_helper' : linkedLessonId ? 'lesson' : 'mission_list'}
+          displayMode={classroomMode ? 'classroom' : 'modal'}
           onClose={closeMission}
         />
       ) : null}
@@ -172,7 +176,7 @@ function MissionCard({ mission, onOpen, onToggleFavorite, favoritePending }: { m
   );
 }
 
-function MissionDialog({ summary, source, onClose }: { summary: MissionSummary; source: string; onClose: () => void }) {
+function MissionDialog({ summary, source, displayMode, onClose }: { summary: MissionSummary; source: string; displayMode: 'modal' | 'classroom'; onClose: () => void }) {
   const dialogRef = useRef<HTMLElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const startRequestIdRef = useRef<string | null>(null);
@@ -364,10 +368,11 @@ function MissionDialog({ summary, source, onClose }: { summary: MissionSummary; 
         && ['MISSION_STATE_CONFLICT', 'MISSION_ATTEMPT_FINISHED'].includes(item.code))) as ApiClientError | undefined;
 
   return (
-    <div className="mission-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section ref={dialogRef} className="mission-dialog" role="dialog" aria-modal="true" aria-labelledby="mission-dialog-title">
+    <div className={`mission-dialog-backdrop mission-dialog-backdrop-${displayMode}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section ref={dialogRef} className={`mission-dialog mission-dialog-${displayMode}`} data-display-mode={displayMode} role="dialog" aria-modal="true" aria-labelledby="mission-dialog-title">
         <header>
           <div>
+            {displayMode === 'classroom' ? <strong className="mission-classroom-label">지도자 수업 화면</strong> : null}
             <p>{mission.level} {mission.volume}권 {mission.lessonNumber}강 · {mission.boardSize}줄</p>
             <h2 ref={titleRef} id="mission-dialog-title" tabIndex={-1}>{mission.title}</h2>
           </div>

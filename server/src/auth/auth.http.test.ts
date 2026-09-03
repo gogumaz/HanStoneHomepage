@@ -6,6 +6,7 @@ import { ApiExceptionFilter } from "../common/api-exception.filter.js";
 import { ApiResponseInterceptor } from "../common/api-response.interceptor.js";
 import { RequestIdMiddleware } from "../common/request-id.middleware.js";
 import { PrismaService } from "../database/prisma.service.js";
+import { listenForHttpTest } from "../test-utils/listen-test-app.js";
 import { AccountStatus } from "../generated/prisma/enums.js";
 import { OAuthClient } from "../components/oauth/index.js";
 
@@ -28,6 +29,9 @@ function createPrismaMock() {
           emailVerifiedAt: data.emailVerifiedAt ?? null,
           status: AccountStatus.ACTIVE,
           roles: data.roles.create,
+          ageBand: data.ageBand,
+          minorAccountStatus: data.minorAccountStatus,
+          guardianConsentVerifiedAt: null,
         };
         users.push(user);
         const oauthAccount = data.oauthAccounts?.create?.[0];
@@ -228,8 +232,7 @@ describe("authentication HTTP flow", () => {
     app.use(requestId.use.bind(requestId));
     app.useGlobalFilters(new ApiExceptionFilter());
     app.useGlobalInterceptors(new ApiResponseInterceptor());
-    await app.listen(0, "127.0.0.1");
-    baseUrl = await app.getUrl();
+    baseUrl = await listenForHttpTest(app);
   });
 
   afterAll(async () => {
@@ -248,6 +251,7 @@ describe("authentication HTTP flow", () => {
         password: "safe-password-123",
         displayName: "HTTP 회원",
         role: "student",
+        ageBand: "adult",
       }),
     });
     const signup = await signupResponse.json() as {
@@ -311,6 +315,9 @@ describe("authentication HTTP flow", () => {
       headers: { cookie: cookie ?? "" },
     });
     expect(logoutResponse.status).toBe(200);
+    expect(logoutResponse.headers.get("set-cookie")).toMatch(
+      /^baduk_session=;.*Expires=Thu, 01 Jan 1970 00:00:00 GMT/i,
+    );
 
     const revokedResponse = await fetch(`${baseUrl}/api/v1/me`, {
       headers: { cookie: cookie ?? "" },
@@ -319,6 +326,12 @@ describe("authentication HTTP flow", () => {
     expect(revokedResponse.status).toBe(401);
     expect(revoked.error.code).toBe("SESSION_INVALID");
     expect(revoked.error.requestId).toMatch(/^req_/);
+
+    const repeatedLogoutResponse = await fetch(`${baseUrl}/api/v1/auth/logout`, {
+      method: "POST",
+      headers: { cookie: cookie ?? "" },
+    });
+    expect(repeatedLogoutResponse.status).toBe(200);
 
     const loginResponse = await fetch(`${baseUrl}/api/v1/auth/login`, {
       method: "POST",
@@ -394,7 +407,7 @@ describe("authentication HTTP flow", () => {
     expect(newPasswordResponse.status).toBe(200);
   });
 
-  it("starts OAuth with state, PKCE and nonce, then creates a session exactly once", async () => {
+  it("completes a Google OIDC callback with state, PKCE and nonce, then creates a session exactly once", async () => {
     const startResponse = await fetch(
       `${baseUrl}/api/v1/auth/oauth/google/start?returnTo=${encodeURIComponent("/dashboard?welcome=1")}`,
       { redirect: "manual" },
@@ -402,9 +415,15 @@ describe("authentication HTTP flow", () => {
     expect(startResponse.status).toBe(302);
     const authorizationUrl = new URL(startResponse.headers.get("location") ?? "");
     const state = authorizationUrl.searchParams.get("state");
+    const nonce = authorizationUrl.searchParams.get("nonce");
     expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(authorizationUrl.searchParams.get("nonce")).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(nonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(authorizationUrl.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(oauthClient.createAuthorizationUrl).toHaveBeenLastCalledWith("google", expect.objectContaining({
+      state,
+      nonce,
+      codeChallenge: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+    }));
 
     const callbackResponse = await fetch(
       `${baseUrl}/api/v1/auth/oauth/google/callback?code=oauth-code&state=${state}`,
@@ -414,6 +433,12 @@ describe("authentication HTTP flow", () => {
     expect(callbackResponse.headers.get("location")).toBe("http://127.0.0.1:5173/dashboard?welcome=1");
     const cookie = callbackResponse.headers.get("set-cookie")?.split(";", 1)[0];
     expect(cookie).toMatch(/^baduk_session=/);
+    expect(oauthClient.exchangeCode).toHaveBeenLastCalledWith("google", expect.objectContaining({
+      code: "oauth-code",
+      state,
+      nonce,
+      codeVerifier: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+    }));
 
     const meResponse = await fetch(`${baseUrl}/api/v1/me`, { headers: { cookie: cookie ?? "" } });
     const me = await meResponse.json() as { data: { user: { email: string; emailVerified: boolean } } };
@@ -443,6 +468,172 @@ describe("authentication HTTP flow", () => {
     expect(linkingError.error.code).toBe("OAUTH_ACCOUNT_LINK_REQUIRED");
   });
 
+  it("rejects malformed, tampered, and cross-provider OAuth state before token exchange", async () => {
+    const exchangeCallsBefore = oauthClient.exchangeCode.mock.calls.length;
+    const malformedResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/google/callback?code=oauth-code&state=too-short`,
+      { redirect: "manual" },
+    );
+    const malformed = await malformedResponse.json() as { error: { code: string } };
+    expect(malformedResponse.status).toBe(400);
+    expect(malformed.error.code).toBe("OAUTH_CALLBACK_INVALID");
+
+    const startResponse = await fetch(`${baseUrl}/api/v1/auth/oauth/google/start`, { redirect: "manual" });
+    const state = new URL(startResponse.headers.get("location") ?? "").searchParams.get("state") ?? "";
+    const replacement = state.endsWith("A") ? "B" : "A";
+    const tamperedState = `${state.slice(0, -1)}${replacement}`;
+    const tamperedResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/google/callback?code=oauth-code&state=${tamperedState}`,
+      { redirect: "manual" },
+    );
+    const tampered = await tamperedResponse.json() as { error: { code: string } };
+    expect(tamperedResponse.status).toBe(400);
+    expect(tampered.error.code).toBe("OAUTH_STATE_INVALID");
+
+    const wrongProviderResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/naver/callback?code=oauth-code&state=${state}`,
+      { redirect: "manual" },
+    );
+    const wrongProvider = await wrongProviderResponse.json() as { error: { code: string } };
+    expect(wrongProviderResponse.status).toBe(400);
+    expect(wrongProvider.error.code).toBe("OAUTH_STATE_INVALID");
+    expect(oauthClient.exchangeCode).toHaveBeenCalledTimes(exchangeCallsBefore);
+
+    oauthClient.exchangeCode.mockResolvedValueOnce({
+      provider: "google",
+      subject: "google-state-security-subject",
+      email: "google-state-security@example.com",
+      emailVerified: true,
+      displayName: "Google state 보안 회원",
+    });
+    const validResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/google/callback?code=oauth-code&state=${state}`,
+      { redirect: "manual" },
+    );
+    expect(validResponse.status).toBe(302);
+    expect(validResponse.headers.get("set-cookie")).toContain("baduk_session=");
+
+    const replayResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/google/callback?code=oauth-code&state=${state}`,
+      { redirect: "manual" },
+    );
+    const replay = await replayResponse.json() as { error: { code: string } };
+    expect(replayResponse.status).toBe(400);
+    expect(replay.error.code).toBe("OAUTH_STATE_INVALID");
+  });
+
+  it("completes a Naver login callback and creates an authenticated session", async () => {
+    oauthClient.exchangeCode.mockResolvedValueOnce({
+      provider: "naver",
+      subject: "naver-login-subject-1",
+      email: "naver-login@example.com",
+      emailVerified: false,
+      displayName: "네이버 로그인 회원",
+    });
+    const returnTo = "/qr/QR-PREHISTORIC-0001";
+    const startResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/naver/start?returnTo=${encodeURIComponent(returnTo)}`,
+      { redirect: "manual" },
+    );
+
+    expect(startResponse.status).toBe(302);
+    const authorizationUrl = new URL(startResponse.headers.get("location") ?? "");
+    const state = authorizationUrl.searchParams.get("state");
+    expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(oauthClient.createAuthorizationUrl).toHaveBeenLastCalledWith("naver", expect.objectContaining({
+      state,
+      nonce: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+      codeChallenge: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+    }));
+
+    const callbackResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/naver/callback?code=naver-code&state=${state}`,
+      { redirect: "manual" },
+    );
+    expect(callbackResponse.status).toBe(302);
+    expect(callbackResponse.headers.get("location")).toBe(`http://127.0.0.1:5173${returnTo}`);
+    const cookie = callbackResponse.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+    expect(cookie).toMatch(/^baduk_session=/);
+    expect(oauthClient.exchangeCode).toHaveBeenLastCalledWith("naver", expect.objectContaining({
+      code: "naver-code",
+      state,
+      codeVerifier: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+    }));
+
+    const meResponse = await fetch(`${baseUrl}/api/v1/me`, { headers: { cookie } });
+    const me = await meResponse.json() as {
+      data: { user: { email: string; emailVerified: boolean; displayName: string } };
+    };
+    expect(meResponse.status).toBe(200);
+    expect(me.data.user).toMatchObject({
+      email: "naver-login@example.com",
+      emailVerified: false,
+      displayName: "네이버 로그인 회원",
+    });
+
+    const replayResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/naver/callback?code=naver-code&state=${state}`,
+      { redirect: "manual" },
+    );
+    expect(replayResponse.status).toBe(400);
+  });
+
+  it("completes a Kakao login callback and creates an authenticated session", async () => {
+    oauthClient.exchangeCode.mockResolvedValueOnce({
+      provider: "kakao",
+      subject: "kakao-login-subject-1",
+      email: "kakao-login@example.com",
+      emailVerified: true,
+      displayName: "카카오 로그인 회원",
+    });
+    const returnTo = "/dashboard?from=kakao";
+    const startResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/kakao/start?returnTo=${encodeURIComponent(returnTo)}`,
+      { redirect: "manual" },
+    );
+
+    expect(startResponse.status).toBe(302);
+    const authorizationUrl = new URL(startResponse.headers.get("location") ?? "");
+    const state = authorizationUrl.searchParams.get("state");
+    expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(oauthClient.createAuthorizationUrl).toHaveBeenLastCalledWith("kakao", expect.objectContaining({
+      state,
+      nonce: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+      codeChallenge: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+    }));
+
+    const callbackResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/kakao/callback?code=kakao-code&state=${state}`,
+      { redirect: "manual" },
+    );
+    expect(callbackResponse.status).toBe(302);
+    expect(callbackResponse.headers.get("location")).toBe(`http://127.0.0.1:5173${returnTo}`);
+    const cookie = callbackResponse.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+    expect(cookie).toMatch(/^baduk_session=/);
+    expect(oauthClient.exchangeCode).toHaveBeenLastCalledWith("kakao", expect.objectContaining({
+      code: "kakao-code",
+      state,
+      codeVerifier: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+    }));
+
+    const meResponse = await fetch(`${baseUrl}/api/v1/me`, { headers: { cookie } });
+    const me = await meResponse.json() as {
+      data: { user: { email: string; emailVerified: boolean; displayName: string } };
+    };
+    expect(meResponse.status).toBe(200);
+    expect(me.data.user).toMatchObject({
+      email: "kakao-login@example.com",
+      emailVerified: true,
+      displayName: "카카오 로그인 회원",
+    });
+
+    const replayResponse = await fetch(
+      `${baseUrl}/api/v1/auth/oauth/kakao/callback?code=kakao-code&state=${state}`,
+      { redirect: "manual" },
+    );
+    expect(replayResponse.status).toBe(400);
+  });
+
   it("links and unlinks an OAuth identity without replacing the active password session", async () => {
     const signupResponse = await fetch(`${baseUrl}/api/v1/auth/signup`, {
       method: "POST",
@@ -452,6 +643,7 @@ describe("authentication HTTP flow", () => {
         password: "safe-password-789",
         displayName: "OAuth Link Owner",
         role: "student",
+        ageBand: "adult",
       }),
     });
     const cookie = signupResponse.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
@@ -518,6 +710,11 @@ describe("authentication HTTP flow", () => {
     );
     const oauthOnlyCookie = loginCallback.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
     expect(loginCallback.status).toBe(302);
+    expect((await fetch(`${baseUrl}/api/v1/me/age-band`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: oauthOnlyCookie },
+      body: JSON.stringify({ ageBand: "adult" }),
+    })).status).toBe(200);
 
     const lastMethodResponse = await fetch(`${baseUrl}/api/v1/me/oauth-accounts/kakao`, {
       method: "DELETE",
@@ -535,6 +732,7 @@ describe("authentication HTTP flow", () => {
         password: "safe-password-987",
         displayName: "OAuth Conflict Owner",
         role: "student",
+        ageBand: "adult",
       }),
     });
     const ownerCookie = ownerSignup.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
@@ -568,6 +766,7 @@ describe("authentication HTTP flow", () => {
         password: "safe-password-delete",
         displayName: "Delete Password User",
         role: "student",
+        ageBand: "adult",
       }),
     });
     const cookie = signupResponse.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
@@ -609,6 +808,7 @@ describe("authentication HTTP flow", () => {
         password: "new-password-after-delete",
         displayName: "Recreated User",
         role: "student",
+        ageBand: "adult",
       }),
     });
     expect(reusedEmailResponse.status).toBe(201);
@@ -629,6 +829,11 @@ describe("authentication HTTP flow", () => {
       { redirect: "manual" },
     );
     const cookie = loginCallback.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+    expect((await fetch(`${baseUrl}/api/v1/me/age-band`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ ageBand: "adult" }),
+    })).status).toBe(200);
 
     const mismatchStart = await fetch(`${baseUrl}/api/v1/me/account-deletion/oauth/naver/start`, {
       headers: { cookie },

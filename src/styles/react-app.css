@@ -12,6 +12,50 @@ body {
   margin: 0;
 }
 
+:where(h1, h2, h3, button, a, strong) {
+  overflow-wrap: anywhere;
+}
+
+.privacy-page {
+  min-height: 100vh;
+  padding: clamp(22px, 5vw, 64px);
+  background: radial-gradient(circle at top, #fffaf0, #eee3cf);
+}
+
+.privacy-document {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding: clamp(24px, 6vw, 64px);
+  border: 1px solid #d7c6a8;
+  border-radius: 24px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 20px 60px rgb(72 48 22 / 12%);
+}
+
+.privacy-document h1 { margin: 10px 0 12px; font-size: clamp(34px, 6vw, 52px); }
+.privacy-document h2 { margin: 38px 0 12px; font-size: clamp(22px, 4vw, 30px); }
+.privacy-document p { color: #5f574e; line-height: 1.8; }
+.privacy-kicker { margin: 20px 0 0; color: #8d2f27 !important; font-size: 12px; font-weight: 900; letter-spacing: .1em; }
+.privacy-lead { max-width: 720px; font-size: 18px; }
+.privacy-table-wrap { overflow-x: auto; }
+.privacy-document table { width: 100%; border-collapse: collapse; text-align: left; }
+.privacy-document th, .privacy-document td { min-width: 150px; padding: 14px; border: 1px solid #ded1bc; vertical-align: top; }
+.privacy-document th { color: #fff; background: #3f604c; }
+.privacy-document td { color: #554d45; background: #fffdf8; }
+.child-privacy-notice { margin-top: 40px; padding: clamp(20px, 5vw, 36px); border-radius: 22px; background: #eaf4ec; }
+.child-privacy-notice h2 { margin-top: 6px; }
+.child-privacy-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.child-privacy-grid article { padding: 20px; border: 1px solid #bad3c0; border-radius: 16px; background: #fff; }
+.child-privacy-grid span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #3f604c; font-weight: 900; }
+.child-privacy-grid h3 { margin: 12px 0 6px; }
+.child-privacy-grid p { margin: 0; }
+.privacy-review-note { margin-top: 32px; padding: 18px 20px; border: 2px solid #9b6a1c; border-radius: 14px; background: #fff5d8; }
+.privacy-review-note p { margin: 6px 0 0; }
+
+@media (max-width: 700px) {
+  .child-privacy-grid { grid-template-columns: 1fr; }
+}
+
 button,
 input,
 select {
@@ -1332,6 +1376,30 @@ select {
   box-shadow: 0 28px 80px rgb(0 0 0 / 35%);
 }
 
+.mission-dialog-backdrop-classroom {
+  padding: 0;
+}
+
+.mission-dialog-classroom {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+}
+
+.mission-dialog-classroom .mission-player-layout {
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, .65fr);
+  min-height: calc(100vh - 77px);
+}
+
+.mission-classroom-label {
+  display: inline-block;
+  margin-bottom: 4px;
+  color: #315b42;
+  font-size: 12px;
+  letter-spacing: .08em;
+}
+
 .mission-dialog > header {
   position: sticky;
   z-index: 2;
@@ -1658,6 +1726,10 @@ select {
 
   .mission-player-layout,
   .admin-mission-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .mission-dialog-classroom .mission-player-layout {
     grid-template-columns: 1fr;
   }
 
@@ -2962,6 +3034,29 @@ select {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.role-navigation {
+  margin-top: 28px;
+}
+
+.role-navigation-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.role-navigation-heading h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.role-navigation-heading span {
+  color: #705f4f;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .react-stack-card a {

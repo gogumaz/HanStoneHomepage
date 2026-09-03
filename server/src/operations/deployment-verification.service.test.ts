@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   DeploymentVerificationService,
+  successfulDeploymentProbeEvidenceValid,
   validateDeploymentTarget,
+  validateNonProductionDeploymentTarget,
   type DeploymentProbeResult,
   type DeploymentVerificationConfig,
 } from "./deployment-verification.service.js";
@@ -33,6 +35,15 @@ describe("DeploymentVerificationService", () => {
     );
   });
 
+  it("restricts rollback rehearsal probes to explicitly marked non-production targets", () => {
+    expect(validateNonProductionDeploymentTarget("https://api.rollback-drill.example.com"))
+      .toBe("https://api.rollback-drill.example.com");
+    expect(validateNonProductionDeploymentTarget("http://localhost:3000")).toBe("http://localhost:3000");
+    expect(() => validateNonProductionDeploymentTarget("https://api.example.com")).toThrowError(
+      expect.objectContaining({ name: "DEPLOY_VERIFY_TARGET_NOT_NON_PRODUCTION" }),
+    );
+  });
+
   it("accepts repeated healthy probes from the exact candidate image", async () => {
     const durations = [10, 20, 30];
     const sleep = vi.fn(async () => undefined);
@@ -48,7 +59,13 @@ describe("DeploymentVerificationService", () => {
     expect(report.samples).toEqual({
       planned: 3, completed: 3, failed: 0, livenessFailures: 0, readinessFailures: 0, identityMismatches: 0,
     });
+    expect(report.probes).toEqual([
+      { sample: 1, durationMs: 10, liveness: true, readiness: true, identityMatched: true },
+      { sample: 2, durationMs: 20, liveness: true, readiness: true, identityMatched: true },
+      { sample: 3, durationMs: 30, liveness: true, readiness: true, identityMatched: true },
+    ]);
     expect(report.latencyMs).toEqual({ p50: 20, p95: 30, p99: 30, max: 30 });
+    expect(successfulDeploymentProbeEvidenceValid(report)).toBe(true);
     expect(sleep).toHaveBeenCalledTimes(2);
   });
 
@@ -66,6 +83,8 @@ describe("DeploymentVerificationService", () => {
     expect(report.ok).toBe(false);
     expect(report.rollbackRecommended).toBe(true);
     expect(report.samples).toMatchObject({ readinessFailures: 1, identityMismatches: 1 });
+    expect(report.probes[1]).toMatchObject({ readiness: false });
+    expect(report.probes[2]).toMatchObject({ identityMatched: false });
   });
 
   it("sanitizes probe failures and fails closed", async () => {

@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: baduk
       POSTGRES_PASSWORD: baduk-local-password
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - baduk-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -19,7 +19,7 @@ services:
     image: redis:8-alpine
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - baduk-redis-data:/data
     healthcheck:
@@ -82,7 +82,7 @@ services:
       COMMUNITY_ATTACHMENT_MAX_BYTES: ${COMMUNITY_ATTACHMENT_MAX_BYTES:-20971520}
       COMMUNITY_ATTACHMENT_RETENTION_HOURS: ${COMMUNITY_ATTACHMENT_RETENTION_HOURS:-24}
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${API_HOST_PORT:-3000}:3000"
     depends_on:
       database:
         condition: service_healthy
@@ -205,7 +205,7 @@ services:
       context: ./deploy/clamav
     profiles: ["malware-scan"]
     ports:
-      - "127.0.0.1:3310:3310"
+      - "127.0.0.1:${CLAMAV_HOST_PORT:-3310}:3310"
     volumes:
       - clamav-signatures:/var/lib/clamav
 

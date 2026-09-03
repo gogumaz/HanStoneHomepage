@@ -1,8 +1,13 @@
 name: Release candidate acceptance
+run-name: Release candidate acceptance · ${{ inputs.release_id }}
 
 on:
   workflow_dispatch:
     inputs:
+      solo_release_confirmation:
+        description: Type AUTHORIZE_SOLO_PRODUCTION_RELEASE for the designated solo operator
+        required: true
+        type: string
       release_id:
         description: Immutable release identifier
         required: true
@@ -56,6 +61,8 @@ jobs:
     environment: production
     timeout-minutes: 30
     env:
+      SOLO_RELEASE_ACTOR: ${{ github.actor }}
+      SOLO_RELEASE_CONFIRMATION: ${{ inputs.solo_release_confirmation }}
       RELEASE_ID: ${{ inputs.release_id }}
       CANDIDATE_COMMIT_SHA: ${{ inputs.candidate_commit_sha }}
       IMAGE_REFERENCE: ${{ inputs.image_reference }}
@@ -72,6 +79,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          [[ "$SOLO_RELEASE_ACTOR" == "gogumaz" ]]
+          [[ "$SOLO_RELEASE_CONFIRMATION" == "AUTHORIZE_SOLO_PRODUCTION_RELEASE" ]]
           [[ "$RELEASE_ID" =~ ^[A-Za-z0-9._-]{1,80}$ ]]
           [[ "$CANDIDATE_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]
           [[ "$IMAGE_REFERENCE" =~ @sha256:[a-f0-9]{64}$ ]]
@@ -176,6 +185,24 @@ jobs:
             "$IMAGE_REFERENCE" node dist/recovery-drill.js \
             > evidence/recovery-drill.json
 
+      - name: Verify staging workload evidence bundle
+        id: staging_evidence
+        continue-on-error: true
+        shell: bash
+        run: |
+          docker run --rm \
+            --mount type=bind,source="$GITHUB_WORKSPACE/evidence",target=/evidence,readonly \
+            -e STAGING_BUNDLE_RELEASE_ID="$RELEASE_ID" \
+            -e STAGING_BUNDLE_COMMIT_SHA="$CANDIDATE_COMMIT_SHA" \
+            -e STAGING_BUNDLE_LOAD_RUN_ID="${{ inputs.load_test_run_id }}" \
+            -e STAGING_BUNDLE_WORKER_SOAK_RUN_ID="${{ inputs.worker_soak_run_id }}" \
+            -e STAGING_BUNDLE_LOAD_REPORT=/evidence/read-only-load/staging-read-only-load-report.json \
+            -e STAGING_BUNDLE_WORKER_SOAK_REPORT=/evidence/worker-soak/staging-worker-soak-report.json \
+            -e STAGING_BUNDLE_CONTROLLED_LOAD_REPORT=/evidence/worker-soak/staging-worker-controlled-load-report.json \
+            -e STAGING_BUNDLE_EXECUTION_REPORT=/evidence/worker-soak/staging-worker-soak-execution.json \
+            "$IMAGE_REFERENCE" node dist/staging-evidence-bundle.js \
+            > evidence/staging-evidence-bundle.json
+
       - name: Evaluate the complete release evidence set
         id: acceptance
         continue-on-error: true
@@ -190,6 +217,7 @@ jobs:
             -e RELEASE_RECOVERY_REPORT=/evidence/recovery-drill.json \
             -e RELEASE_LOAD_REPORT=/evidence/read-only-load/staging-read-only-load-report.json \
             -e RELEASE_WORKER_SOAK_REPORT=/evidence/worker-soak/staging-worker-soak-report.json \
+            -e RELEASE_STAGING_BUNDLE_REPORT=/evidence/staging-evidence-bundle.json \
             -e RELEASE_WEB_DEPLOYMENT_REPORT=/evidence/web-deployment/web-deployment-manifest.json \
             -e RELEASE_FIELD_VALIDATION_REPORT=/evidence/field-validation/field-validation-report.json \
             -e RELEASE_SUPPLY_CHAIN_REPORT=/evidence/supply-chain/manifest.json \
@@ -210,6 +238,7 @@ jobs:
             release-acceptance.json
             evidence/production-preflight.json
             evidence/recovery-drill.json
+            evidence/staging-evidence-bundle.json
             evidence/read-only-load
             evidence/worker-soak
             evidence/web-deployment/web-deployment-manifest.json
@@ -227,5 +256,6 @@ jobs:
         if: >-
           steps.preflight.outcome != 'success' ||
           steps.recovery.outcome != 'success' ||
+          steps.staging_evidence.outcome != 'success' ||
           steps.acceptance.outcome != 'success'
         run: exit 1

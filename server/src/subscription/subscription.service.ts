@@ -4,9 +4,11 @@ import type { CurrentUser } from "../auth/auth.types.js";
 import { ApiError } from "../common/api-error.js";
 import { PrismaService } from "../database/prisma.service.js";
 import {
+  ConsentStatus,
   SubscriptionOrderStatus,
   SubscriptionPaymentStatus,
 } from "../generated/prisma/enums.js";
+import { GUARDIAN_CONSENT_POLICY_VERSION, PAID_SUBSCRIPTION_CONSENT_SCOPE } from "../guardian/guardian.types.js";
 import {
   PAYMENT_PROVIDER,
   PaymentComponentError,
@@ -219,6 +221,26 @@ export class SubscriptionService {
 
   async createCheckout(user: CurrentUser, body: unknown, requestId?: string) {
     const input = validateCheckout(body);
+    if (user.ageBand === "under_14" || user.ageBand === "age_14_to_18") {
+      const paidConsent = await this.prisma.guardianConsent.findFirst({
+        where: {
+          studentId: user.id,
+          status: ConsentStatus.ACTIVE,
+          consentType: "minor_paid_subscription",
+          policyVersion: GUARDIAN_CONSENT_POLICY_VERSION,
+          scope: { has: PAID_SUBSCRIPTION_CONSENT_SCOPE },
+          guardianLink: { status: "ACTIVE" },
+        },
+        select: { id: true },
+      });
+      if (!paidConsent) {
+        throw new ApiError(
+          "MINOR_PAID_SUBSCRIPTION_CONSENT_REQUIRED",
+          "미성년자의 유료 구독은 연결된 법정대리인의 별도 결제 동의가 필요합니다.",
+          HttpStatus.FORBIDDEN,
+        );
+      }
+    }
     const now = new Date();
     const [plan, activeSubscription, pendingOrder] = await Promise.all([
       this.prisma.subscriptionPlan.findFirst({ where: { id: input.planId, active: true } }),

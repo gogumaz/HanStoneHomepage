@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ApiExceptionFilter } from "../common/api-exception.filter.js";
 import { RequestIdMiddleware } from "../common/request-id.middleware.js";
 import { MemoryRateLimitStore, RATE_LIMIT_STORE } from "../common/rate-limit.store.js";
+import { listenForHttpTest } from "../test-utils/listen-test-app.js";
 import {
   AuthRateLimit,
   AuthRateLimitGuard,
@@ -66,8 +67,7 @@ describe("AuthRateLimitGuard HTTP headers", () => {
     const requestId = new RequestIdMiddleware();
     app.use(requestId.use.bind(requestId));
     app.useGlobalFilters(new ApiExceptionFilter());
-    await app.listen(0, "127.0.0.1");
-    baseUrl = await app.getUrl();
+    baseUrl = await listenForHttpTest(app);
   });
 
   afterAll(async () => {

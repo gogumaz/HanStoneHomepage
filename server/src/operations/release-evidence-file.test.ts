@@ -27,6 +27,14 @@ describe("readReleaseEvidenceFile", () => {
     expect(result.sha256).toBe(createHash("sha256").update(contents).digest("hex"));
   });
 
+  it("accepts a transport security artifact under the bounded JSON policy", async () => {
+    const contents = '{"ok":true,"schemaVersion":2}\n';
+    const result = await readReleaseEvidenceFile("transportSecurity", await temporaryFile(contents));
+
+    expect(result.value).toEqual({ ok: true, schemaVersion: 2 });
+    expect(result.sha256).toBe(createHash("sha256").update(contents).digest("hex"));
+  });
+
   it("fails with sanitized codes for missing, malformed, and oversized evidence", async () => {
     await expect(readReleaseEvidenceFile("recovery", "missing-private-path.json")).rejects.toMatchObject({
       name: "RELEASE_RECOVERY_REPORT_READ_FAILED",

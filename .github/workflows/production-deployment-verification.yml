@@ -1,10 +1,23 @@
 name: Production deployment verification
+run-name: Production deployment verification · ${{ inputs.release_id }}
 
 on:
   workflow_dispatch:
     inputs:
+      release_id:
+        description: Accepted immutable release identifier
+        required: true
+        type: string
+      solo_release_confirmation:
+        description: Type AUTHORIZE_SOLO_PRODUCTION_RELEASE for the designated solo operator
+        required: true
+        type: string
       expected_commit_sha:
         description: Accepted candidate Git commit SHA
+        required: true
+        type: string
+      acceptance_run_id:
+        description: Successful release candidate acceptance workflow run ID
         required: true
         type: string
       expected_image_digest:
@@ -22,6 +35,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -33,9 +47,12 @@ jobs:
       run:
         working-directory: server
     env:
+      SOLO_RELEASE_ACTOR: ${{ github.actor }}
+      SOLO_RELEASE_CONFIRMATION: ${{ inputs.solo_release_confirmation }}
       DEPLOY_VERIFY_BASE_URL: ${{ secrets.PRODUCTION_API_BASE_URL }}
       DEPLOY_VERIFY_WEB_BASE_URL: ${{ secrets.PRODUCTION_WEB_BASE_URL }}
       OPERATIONS_METRICS_TOKEN: ${{ secrets.PRODUCTION_OPERATIONS_METRICS_TOKEN }}
+      DEPLOY_VERIFY_RELEASE_ID: ${{ inputs.release_id }}
       DEPLOY_VERIFY_EXPECTED_COMMIT_SHA: ${{ inputs.expected_commit_sha }}
       DEPLOY_VERIFY_EXPECTED_IMAGE_DIGEST: ${{ inputs.expected_image_digest }}
       DEPLOY_VERIFY_EXPECTED_WEB_MANIFEST_SHA256: ${{ inputs.expected_web_manifest_sha256 }}
@@ -43,15 +60,23 @@ jobs:
       DEPLOY_VERIFY_INTERVAL_MS: "2000"
       DEPLOY_VERIFY_TIMEOUT_MS: "5000"
       DEPLOY_VERIFY_MAX_P95_MS: "1000"
+      PREFLIGHT_ENV_BASE64: ${{ secrets.PRODUCTION_PREFLIGHT_ENV_FILE_BASE64 }}
+      MAIL_BOUNCE_RESPONSE_BASE64: ${{ secrets.PRODUCTION_MAIL_BOUNCE_RESPONSE_BASE64 }}
+      MAIL_PROVIDER_EVENT_ID: ${{ secrets.PRODUCTION_MAIL_PROVIDER_EVENT_ID }}
+      LEGAL_APPROVAL_EVIDENCE_BASE64: ${{ secrets.PRODUCTION_LEGAL_APPROVAL_EVIDENCE_BASE64 }}
     steps:
       - name: Validate immutable deployment identities
         shell: bash
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
+          [[ "$SOLO_RELEASE_ACTOR" == "gogumaz" ]]
+          [[ "$SOLO_RELEASE_CONFIRMATION" == "AUTHORIZE_SOLO_PRODUCTION_RELEASE" ]]
+          [[ "${{ inputs.release_id }}" =~ ^[A-Za-z0-9._-]{1,80}$ ]]
           [[ "$DEPLOY_VERIFY_EXPECTED_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]
           [[ "$DEPLOY_VERIFY_EXPECTED_IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
           [[ "$DEPLOY_VERIFY_EXPECTED_WEB_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          [[ "${{ inputs.acceptance_run_id }}" =~ ^[1-9][0-9]*$ ]]
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.expected_commit_sha }}
@@ -62,18 +87,96 @@ jobs:
           cache-dependency-path: server/package-lock.json
       - run: npm ci
       - run: npm run build
+      - name: Download accepted production preflight evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: release-acceptance-${{ inputs.release_id }}-${{ inputs.acceptance_run_id }}
+          path: evidence/acceptance
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.acceptance_run_id }}
+      - name: Verify accepted candidate and restore protected environment
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          jq -e \
+            --arg releaseId "${{ inputs.release_id }}" \
+            --arg commitSha "$DEPLOY_VERIFY_EXPECTED_COMMIT_SHA" \
+            --arg imageDigest "$DEPLOY_VERIFY_EXPECTED_IMAGE_DIGEST" \
+            '.ok == true and .releaseId == $releaseId and .commitSha == $commitSha and .imageDigest == $imageDigest' \
+            evidence/acceptance/release-acceptance.json > /dev/null
+          test -s evidence/acceptance/evidence/production-preflight.json
+          install -d -m 700 evidence/transport
+          printf '%s' "$PREFLIGHT_ENV_BASE64" | base64 --decode > evidence/transport/production.env
+          test -s evidence/transport/production.env
+          chmod 600 evidence/transport/production.env
+          printf '%s' "$MAIL_BOUNCE_RESPONSE_BASE64" | base64 --decode > evidence/transport/mail-bounce-response.json
+          test -s evidence/transport/mail-bounce-response.json
+          chmod 600 evidence/transport/mail-bounce-response.json
+          printf '%s' "$LEGAL_APPROVAL_EVIDENCE_BASE64" | base64 --decode > evidence/transport/legal-policy-approval.json
+          test -s evidence/transport/legal-policy-approval.json
+          chmod 600 evidence/transport/legal-policy-approval.json
       - name: Verify deployed API, web artifact, CDN policy, and health
         id: deployment_verification
         continue-on-error: true
         run: node dist/deployment-verification.js > production-deployment-verification.json 2>&1
-      - name: Upload deployment verification evidence
+      - name: Verify active production transport security
+        id: transport_security
+        continue-on-error: true
+        env:
+          TRANSPORT_EVIDENCE_ENV_FILE: ${{ github.workspace }}/evidence/transport/production.env
+          TRANSPORT_EVIDENCE_RELEASE_ID: ${{ inputs.release_id }}
+          TRANSPORT_EVIDENCE_PREFLIGHT_REPORT: ${{ github.workspace }}/evidence/acceptance/evidence/production-preflight.json
+          TRANSPORT_EVIDENCE_DEPLOYMENT_REPORT: ${{ github.workspace }}/server/production-deployment-verification.json
+          TRANSPORT_EVIDENCE_API_BASE_URL: ${{ secrets.PRODUCTION_API_BASE_URL }}
+          TRANSPORT_EVIDENCE_WEB_BASE_URL: ${{ secrets.PRODUCTION_WEB_BASE_URL }}
+          TRANSPORT_EVIDENCE_MAX_AGE_HOURS: "24"
+          TRANSPORT_EVIDENCE_MIN_CERT_VALIDITY_DAYS: "14"
+          TRANSPORT_EVIDENCE_TLS_TIMEOUT_MS: "5000"
+        run: node dist/transport-security-evidence.js > transport-security-evidence.json 2>&1
+      - name: Verify production mail authentication and bounce handling
+        id: mail_operations
+        continue-on-error: true
+        env:
+          MAIL_EVIDENCE_PREFLIGHT_REPORT: ${{ github.workspace }}/evidence/acceptance/evidence/production-preflight.json
+          MAIL_EVIDENCE_RELEASE_ID: ${{ inputs.release_id }}
+          MAIL_EVIDENCE_BOUNCE_RESPONSE: ${{ github.workspace }}/evidence/transport/mail-bounce-response.json
+          MAIL_EVIDENCE_PROVIDER_EVENT_ID: ${{ secrets.PRODUCTION_MAIL_PROVIDER_EVENT_ID }}
+          MAIL_EVIDENCE_MAX_AGE_HOURS: "24"
+        run: node dist/mail-operations-evidence.js > mail-operations-evidence.json 2>&1
+      - name: Bind signed legal approval to the deployed candidate
+        id: legal_approval
+        continue-on-error: true
+        env:
+          LEGAL_BINDING_ENV_FILE: ${{ github.workspace }}/evidence/transport/production.env
+          LEGAL_BINDING_RELEASE_ID: ${{ inputs.release_id }}
+          LEGAL_BINDING_APPROVAL_REPORT: ${{ github.workspace }}/evidence/transport/legal-policy-approval.json
+          LEGAL_BINDING_PREFLIGHT_REPORT: ${{ github.workspace }}/evidence/acceptance/evidence/production-preflight.json
+          LEGAL_BINDING_EXPECTED_COMMIT_SHA: ${{ inputs.expected_commit_sha }}
+        run: node dist/legal-approval-binding.js > legal-approval-binding.json 2>&1
+      - name: Remove protected evidence input files
+        if: always()
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: >-
+          rm -f -- evidence/transport/production.env evidence/transport/mail-bounce-response.json
+          evidence/transport/legal-policy-approval.json
+      - name: Upload deployment, transport, mail, and legal verification evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: production-deployment-verification-${{ github.run_id }}
-          path: server/production-deployment-verification.json
+          path: |
+            server/production-deployment-verification.json
+            server/transport-security-evidence.json
+            server/mail-operations-evidence.json
+            server/legal-approval-binding.json
           if-no-files-found: error
           retention-days: 90
       - name: Enforce rollback decision
-        if: steps.deployment_verification.outcome != 'success'
+        if: >-
+          steps.deployment_verification.outcome != 'success' ||
+          steps.transport_security.outcome != 'success' ||
+          steps.mail_operations.outcome != 'success' ||
+          steps.legal_approval.outcome != 'success'
         run: exit 1

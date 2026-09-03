@@ -1,4 +1,5 @@
 import { resolveTossBrowserConfig, tossPaymentReadyMessage } from './src/payments/toss-browser.ts';
+import { loadTossPaymentsSdk } from './src/payments/load-toss-sdk.ts';
 
 const $ = (selector, scope = document) => scope.querySelector(selector);
 const $$ = (selector, scope = document) => [...scope.querySelectorAll(selector)];
@@ -36,26 +37,50 @@ const revealObserver = new IntersectionObserver(entries => {
 $$('.reveal').forEach(element => revealObserver.observe(element));
 
 const eraData = {
-  prehistoric: { kicker: '선사시대 · 구석기', title: '주변을 살피면<br>살아갈 길이 보여요', description: '구석기 사람들은 자연을 세심히 살펴 도구와 먹을 것을 찾았어요. 바둑돌도 놓기 전에 주변의 ‘활로’를 먼저 확인해야 합니다.', tags: ['역사 이야기 2분', '바둑 미션 3개', '유물 카드 1장'], cta: '선사시대 여행 시작' },
-  gojoseon: { kicker: '고조선 · 건국 이야기', title: '내 영역을 만들고<br>함께 지켜 나가요', description: '고조선이 하나의 나라로 성장한 이야기를 만나고, 바둑판에서 좋은 자리를 먼저 차지하는 포석의 원리를 배워요.', tags: ['건국 이야기 3분', '포석 미션 3개', '청동검 카드'], cta: '고조선 여행 시작' },
-  three: { kicker: '삼국시대 · 성장과 교류', title: '연결할수록<br>더 큰 힘이 생겨요', description: '고구려·백제·신라가 성장하고 교류한 과정을 살펴보며 돌을 연결하고 상대의 연결을 끊는 방법을 익혀요.', tags: ['삼국 이야기 3분', '연결 미션 3개', '금관 카드'], cta: '삼국시대 여행 시작' },
-  goryeo: { kicker: '고려 · 곧 만나요', title: '균형을 잡는<br>새 여행을 준비 중이에요', description: '고려의 문화와 기초 사활을 연결한 다음 여행 코스를 만들고 있습니다.', tags: ['두 번째 시즌', '사활 미션', '청자 카드'], cta: '오픈 알림 받기' },
-  joseon: { kicker: '조선 · 곧 만나요', title: '판 전체를 읽는<br>넓은 시야를 만나요', description: '조선의 인물과 사건을 따라가며 공배와 집 계산을 익히는 코스입니다.', tags: ['두 번째 시즌', '집 계산', '훈민정음 카드'], cta: '오픈 알림 받기' },
-  modern: { kicker: '근현대 · 곧 만나요', title: '한 수의 선택이<br>미래를 바꾸어요', description: '근현대사의 중요한 선택과 종합 바둑 문제를 연결한 마지막 여정입니다.', tags: ['세 번째 시즌', '종합 미션', '태극기 카드'], cta: '오픈 알림 받기' }
+  prehistoric: { name: '선사시대', available: true, kicker: '선사시대 · 구석기', title: '주변을 살피면<br>살아갈 길이 보여요', description: '구석기 사람들은 자연을 세심히 살펴 도구와 먹을 것을 찾았어요. 바둑돌도 놓기 전에 주변의 ‘활로’를 먼저 확인해야 합니다.', tags: ['역사 이야기 2분', '바둑 미션 3개', '유물 카드 1장'], cta: '선사시대 여행 시작' },
+  gojoseon: { name: '고조선', available: true, kicker: '고조선 · 건국 이야기', title: '내 영역을 만들고<br>함께 지켜 나가요', description: '고조선이 하나의 나라로 성장한 이야기를 만나고, 바둑판에서 좋은 자리를 먼저 차지하는 포석의 원리를 배워요.', tags: ['건국 이야기 3분', '포석 미션 3개', '청동검 카드'], cta: '고조선 여행 시작' },
+  three: { name: '삼국시대', available: true, kicker: '삼국시대 · 성장과 교류', title: '연결할수록<br>더 큰 힘이 생겨요', description: '고구려·백제·신라가 성장하고 교류한 과정을 살펴보며 돌을 연결하고 상대의 연결을 끊는 방법을 익혀요.', tags: ['삼국 이야기 3분', '연결 미션 3개', '금관 카드'], cta: '삼국시대 여행 시작' },
+  goryeo: { name: '고려', available: false, kicker: '고려 · 곧 만나요', title: '균형을 잡는<br>새 여행을 준비 중이에요', description: '고려의 문화와 기초 사활을 연결한 다음 여행 코스를 만들고 있습니다.', tags: ['두 번째 시즌', '사활 미션', '청자 카드'], cta: '고려 여행 준비 중' },
+  joseon: { name: '조선', available: false, kicker: '조선 · 곧 만나요', title: '판 전체를 읽는<br>넓은 시야를 만나요', description: '조선의 인물과 사건을 따라가며 공배와 집 계산을 익히는 코스입니다.', tags: ['두 번째 시즌', '집 계산', '훈민정음 카드'], cta: '조선 여행 준비 중' },
+  modern: { name: '근현대', available: false, kicker: '근현대 · 곧 만나요', title: '한 수의 선택이<br>미래를 바꾸어요', description: '근현대사의 중요한 선택과 종합 바둑 문제를 연결한 마지막 여정입니다.', tags: ['세 번째 시즌', '종합 미션', '태극기 카드'], cta: '근현대 여행 준비 중' }
 };
 
-$$('.era-tab').forEach(tab => tab.addEventListener('click', () => {
-  $$('.era-tab').forEach(item => { item.classList.remove('active'); item.setAttribute('aria-selected', 'false'); });
+const eraTabs = $$('.era-tab');
+function selectEra(tab) {
+  eraTabs.forEach(item => {
+    item.classList.remove('active');
+    item.setAttribute('aria-selected', 'false');
+    item.tabIndex = -1;
+  });
   tab.classList.add('active');
   tab.setAttribute('aria-selected', 'true');
+  tab.tabIndex = 0;
+  $('#eraPanel').setAttribute('aria-labelledby', tab.id);
   const data = eraData[tab.dataset.era];
   $('#eraKicker').textContent = data.kicker;
   $('#eraTitle').innerHTML = data.title;
   $('#eraDescription').textContent = data.description;
   $('#eraTags').innerHTML = data.tags.map(tag => `<span>${tag}</span>`).join('');
-  $('.era-copy .button').innerHTML = `${data.cta} <span>→</span>`;
+  const eraCta = $('#eraCta');
+  eraCta.innerHTML = `${data.cta} <span aria-hidden="true">→</span>`;
+  eraCta.dataset.eraAvailable = String(data.available);
   $('#eraPanel').animate([{ opacity: .55, transform: 'translateY(5px)' }, { opacity: 1, transform: 'none' }], { duration: 280 });
-}));
+}
+eraTabs.forEach((tab, index) => {
+  tab.addEventListener('click', () => selectEra(tab));
+  tab.addEventListener('keydown', event => {
+    let nextIndex = null;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % eraTabs.length;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + eraTabs.length) % eraTabs.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = eraTabs.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextTab = eraTabs[nextIndex];
+    nextTab.focus();
+    selectEra(nextTab);
+  });
+});
 
 $$('.board-point').forEach(point => point.addEventListener('click', () => {
   $$('.board-point').forEach(item => item.classList.remove('correct', 'wrong'));
@@ -69,6 +94,10 @@ $$('.board-point').forEach(point => point.addEventListener('click', () => {
 }));
 
 let lastFocused = null;
+const modalBackground = () => $$('.announcement, .site-header, main, footer');
+function setModalBackgroundInert(inert) {
+  modalBackground().forEach(element => { element.inert = inert; });
+}
 function openModal(id) {
   const modal = $(id);
   if (!modal) return;
@@ -77,18 +106,31 @@ function openModal(id) {
   modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
   document.body.classList.add('modal-open');
+  setModalBackgroundInert(true);
   setTimeout(() => $('.modal-close', modal)?.focus(), 10);
 }
 function closeModal(modal) {
   if (!modal) return;
   modal.classList.remove('open');
   modal.setAttribute('aria-hidden', 'true');
-  if (!$('.modal.open')) document.body.classList.remove('modal-open');
+  if (!$('.modal.open')) {
+    document.body.classList.remove('modal-open');
+    setModalBackgroundInert(false);
+  }
   lastFocused?.focus?.();
 }
 $$('.login-open').forEach(button => button.addEventListener('click', () => openModal('#loginModal')));
 $$('.trial-open').forEach(button => button.addEventListener('click', () => openModal('#trialModal')));
 $$('.mission-open').forEach(button => button.addEventListener('click', () => openModal('#missionModal')));
+$('#eraCta')?.addEventListener('click', () => {
+  const selectedEra = eraTabs.find(tab => tab.getAttribute('aria-selected') === 'true');
+  const data = eraData[selectedEra?.dataset.era];
+  if (!data?.available) {
+    showToast(`${data?.name || '선택한 시대'} 여행은 아직 준비 중입니다.`);
+    return;
+  }
+  openModal('#missionModal');
+});
 $$('.consult-open').forEach(button => button.addEventListener('click', () => openModal('#consultModal')));
 $$('.social-login').forEach(button => button.addEventListener('click', () => {
   if (!appConfig.oauthEnabled) {
@@ -104,7 +146,8 @@ document.addEventListener('keydown', event => {
   if (event.key === 'Escape') closeModal($('.modal.open'));
   if (event.key === 'Tab' && $('.modal.open')) {
     const modal = $('.modal.open');
-    const focusable = $$('button:not([disabled]), input, textarea, a[href]', modal);
+    const focusable = $$('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])', modal)
+      .filter(element => !element.closest('[hidden]') && element.getClientRects().length > 0);
     if (!focusable.length) return;
     const first = focusable[0], last = focusable.at(-1);
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
@@ -114,8 +157,12 @@ document.addEventListener('keydown', event => {
 
 const roleCards = $$('.role-card');
 roleCards.forEach(card => card.addEventListener('click', () => {
-  roleCards.forEach(item => item.classList.remove('selected'));
+  roleCards.forEach(item => {
+    item.classList.remove('selected');
+    item.setAttribute('aria-pressed', 'false');
+  });
   card.classList.add('selected');
+  card.setAttribute('aria-pressed', 'true');
   $('#trialContinue').disabled = false;
   $('#trialContinue').dataset.role = card.dataset.role;
   $('#trialContinue').dataset.roleId = card.dataset.roleId;
@@ -185,9 +232,16 @@ async function prepareTossPayment(button) {
     setPaymentStatus('토스페이먼츠 테스트·라이브 클라이언트 키와 결제 모드가 일치하지 않습니다.', true);
     return;
   }
-  if (!tossConfig || typeof window.TossPayments !== 'function') {
+  if (!tossConfig) {
     $('#tossPaymentButton').disabled = true;
-    setPaymentStatus('토스페이먼츠 클라이언트 키와 SDK 설정이 필요합니다.', true);
+    setPaymentStatus('토스페이먼츠 클라이언트 키 설정이 필요합니다.', true);
+    return;
+  }
+  try {
+    await loadTossPaymentsSdk();
+  } catch {
+    $('#tossPaymentButton').disabled = true;
+    setPaymentStatus('결제 모듈을 불러오지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.', true);
     return;
   }
   paymentState.clientConfig = tossConfig;
@@ -241,8 +295,9 @@ async function createStoreCheckoutAndRender() {
     }
     paymentState.order = order;
 
-    const tossPayments = window.TossPayments(tossConfig.clientKey);
-    const anonymousKey = window.TossPayments.ANONYMOUS || 'ANONYMOUS';
+    const tossPaymentsFactory = await loadTossPaymentsSdk();
+    const tossPayments = tossPaymentsFactory(tossConfig.clientKey);
+    const anonymousKey = tossPaymentsFactory.ANONYMOUS || 'ANONYMOUS';
     const widgets = tossPayments.widgets({ customerKey: order.customerKey || anonymousKey });
     await widgets.setAmount({ currency: 'KRW', value: Number(order.amount) });
     await Promise.all([

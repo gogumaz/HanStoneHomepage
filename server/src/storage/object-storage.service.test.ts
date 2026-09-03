@@ -390,6 +390,7 @@ describe("ObjectStorageService", () => {
   });
 
   it("verifies write, read, and delete access with a temporary private object", async () => {
+    process.env.OBJECT_STORAGE_ENDPOINT = "https://storage.example.test";
     process.env.OBJECT_STORAGE_BUCKET = "private-media";
     process.env.OBJECT_STORAGE_ACCESS_KEY_ID = "test-access-key";
     process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY = "test-secret-key";
@@ -400,6 +401,7 @@ describe("ObjectStorageService", () => {
       .mockResolvedValueOnce({ Body: { transformToByteArray: async () => probe } })
       .mockResolvedValueOnce({});
     Object.assign(storage as object, { client: { send } });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("denied", { status: 403 }));
 
     await expect(storage.verifyVideoStorageAccess()).resolves.toBeUndefined();
 
@@ -412,9 +414,15 @@ describe("ObjectStorageService", () => {
     const keys = send.mock.calls.map(([command]) => command.input.Key);
     expect(new Set(keys).size).toBe(1);
     expect(keys[0]).toMatch(/^lesson-videos\/preflight\/[0-9a-f-]+\.mp4$/);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/^https:\/\/private-media\.storage\.example\.test\/lesson-videos\/preflight\/[0-9a-f-]+\.mp4$/),
+      expect.objectContaining({ method: "GET", signal: expect.any(AbortSignal) }),
+    );
+    fetchMock.mockRestore();
   });
 
   it("attempts to delete the temporary object when the preflight read is invalid", async () => {
+    process.env.OBJECT_STORAGE_ENDPOINT = "https://storage.example.test";
     process.env.OBJECT_STORAGE_BUCKET = "private-media";
     process.env.OBJECT_STORAGE_ACCESS_KEY_ID = "test-access-key";
     process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY = "test-secret-key";
@@ -424,6 +432,7 @@ describe("ObjectStorageService", () => {
       .mockResolvedValueOnce({ Body: { transformToByteArray: async () => Uint8Array.from([0]) } })
       .mockResolvedValueOnce({});
     Object.assign(storage as object, { client: { send } });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("denied", { status: 403 }));
 
     await expect(storage.verifyVideoStorageAccess()).rejects.toMatchObject({
       code: "OBJECT_STORAGE_PREFLIGHT_FAILED",
@@ -433,6 +442,32 @@ describe("ObjectStorageService", () => {
       "GetObjectCommand",
       "DeleteObjectCommand",
     ]);
+    fetchMock.mockRestore();
+  });
+
+  it("fails the storage preflight and deletes the probe when anonymous video access succeeds", async () => {
+    process.env.OBJECT_STORAGE_ENDPOINT = "https://storage.example.test";
+    process.env.OBJECT_STORAGE_BUCKET = "private-media";
+    process.env.OBJECT_STORAGE_ACCESS_KEY_ID = "test-access-key";
+    process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY = "test-secret-key";
+    const storage = new ObjectStorageService();
+    const probe = Uint8Array.from([98, 97, 100, 117, 107]);
+    const send = vi.fn()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ Body: { transformToByteArray: async () => probe } })
+      .mockResolvedValueOnce({});
+    Object.assign(storage as object, { client: { send } });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(probe, { status: 200 }));
+
+    await expect(storage.verifyVideoStorageAccess()).rejects.toMatchObject({
+      code: "OBJECT_STORAGE_PREFLIGHT_FAILED",
+    } satisfies Partial<ApiError>);
+    expect(send.mock.calls.map(([command]) => command.constructor.name)).toEqual([
+      "PutObjectCommand",
+      "GetObjectCommand",
+      "DeleteObjectCommand",
+    ]);
+    fetchMock.mockRestore();
   });
 
   it("verifies a temporary object through a CDN signed URL and always deletes it", async () => {

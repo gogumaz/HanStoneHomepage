@@ -92,13 +92,13 @@
 
 학생이 보호자를 초대하며 보호자가 수락하고 필요한 법정대리인 동의를 완료하기 전까지 연결은 `pending`입니다. 초대만으로 학습정보를 공개하지 않습니다. 미성년자 계정에는 최소 수집, 동의 버전·범위·확인방법 기록, 철회, 탈퇴와 데이터 삭제 절차를 적용합니다. 상세 기준은 [계정·보호자·지도자·기관 권한 정책](./ACCOUNT_PERMISSION_POLICY.md)을 따릅니다.
 
-현재 구현은 `GuardianInvitation(PENDING)`을 대기 연결로 사용하고 수락 시에만 `GuardianLink(ACTIVE)`를 생성합니다. 초대 토큰 원문은 데이터베이스에 저장하지 않으며, 보호자 로그인 이메일이 초대 이메일과 일치해야 수락할 수 있습니다. 개발·테스트 환경에서는 메일 발송 전 흐름 검증을 위해 응답의 `developmentToken`으로 토큰을 제공하지만 운영 응답에서는 제외합니다. 운영 전 이메일 발송 사업자와 반송·재발송 정책을 연결해야 합니다.
+현재 구현은 `GuardianInvitation(PENDING)`을 대기 연결로 사용하고 수락 시에만 `GuardianLink(ACTIVE)`를 생성합니다. 초대 토큰 원문은 데이터베이스에 저장하지 않으며, 보호자 로그인 이메일이 초대 이메일과 일치해야 수락할 수 있습니다. 개발·테스트 환경에서는 메일 발송 전 흐름 검증을 위해 응답의 `developmentToken`으로 토큰을 제공하지만 운영 응답에서는 제외합니다. 운영 메일 프리플라이트는 SPF·DKIM·DMARC와 SMTP 연결을 검사하고, DMARC 정책과 발신 도메인·DKIM 선택자·정규화된 DNS 레코드 집합의 SHA-256을 남겨 원문 공개 없이 인수 시점의 DNS 관측값을 고정합니다. 인증된 `POST /mail/webhooks/bounce`는 계정·문의 메일의 영구 반송을 `BOUNCED`로 기록합니다. 최초 상태 변경 응답은 수신자나 메시지 ID를 복제하지 않고 생성된 `auditLogId`와 공급자 event ID의 SHA-256을 반환하므로 공급자 시험 이벤트와 내부 감사기록을 암호학적으로 대조할 수 있습니다. 실제 운영 전에는 발신 도메인 DNS와 SMTP 공급자의 반송 전달 설정을 연결해 현장 검증해야 합니다.
 
 계정 탈퇴는 민감 작업으로 분류합니다. 비밀번호 계정은 확인 문구 `회원탈퇴`와 현재 비밀번호를 다시 검증하고, 소셜 전용 계정은 현재 계정에 연결된 제공사 사용자 ID로 OAuth 인증을 다시 완료해야 합니다. 성공하면 이메일·표시 이름·비밀번호·소셜 ID·역할·세션·계정 토큰·학습 진도를 제거하거나 익명화하고 보호자 연결과 동의를 철회하며 남은 구독 접근 권한도 즉시 종료합니다. 결제·환불·감사 기록은 사용자 식별정보가 제거된 내부 ID와 연결해 운영 정책의 보존기간 동안 분리 보관할 수 있습니다.
 
 계정 인증·복구 토큰도 원문 대신 SHA-256 해시만 저장하고 발급 시 기존 미사용 토큰을 폐기합니다. 비밀번호 재설정 요청은 이메일의 가입 여부와 관계없이 같은 `202 Accepted` 응답을 반환합니다. 기본 만료시간은 재설정 30분, 이메일 인증 24시간이며 각각 `PASSWORD_RESET_TTL_MINUTES`, `EMAIL_VERIFICATION_TTL_HOURS`로 설정합니다. 개발·테스트 응답만 `developmentToken`을 제공합니다.
 
-운영에서는 Nodemailer SMTP 어댑터가 `PUBLIC_APP_URL` 기반 인증·재설정 링크를 HTML과 텍스트 본문으로 발송합니다. 계정 토큰과 `AccountMailJob`은 같은 트랜잭션으로 생성하며 토큰 원문은 `ACCOUNT_MAIL_ENCRYPTION_KEY_BASE64`의 AES-256-GCM 암호문으로만 아웃박스에 저장합니다. 독립 워커가 원자적으로 작업을 선점하고 발송 직전에 토큰 만료·소비 여부와 계정 상태를 다시 확인한 뒤 최대 5회 재시도합니다. 성공·건너뜀·실패 결과는 토큰·이메일을 제외한 `EmailDelivery` 감사로그로 기록합니다. `SMTP_HOST`, `MAIL_FROM`, `PUBLIC_APP_URL`은 운영 필수이고 587 포트는 `SMTP_REQUIRE_TLS=true`, 465 포트의 implicit TLS는 `SMTP_SECURE=true`와 `SMTP_REQUIRE_TLS=false`를 사용합니다.
+운영에서는 Nodemailer SMTP 어댑터가 `PUBLIC_APP_URL` 기반 인증·재설정 링크를 HTML과 텍스트 본문으로 발송합니다. 계정 토큰과 `AccountMailJob`은 같은 트랜잭션으로 생성하며 토큰 원문은 `ACCOUNT_MAIL_ENCRYPTION_KEY_BASE64`의 AES-256-GCM 암호문으로만 아웃박스에 저장합니다. 독립 워커가 원자적으로 작업을 선점하고 발송 직전에 토큰 만료·소비 여부와 계정 상태를 다시 확인한 뒤 최대 5회 재시도합니다. 성공·건너뜀·실패·영구 반송 결과는 토큰·이메일을 제외한 `EmailDelivery` 감사로그로 기록합니다. `SMTP_HOST`, `MAIL_FROM`, `PUBLIC_APP_URL`, `MAIL_DKIM_SELECTOR`, `MAIL_BOUNCE_WEBHOOK_SECRET`은 운영 필수이고 587 포트는 `SMTP_REQUIRE_TLS=true`, 465 포트의 implicit TLS는 `SMTP_SECURE=true`와 `SMTP_REQUIRE_TLS=false`를 사용합니다.
 
 ## 4. 여행과 강의
 
@@ -339,6 +339,14 @@ RewardGrant
 
 지도자는 인증 역할, 활성 기관 멤버십, 담당 반을 모두 통과한 데이터만 조회할 수 있어야 합니다. 콘텐츠 이용은 개인 구독과 기관 이용권 중 하나로 허용할 수 있지만, 기관 학생 데이터는 반드시 소속과 담당 반을 추가 검사합니다. 일반 지도자는 기관 라이선스·좌석·환불을 관리하지 않으며 기관 관리자 권한과 분리합니다.
 
+현재 `GET /teacher/classes`는 로그인 세션과 `instructor` 역할을 먼저 검사한 뒤, `UserRoleAssignment.verificationStatus=VERIFIED`, 유효기간 내 활성 `OrganizationMembership`, 유효기간 내 `OrganizationClassTeacherAssignment`를 차례로 확인합니다. 응답에는 같은 기관에 실제 배정된 활성 반만 포함하며 캐시를 금지합니다. 인증 대기·철회 지도자나 종료된 기관 멤버십은 담당 반 조회 전에 `403`으로 차단됩니다.
+
+`GET /teacher/classes/{classId}/students`는 지도자 인증, 활성 기관 멤버십, 요청 반의 현재 담당 배정을 매 요청마다 다시 검사합니다. 담당 배정이 없거나 반과 멤버십의 기관이 다르면 `CLASS_STUDENTS_FORBIDDEN`(403)을 반환하고 학생 등록 테이블을 조회하지 않습니다. 허용된 경우에도 현재 등록 중인 활성 학생의 최소 식별 정보만 반환하며 응답 캐시를 금지하고 `organization.class_students.viewed` 감사로그를 남깁니다.
+
+`GET /organization-admin/organizations`는 `organization_admin` 역할과 유효기간 내 활성 `OrganizationMembership(role=ADMIN)`을 모두 요구합니다. 일반 지도자는 역할 가드에서 차단되어 기관 멤버십이나 관리 권한을 조회할 수 없습니다. 응답은 기관별 라이선스·좌석 조회/관리와 환불 조회/요청 범위만 제공하며, 실제 결제 취소 실행 API는 기존대로 `operator`·`admin`에게만 허용합니다. React 메뉴와 `/organization/admin` 화면도 같은 역할 경계를 사용합니다.
+
+기관 멤버십이 `ENDED`·`SUSPENDED` 상태이거나 `endsAt`이 지난 경우 기관 반·학생·관리 API는 즉시 차단됩니다. 이 판정은 사용자 계정, 세션, 개인 `AccountSubscription`을 변경하지 않습니다. 동일 세션에서 기관 반 조회가 `403 ORGANIZATION_MEMBERSHIP_REQUIRED`로 거부된 뒤에도 `GET /me`와 `GET /me/subscriptions`는 개인 계정과 활성 구독을 정상 반환하는 HTTP 회귀 테스트로 두 권한 수명의 분리를 검증합니다.
+
 수업도우미는 공개 강의와 그 강의에 연결된 공개 바둑미션만 참조할 수 있습니다. 영상은 강의의 기존 검사 완료 자산을 재사용하고, PPT·활동지·퀴즈·미션지·정답·가이드 6종은 `ClassHelperAsset`으로 분리합니다. HTML과 실행 파일은 허용하지 않으며 PDF·PPT·문서 형식도 확장자, MIME, 실제 파일 시그니처와 ClamAV 검사를 모두 통과해야 합니다. 6종이 정확히 한 개씩 준비된 경우에만 패키지를 생성·공개하고 객체 키는 API 응답에 노출하지 않습니다.
 
 수업도우미 게시물은 `lessonId`, `badukMissionId`, 대상 학년, 전체 수업 시간, 5단계 수업 흐름과 역할이 지정된 7개 첨부파일을 한 번에 반환합니다. 첨부파일마다 `lessonVideo`, `projectorPpt`, `activityPdf`, `historyQuizFile`, `problemMissionFile`, `answerFile`, `teacherGuideFile` 역할을 저장하여 화면 순서가 파일명에 의존하지 않게 합니다. `badukMissionId`는 수업 상세에서 사용자 착수형 게임을 실행하는 연결값이며, `problemMissionFile`은 인쇄용 보조자료입니다.
@@ -351,6 +359,12 @@ RewardGrant
 | `POST` | `/qr/{code}/claim` | 사용자 또는 기관 계정에 코드 등록 |
 
 QR 원문에 강의 ID나 사용자 정보를 직접 포함하지 않습니다. 충분한 난수성을 가진 불투명 코드를 사용하고 등록 횟수와 만료 정책을 서버에서 검사합니다.
+
+현재 `GET /qr/{code}`는 정규화한 불투명 코드의 SHA-256 해시만 조회하며, 활성 코드와 `published` 강의가 일치할 때만 React 강의 상세 경로를 반환합니다. 알 수 없는 코드는 다른 강의로 대체하지 않고 `404`를 반환하며 응답에는 코드 해시를 포함하지 않습니다.
+
+활성 QR을 비로그인 상태로 열면 React 앱은 현재 `/qr/{code}` 경로를 안전한 `returnTo` 값으로 보존해 `/account`로 이동합니다. 이메일 로그인 성공 후에는 해당 QR 경로로 복귀해 다시 정확한 강의로 연결되며, OAuth 시작 요청에도 같은 경로가 전달됩니다. 클라이언트와 서버는 모두 외부 URL, 프로토콜 상대 URL, 역슬래시가 포함된 경로를 거부해 오픈 리다이렉트를 차단합니다.
+
+만료된 코드는 `expired`, 등록 가능 횟수가 소진된 코드는 `used` 상태와 `target: null`을 반환합니다. 화면은 두 상태를 서로 다른 제목과 설명으로 안내하고, 만료 상태에는 만료 일시와 다른 강의 링크를, 사용 완료 상태에는 남은 등록 횟수와 학습 여정 링크를 표시합니다.
 
 권장 딥링크 흐름:
 

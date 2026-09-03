@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
 import type { ApiRequest } from "../common/http-types.js";
 import { AuthService } from "./auth.service.js";
 import type { CurrentUser as CurrentUserValue } from "./auth.types.js";
@@ -216,5 +216,15 @@ export class AuthController {
   @UseGuards(SessionAuthGuard)
   me(@CurrentUser() user: CurrentUserValue): { user: CurrentUserValue } {
     return { user };
+  }
+
+  @Patch("me/age-band")
+  @UseGuards(SessionAuthGuard)
+  declareAgeBand(
+    @CurrentUser() user: CurrentUserValue,
+    @Body() body: unknown,
+    @Req() request: ApiRequest,
+  ) {
+    return this.authService.declareAgeBand(user, body, request.requestId);
   }
 }

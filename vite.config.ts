@@ -1,7 +1,9 @@
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
+import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { filterLegacyCss } from './src/tooling/filter-legacy-css.ts';
 import {
   viteDevelopmentSecurityHeaders,
   webSecurityHeaders,
@@ -12,6 +14,36 @@ const legacyScripts = [
   ['config.js', 'config.js'],
   ['board.js', 'board.js'],
 ] as const;
+const legacyCssEntries = {
+  home: ['index.html', 'script.js'],
+  board: ['board.html', 'board.js'],
+  lecture: ['lecture.html', 'lecture.js'],
+  payment: ['payment/success.html', 'payment/fail.html', 'payment/result.js'],
+} as const;
+const legacyCssEntryPattern = /[/\\]legacy-(home|board|lecture|payment)\.css$/u;
+
+function entrySpecificLegacyCss(): Plugin {
+  return {
+    name: 'entry-specific-legacy-css',
+    enforce: 'pre' as const,
+    async load(id: string) {
+      const entryName = id.split('?', 1)[0].match(legacyCssEntryPattern)?.[1] as keyof typeof legacyCssEntries | undefined;
+      if (!entryName) return;
+      const sourceFiles = legacyCssEntries[entryName];
+
+      const cssPath = resolve(projectRoot, 'styles.css');
+      const sourcePaths = sourceFiles.map(file => resolve(projectRoot, file));
+      this.addWatchFile(cssPath);
+      sourcePaths.forEach(file => this.addWatchFile(file));
+
+      const [css, ...sources] = await Promise.all([
+        readFile(cssPath, 'utf8'),
+        ...sourcePaths.map(file => readFile(file, 'utf8')),
+      ]);
+      return filterLegacyCss(css, sources.join('\n'));
+    },
+  };
+}
 
 // These classic runtime scripts are marked `vite-ignore` in HTML and copied as-is.
 // In particular, config.js must remain replaceable after the application bundle is built.
@@ -30,6 +62,7 @@ export default defineConfig({
     headers: webSecurityHeaders,
   },
   plugins: [
+    entrySpecificLegacyCss(),
     react(),
     {
       name: 'react-account-history-fallback',

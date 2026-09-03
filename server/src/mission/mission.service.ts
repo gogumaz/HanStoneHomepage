@@ -448,17 +448,43 @@ export class MissionService {
   }
 
   async wrongNote(user: CurrentUser) {
-    const items = await this.prisma.missionAttempt.findMany({
-      where: { userId: user.id, wrongMoveCount: { gt: 0 } },
+    const attempts = await this.prisma.missionAttempt.findMany({
+      where: { userId: user.id },
       include: { mission: true },
       orderBy: { lastPlayedAt: "desc" },
     });
+    const byMission = new Map<string, {
+      latest: typeof attempts[number];
+      hadWrongAnswer: boolean;
+      historicalWrongMoveCount: number;
+      bestScore: number;
+    }>();
+    for (const attempt of attempts) {
+      const current = byMission.get(attempt.missionId);
+      if (!current) {
+        byMission.set(attempt.missionId, {
+          latest: attempt,
+          hadWrongAnswer: attempt.wrongMoveCount > 0,
+          historicalWrongMoveCount: attempt.wrongMoveCount,
+          bestScore: attempt.score,
+        });
+        continue;
+      }
+      current.hadWrongAnswer ||= attempt.wrongMoveCount > 0;
+      current.historicalWrongMoveCount += attempt.wrongMoveCount;
+      current.bestScore = Math.max(current.bestScore, attempt.score);
+    }
     return {
-      items: items.map((item) => ({
-        ...attemptView(item),
-        mission: publicMission(item.mission),
-        reviewCompleted: item.status === MissionAttemptStatus.COMPLETED,
-      })),
+      items: [...byMission.values()]
+        .filter((summary) => summary.hadWrongAnswer)
+        .map((summary) => ({
+          ...attemptView(summary.latest),
+          mission: publicMission(summary.latest.mission),
+          latestResult: String(summary.latest.status).toLowerCase(),
+          reviewCompleted: summary.latest.status === MissionAttemptStatus.COMPLETED,
+          historicalWrongMoveCount: summary.historicalWrongMoveCount,
+          bestScore: summary.bestScore,
+        })),
     };
   }
 

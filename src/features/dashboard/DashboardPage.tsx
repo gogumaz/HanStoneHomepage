@@ -27,6 +27,11 @@ export function DashboardPage() {
   const errors = [meQuery.error, dashboardQuery.error];
   const error = errors.find((item): item is ApiClientError => item instanceof ApiClientError);
   const dashboard = dashboardQuery.data;
+  const weekly = dashboard?.summary.weekly ?? {
+    studyDays: 0,
+    firstAttemptMissions: 0,
+    firstAttemptAccuracy: 0,
+  };
 
   return (
     <main className="catalog-page dashboard-page">
@@ -97,6 +102,8 @@ export function DashboardPage() {
             <div><span>시작한 강의</span><strong>{dashboard.summary.startedLessons}개</strong></div>
             <div><span>완료 단계</span><strong>{dashboard.summary.completedSteps} / {dashboard.summary.totalSteps}</strong></div>
             <div><span>단계 진행률</span><strong>{dashboard.summary.stepCompletionRate}%</strong></div>
+            <div><span>이번 주 학습</span><strong>{weekly.studyDays}일</strong></div>
+            <div><span>첫 시도 정답률</span><strong>{weekly.firstAttemptMissions ? `${weekly.firstAttemptAccuracy}%` : '기록 없음'}</strong></div>
           </section>
 
           <section className="dashboard-progress" aria-labelledby="dashboard-progress-title">

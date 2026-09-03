@@ -6,8 +6,10 @@ import {
   AccountMailKind,
   AccountStatus,
   AccountTokenPurpose,
+  AgeBand,
   ConsentStatus,
   GuardianLinkStatus,
+  MinorAccountStatus,
   OAuthAttemptPurpose,
   RoleType,
 } from "../generated/prisma/enums.js";
@@ -38,6 +40,9 @@ type UserWithRoles = {
   passwordHash: string | null;
   emailVerifiedAt?: Date | null;
   roles: Array<{ role: RoleType }>;
+  ageBand?: AgeBand;
+  minorAccountStatus?: MinorAccountStatus;
+  guardianConsentVerifiedAt?: Date | null;
 };
 
 type SignupInput = {
@@ -45,6 +50,8 @@ type SignupInput = {
   password: string;
   displayName: string;
   role: RoleType;
+  ageBand: AgeBand;
+  minorAccountStatus: MinorAccountStatus;
 };
 
 type OAuthCompletion = (
@@ -57,6 +64,19 @@ const PUBLIC_ROLES = new Map<string, RoleType>([
   ["student", RoleType.STUDENT],
   ["guardian", RoleType.GUARDIAN],
 ]);
+
+const PUBLIC_AGE_BANDS = new Map<string, AgeBand>([
+  ["under_14", AgeBand.UNDER_14],
+  ["age_14_to_18", AgeBand.AGE_14_TO_18],
+  ["adult", AgeBand.ADULT],
+]);
+
+function minorStatusFor(ageBand: AgeBand): MinorAccountStatus {
+  if (ageBand === AgeBand.UNDER_14) return MinorAccountStatus.GUARDIAN_CONSENT_PENDING;
+  if (ageBand === AgeBand.AGE_14_TO_18) return MinorAccountStatus.ACTIVE;
+  if (ageBand === AgeBand.ADULT) return MinorAccountStatus.NOT_APPLICABLE;
+  return MinorAccountStatus.AGE_DECLARATION_REQUIRED;
+}
 
 function readString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -73,6 +93,7 @@ function validateSignup(body: unknown): SignupInput {
   const displayName = readString(data.displayName);
   const roleName = readString(data.role).toLowerCase() || "student";
   const role = PUBLIC_ROLES.get(roleName);
+  const ageBand = PUBLIC_AGE_BANDS.get(readString(data.ageBand).toLowerCase());
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
     throw new ApiError("INVALID_EMAIL", "올바른 이메일 주소를 입력해 주세요.", HttpStatus.BAD_REQUEST);
@@ -86,8 +107,20 @@ function validateSignup(body: unknown): SignupInput {
   if (!role) {
     throw new ApiError("INVALID_ROLE", "공개 가입은 학생 또는 보호자 역할만 선택할 수 있습니다.", HttpStatus.BAD_REQUEST);
   }
+  if (!ageBand || (role === RoleType.GUARDIAN && ageBand !== AgeBand.ADULT)) {
+    throw new ApiError("INVALID_AGE_BAND", "학생 연령대를 선택하고 보호자는 성인임을 확인해 주세요.", HttpStatus.BAD_REQUEST);
+  }
 
-  return { email, password, displayName, role };
+  return { email, password, displayName, role, ageBand, minorAccountStatus: minorStatusFor(ageBand) };
+}
+
+function validateAgeDeclaration(body: unknown): AgeBand {
+  const data = body && typeof body === "object" ? body as Record<string, unknown> : {};
+  const ageBand = PUBLIC_AGE_BANDS.get(readString(data.ageBand).toLowerCase());
+  if (!ageBand) {
+    throw new ApiError("INVALID_AGE_BAND", "연령대를 선택해 주세요.", HttpStatus.BAD_REQUEST);
+  }
+  return ageBand;
 }
 
 function validateLogin(body: unknown): { email: string; password: string } {
@@ -186,6 +219,8 @@ export class AuthService {
               email: input.email,
               displayName: input.displayName,
               passwordHash,
+              ageBand: input.ageBand,
+              minorAccountStatus: input.minorAccountStatus,
               roles: { create: [{ role: input.role }] },
             },
             include: { roles: true },
@@ -242,6 +277,33 @@ export class AuthService {
         ? {}
         : { developmentVerificationToken: verificationToken }),
     };
+  }
+
+  async declareAgeBand(user: CurrentUser, body: unknown, requestId?: string): Promise<{ user: CurrentUser }> {
+    const ageBand = validateAgeDeclaration(body);
+    if (user.ageBand && user.ageBand !== "unknown") {
+      throw new ApiError("AGE_BAND_ALREADY_DECLARED", "연령대는 고객센터의 본인 확인 절차로만 변경할 수 있습니다.", HttpStatus.CONFLICT);
+    }
+    const minorAccountStatus = minorStatusFor(ageBand);
+    const updated = await this.prisma.$transaction(async (transaction) => {
+      const account = await transaction.user.update({
+        where: { id: user.id },
+        data: { ageBand, minorAccountStatus },
+        include: { roles: true },
+      });
+      await transaction.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: "auth.age_band.declared",
+          resourceType: "User",
+          resourceId: user.id,
+          requestId: requestId ?? null,
+          metadata: { ageBand, minorAccountStatus },
+        },
+      });
+      return account;
+    });
+    return { user: this.toCurrentUser(updated) };
   }
 
   async requestPasswordReset(body: unknown, requestId?: string): Promise<{
@@ -891,6 +953,8 @@ export class AuthService {
           email: identity.email,
           displayName: identity.displayName.slice(0, 40),
           emailVerifiedAt: identity.emailVerified ? new Date() : null,
+          ageBand: AgeBand.UNKNOWN,
+          minorAccountStatus: MinorAccountStatus.AGE_DECLARATION_REQUIRED,
           roles: { create: [{ role: RoleType.STUDENT }] },
           oauthAccounts: {
             create: [{
@@ -1162,6 +1226,9 @@ export class AuthService {
       emailVerified: Boolean(user.emailVerifiedAt),
       displayName: user.displayName,
       roles: user.roles.map(({ role }) => role.toLowerCase() as PublicRole),
+      ageBand: (user.ageBand ?? AgeBand.ADULT).toLowerCase() as NonNullable<CurrentUser["ageBand"]>,
+      minorAccountStatus: (user.minorAccountStatus ?? MinorAccountStatus.NOT_APPLICABLE).toLowerCase() as NonNullable<CurrentUser["minorAccountStatus"]>,
+      guardianConsentVerifiedAt: user.guardianConsentVerifiedAt ?? null,
     };
   }
 }

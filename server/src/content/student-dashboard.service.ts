@@ -5,6 +5,8 @@ import {
   LessonStatus,
   SubscriptionPaymentStatus,
 } from "../generated/prisma/enums.js";
+import { calculateWeeklyLearningMetrics, koreanWeekWindow } from "../guardian/learning-metrics.js";
+import { summarizeLessonProgress } from "../common/learning-summary.js";
 
 @Injectable()
 export class StudentDashboardService {
@@ -12,7 +14,8 @@ export class StudentDashboardService {
 
   async getDashboard(student: CurrentUser) {
     const now = new Date();
-    const [eras, subscription] = await Promise.all([
+    const week = koreanWeekWindow(now);
+    const [eras, subscription, stepActivities, missionAttempts] = await Promise.all([
       this.prisma.era.findMany({
         orderBy: { order: "asc" },
         include: {
@@ -46,6 +49,27 @@ export class StudentDashboardService {
         orderBy: { endsAt: "desc" },
         select: { endsAt: true },
       }),
+      this.prisma.lessonStepCompletion.findMany({
+        where: {
+          progress: { userId: student.id },
+          completedAt: { gte: week.start, lt: week.end },
+        },
+        select: { completedAt: true },
+      }),
+      this.prisma.missionAttempt.findMany({
+        where: {
+          userId: student.id,
+          lastPlayedAt: { gte: week.start, lt: week.end },
+        },
+        select: {
+          missionId: true,
+          status: true,
+          wrongMoveCount: true,
+          startedAt: true,
+          lastPlayedAt: true,
+        },
+        orderBy: { startedAt: "asc" },
+      }),
     ]);
     const hasActiveSubscription = Boolean(subscription);
     const lessonItems = eras.flatMap((era) => era.lessons.map((lesson) => {
@@ -72,11 +96,8 @@ export class StudentDashboardService {
         },
       };
     }));
-    const started = lessonItems.filter((item) => item.progress.status !== "not_started");
-    const completed = lessonItems.filter((item) => item.progress.status === "completed");
-    const totalSteps = lessonItems.reduce((sum, item) => sum + item.progress.totalSteps, 0);
-    const completedSteps = lessonItems.reduce((sum, item) => sum + item.progress.completedSteps, 0);
-    const recentLessons = [...started]
+    const { startedItems, summary } = summarizeLessonProgress(lessonItems);
+    const recentLessons = [...startedItems]
       .sort((left, right) =>
         (right.progress.lastActivityAt?.getTime() ?? 0) - (left.progress.lastActivityAt?.getTime() ?? 0))
       .slice(0, 5);
@@ -85,6 +106,14 @@ export class StudentDashboardService {
     const nextUnstarted = lessonItems.find((item) =>
       item.progress.status === "not_started" && item.lesson.accessible);
     const recommended = continuing ?? nextUnstarted ?? null;
+    const weekly = calculateWeeklyLearningMetrics({
+      now,
+      lessonActivityAt: [
+        ...stepActivities.map((item) => item.completedAt),
+        ...startedItems.flatMap((item) => item.progress.lastActivityAt ? [item.progress.lastActivityAt] : []),
+      ],
+      missionAttempts,
+    });
 
     return {
       student: { id: student.id, displayName: student.displayName },
@@ -94,14 +123,8 @@ export class StudentDashboardService {
         subscriptionEndsAt: subscription?.endsAt ?? null,
       },
       summary: {
-        totalLessons: lessonItems.length,
-        startedLessons: started.length,
-        completedLessons: completed.length,
-        completionRate: lessonItems.length ? Math.round((completed.length / lessonItems.length) * 100) : 0,
-        completedSteps,
-        totalSteps,
-        stepCompletionRate: totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0,
-        lastActivityAt: recentLessons[0]?.progress.lastActivityAt ?? null,
+        ...summary,
+        weekly,
       },
       eras: eras.map((era) => {
         const items = lessonItems.filter((item) => item.lesson.era.id === era.id);

@@ -1,8 +1,10 @@
 import "dotenv/config";
 import { performance } from "node:perf_hooks";
 import {
+  calculateDeploymentVerificationEvidenceSha256,
   DeploymentVerificationService,
   validateDeploymentTarget,
+  validateNonProductionDeploymentTarget,
   type DeploymentProbe,
 } from "./operations/deployment-verification.service.js";
 import { parseReleaseIdentity } from "./operations/release-identity.js";
@@ -29,7 +31,15 @@ function integer(name: string, fallback: number): number {
 }
 
 async function main(): Promise<void> {
-  const baseUrl = validateDeploymentTarget(required("DEPLOY_VERIFY_BASE_URL"));
+  const releaseId = required("DEPLOY_VERIFY_RELEASE_ID");
+  if (!/^[A-Za-z0-9._-]{1,80}$/u.test(releaseId)) throw cliError("DEPLOY_VERIFY_RELEASE_ID_INVALID");
+  const requireNonProductionRaw = process.env.DEPLOY_VERIFY_REQUIRE_NON_PRODUCTION?.trim() || "false";
+  if (!(["true", "false"] as string[]).includes(requireNonProductionRaw)) {
+    throw cliError("DEPLOY_VERIFY_REQUIRE_NON_PRODUCTION_INVALID");
+  }
+  const targetValidator = requireNonProductionRaw === "true"
+    ? validateNonProductionDeploymentTarget : validateDeploymentTarget;
+  const baseUrl = targetValidator(required("DEPLOY_VERIFY_BASE_URL"));
   const token = required("OPERATIONS_METRICS_TOKEN");
   if (!/^[A-Za-z0-9_-]{32,200}$/.test(token)) throw cliError("OPERATIONS_METRICS_TOKEN_INVALID");
   const probe: DeploymentProbe = async (timeoutMs) => {
@@ -77,20 +87,31 @@ async function main(): Promise<void> {
     expectedCommitSha: required("DEPLOY_VERIFY_EXPECTED_COMMIT_SHA"),
     expectedImageDigest: required("DEPLOY_VERIFY_EXPECTED_IMAGE_DIGEST"),
   });
-  const webBaseUrl = validateDeploymentTarget(required("DEPLOY_VERIFY_WEB_BASE_URL"));
+  const webBaseUrl = targetValidator(required("DEPLOY_VERIFY_WEB_BASE_URL"));
   const webReport = await new WebDeploymentVerificationService().run({
     baseUrl: webBaseUrl,
     expectedCommitSha: required("DEPLOY_VERIFY_EXPECTED_COMMIT_SHA"),
     expectedManifestSha256: required("DEPLOY_VERIFY_EXPECTED_WEB_MANIFEST_SHA256"),
     requestTimeoutMs: integer("DEPLOY_VERIFY_TIMEOUT_MS", 5_000),
   });
-  const report = {
-    ...apiReport,
+  const reportBase = {
+    schemaVersion: 2 as const,
+    releaseId,
     ok: apiReport.ok && webReport.ok,
     rollbackRecommended: apiReport.rollbackRecommended || !webReport.ok,
+    startedAt: apiReport.startedAt,
     completedAt: webReport.checkedAt,
+    expected: apiReport.expected,
+    samples: apiReport.samples,
+    probes: apiReport.probes,
+    latencyMs: apiReport.latencyMs,
+    threshold: apiReport.threshold,
+    failures: apiReport.failures,
     web: webReport,
   };
+  const evidenceSha256 = calculateDeploymentVerificationEvidenceSha256(reportBase);
+  if (evidenceSha256 === null) throw cliError("DEPLOY_VERIFY_EVIDENCE_INVALID");
+  const report = { ...reportBase, evidenceSha256 };
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   if (!report.ok) process.exitCode = 1;
 }

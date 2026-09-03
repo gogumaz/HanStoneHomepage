@@ -1,4 +1,5 @@
 import { resolveTossBrowserConfig, tossPaymentReadyMessage } from './src/payments/toss-browser.ts';
+import { loadTossPaymentsSdk } from './src/payments/load-toss-sdk.ts';
 
 const $ = (selector, scope = document) => scope.querySelector(selector);
 const $$ = (selector, scope = document) => [...scope.querySelectorAll(selector)];
@@ -676,12 +677,24 @@ async function prepareSubscriptionPayment(planId) {
     setSubscriptionPaymentStatus('토스페이먼츠 테스트·라이브 클라이언트 키와 결제 모드가 일치하지 않습니다.', true);
     return;
   }
-  if (!config.lectureApiEnabled || !tossConfig || !window.TossPayments) {
+  if (!config.lectureApiEnabled || !tossConfig) {
     if (config.demoRoleSwitcher) {
       $('#completeDemoSubscriptionPayment').hidden = false;
       setSubscriptionPaymentStatus('개발용 화면입니다. 실제 결제 없이 계정 구독 기록을 생성할 수 있습니다.');
     } else {
       setSubscriptionPaymentStatus('토스페이먼츠 및 주문 서버 설정이 필요합니다.', true);
+    }
+    return;
+  }
+  let tossPaymentsFactory;
+  try {
+    tossPaymentsFactory = await loadTossPaymentsSdk();
+  } catch {
+    if (config.demoRoleSwitcher) {
+      $('#completeDemoSubscriptionPayment').hidden = false;
+      setSubscriptionPaymentStatus('개발용 화면입니다. 실제 결제 없이 계정 구독 기록을 생성할 수 있습니다.');
+    } else {
+      setSubscriptionPaymentStatus('결제 모듈을 불러오지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.', true);
     }
     return;
   }
@@ -703,8 +716,8 @@ async function prepareSubscriptionPayment(planId) {
     }
     paymentState.order = order;
     sessionStorage.setItem('bhj_pending_subscription_checkout', JSON.stringify({ planId: plan.id, orderId: order.orderId }));
-    const toss = window.TossPayments(tossConfig.clientKey);
-    const widgets = toss.widgets({ customerKey: order.customerKey || window.TossPayments.ANONYMOUS || 'ANONYMOUS' });
+    const toss = tossPaymentsFactory(tossConfig.clientKey);
+    const widgets = toss.widgets({ customerKey: order.customerKey || tossPaymentsFactory.ANONYMOUS || 'ANONYMOUS' });
     await widgets.setAmount({ currency: 'KRW', value: Number(order.amount) });
     await Promise.all([
       widgets.renderPaymentMethods({ selector: '#subscription-payment-method', variantKey: tossConfig.paymentMethodVariantKey }),

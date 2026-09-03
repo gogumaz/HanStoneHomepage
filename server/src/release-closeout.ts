@@ -28,11 +28,29 @@ async function main(): Promise<void> {
     "deploymentVerification",
     required("RELEASE_CLOSEOUT_DEPLOYMENT_REPORT"),
   );
+  const transport = await readReleaseEvidenceFile(
+    "transportSecurity",
+    required("RELEASE_CLOSEOUT_TRANSPORT_SECURITY_REPORT"),
+  );
+  const mailOperations = await readReleaseEvidenceFile(
+    "mailOperations",
+    required("RELEASE_CLOSEOUT_MAIL_OPERATIONS_REPORT"),
+  );
+  const legalApprovalBinding = await readReleaseEvidenceFile(
+    "legalApprovalBinding",
+    required("RELEASE_CLOSEOUT_LEGAL_APPROVAL_BINDING_REPORT"),
+  );
   const report = new ReleaseCloseoutService().run({
     acceptance: acceptance.value,
     deploymentVerification: deployment.value,
+    transportSecurity: transport.value,
+    mailOperations: mailOperations.value,
+    legalApprovalBinding: legalApprovalBinding.value,
     acceptanceSha256: acceptance.sha256,
     deploymentVerificationSha256: deployment.sha256,
+    transportSecuritySha256: transport.sha256,
+    mailOperationsSha256: mailOperations.sha256,
+    legalApprovalBindingSha256: legalApprovalBinding.sha256,
     maximumVerificationDelayHours: integer("RELEASE_CLOSEOUT_MAX_DELAY_HOURS", 24),
   });
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

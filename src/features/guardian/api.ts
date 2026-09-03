@@ -1,15 +1,17 @@
 import { apiRequest } from '../../lib/api-client';
 
-export const guardianConsentPolicyVersion = 'guardian-link-v1';
-export const guardianConsentScopes = ['learning_progress', 'learning_reports'];
-
 export type GuardianInvitation = {
   id: string;
   student: { id: string; displayName: string };
   inviteeEmail: string;
   status: 'pending';
   expiresAt: string;
-  consent: { policyVersion: string; scopes: string[] };
+  consent: {
+    policyVersion: string;
+    scopes: string[];
+    requiresChildAccountConsent: boolean;
+    paidSubscriptionConsentAvailable: boolean;
+  };
 };
 
 export type GuardianLink = {
@@ -31,6 +33,14 @@ export type GuardianStudentReport = {
     totalSteps: number;
     stepCompletionRate: number;
     lastActivityAt: string | null;
+    weekly: {
+      periodStart: string;
+      periodEnd: string;
+      studyDays: number;
+      firstAttemptCorrectMissions: number;
+      firstAttemptMissions: number;
+      firstAttemptAccuracy: number;
+    };
   };
   items: Array<{
     lesson: {
@@ -64,15 +74,21 @@ export function getGuardianInvitation(token: string) {
   return apiRequest<GuardianInvitation>(`/guardian-invitations/${encodeURIComponent(token)}`);
 }
 
-export function acceptGuardianInvitation(token: string) {
+export function acceptGuardianInvitation(
+  token: string,
+  policyVersion: string,
+  scopes: string[],
+  paidSubscriptionConsent: boolean,
+) {
   return apiRequest<{ link: GuardianLink }>(
     `/guardian-invitations/${encodeURIComponent(token)}/accept`,
     {
       method: 'POST',
       body: JSON.stringify({
         consent: true,
-        policyVersion: guardianConsentPolicyVersion,
-        scopes: guardianConsentScopes,
+        policyVersion,
+        scopes,
+        paidSubscriptionConsent,
       }),
     },
   );

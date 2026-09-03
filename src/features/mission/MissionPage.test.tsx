@@ -101,6 +101,70 @@ describe('Mission UI', () => {
     );
   });
 
+  it('locks consecutive move submissions and reuses the idempotency key after an interrupted response', async () => {
+    const attemptId = '00000000-0000-4000-8000-000000000325';
+    const attempt = {
+      id: attemptId, missionId: mission.id, missionVersion: 1, source: 'mission_list', status: 'in_progress' as const,
+      boardState: initialBoard(), boardHash: '3'.repeat(64), moveCount: 0, wrongMoveCount: 0, attemptCount: 0,
+      hintLevel: 0, hintUseCount: 0, score: 100, startedAt: new Date().toISOString(), lastPlayedAt: new Date().toISOString(), completedAt: null,
+    };
+    const moveBodies: Array<Record<string, unknown>> = [];
+    let interruptFirstMove: (() => void) | undefined;
+    const interruptedResponse = new Promise<Response>((_resolve, reject) => {
+      interruptFirstMove = () => reject(new TypeError('Failed to fetch'));
+    });
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/v1/missions') return response({ items: [mission] });
+      if (url === `/api/v1/missions/${mission.id}` && !init?.method) return response({ mission, attempt });
+      if (url === `/api/v1/mission-attempts/${attemptId}/moves`) {
+        moveBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        if (moveBodies.length === 1) return interruptedResponse;
+        return response({
+          result: 'correct', reason: null, feedback: '정답입니다.',
+          playerMove: { color: 'black', x: 4, y: 5, capturedStones: [{ x: 4, y: 4 }] },
+          opponentMoves: [], nextTurn: null, status: 'completed', score: 100,
+          boardState: {
+            ...initialBoard(),
+            stones: [...initialBoard().stones.filter((stone) => stone.x !== 4 || stone.y !== 4), { color: 'black', x: 4, y: 5 }],
+            lastMove: { color: 'black', x: 4, y: 5 }, captures: { black: 1, white: 0 },
+          },
+          boardHash: '4'.repeat(64), moveCount: 1, wrongMoveCount: 0, attemptCount: 1,
+          explanation: '백돌의 마지막 활로를 막았습니다.', reward: null,
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithQuery(<MissionPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '시작하기' }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('오답');
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'E4 교차점' }));
+    const confirmButton = within(dialog).getByRole('button', { name: '정답 확인' });
+    fireEvent.click(confirmButton);
+    await waitFor(() => expect(moveBodies).toHaveLength(1));
+    expect(confirmButton).toBeDisabled();
+
+    fireEvent.click(confirmButton);
+    expect(moveBodies).toHaveLength(1);
+
+    interruptFirstMove?.();
+    await waitFor(() => expect(confirmButton).toBeEnabled());
+    fireEvent.click(confirmButton);
+
+    expect(await within(dialog).findByText('정답입니다.')).toBeInTheDocument();
+    expect(moveBodies).toHaveLength(2);
+    expect(moveBodies[0]?.clientMoveId).toMatch(/^move_[0-9a-f]{32}$/u);
+    expect(moveBodies[1]?.clientMoveId).toBe(moveBodies[0]?.clientMoveId);
+    expect(moveBodies[1]).toMatchObject({
+      missionVersion: 1,
+      expectedMoveNumber: 0,
+      boardHash: '3'.repeat(64),
+      move: { x: 4, y: 5 },
+    });
+  });
+
   it('resumes a browser-held anonymous attempt after reopening the mission', async () => {
     const attemptId = '00000000-0000-4000-8000-000000000321';
     sessionStorage.setItem(`${'baduk-mission-attempt:'}${mission.id}`, attemptId);
@@ -121,6 +185,36 @@ describe('Mission UI', () => {
     const dialog = await screen.findByRole('dialog');
     expect(await within(dialog).findByText('재접속이 완료되었습니다.')).toBeInTheDocument();
     expect(within(screen.getByText('오답').closest('div') as HTMLElement).getByText('1')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/missions/${mission.id}?attemptId=${attemptId}`,
+      expect.objectContaining({ credentials: 'include' }),
+    );
+  });
+
+  it('opens the classroom display with the same stored attempt and server board state', async () => {
+    const attemptId = '00000000-0000-4000-8000-000000000326';
+    sessionStorage.setItem(`baduk-mission-attempt:${mission.id}`, attemptId);
+    const classroomAttempt = {
+      id: attemptId, missionId: mission.id, missionVersion: 1, source: 'mission_list', status: 'in_progress' as const,
+      boardState: { ...initialBoard(), captures: { black: 2, white: 0 } }, boardHash: '5'.repeat(64),
+      moveCount: 2, wrongMoveCount: 1, attemptCount: 3, hintLevel: 1, hintUseCount: 1, score: 80,
+      startedAt: new Date().toISOString(), lastPlayedAt: new Date().toISOString(), completedAt: null,
+    };
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/v1/missions?lessonId=PRE-01') return response({ items: [mission] });
+      if (url === `/api/v1/missions/${mission.id}?attemptId=${attemptId}`) return response({ mission, attempt: classroomAttempt });
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithQuery(<MissionPage />, [`/missions?lessonId=PRE-01&missionId=${mission.id}&mode=classroom`]);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveAttribute('data-display-mode', 'classroom');
+    expect(within(dialog).getByText('지도자 수업 화면')).toBeInTheDocument();
+    expect(screen.getByText(/기존 문제풀이의 판과 시도 상태를 그대로 이어갑니다/)).toBeInTheDocument();
+    expect(await within(dialog).findByText('재접속이 완료되었습니다.')).toBeInTheDocument();
+    expect(within(screen.getByText('점수').closest('div') as HTMLElement).getByText('80')).toBeInTheDocument();
+    expect(within(screen.getByText('흑이 잡은 돌').closest('div') as HTMLElement).getByText('2')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/v1/missions/${mission.id}?attemptId=${attemptId}`,
       expect.objectContaining({ credentials: 'include' }),

@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { ReleaseEvidenceName } from "./release-acceptance.service.js";
 
-export type ReleaseJsonArtifactName = ReleaseEvidenceName | "acceptance" | "deploymentVerification" | "closeout";
+export type ReleaseJsonArtifactName = ReleaseEvidenceName | "acceptance" | "deploymentVerification" | "closeout" |
+  "mailBounceWebhook" | "stagingBundle" | "transportSecurity" | "mailOperations" | "legalApproval" |
+  "legalApprovalBinding";
 
 const MAX_REPORT_BYTES = 1024 * 1024;
 

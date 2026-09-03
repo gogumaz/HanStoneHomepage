@@ -7,7 +7,7 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const REQUIRED_MIGRATION = "20260824002300_account_mail_outbox";
+const REQUIRED_MIGRATION = "20260830000400_minor_account_consent";
 const { Client } = pg;
 const client = new Client({ connectionString: databaseUrl });
 let transactionStarted = false;

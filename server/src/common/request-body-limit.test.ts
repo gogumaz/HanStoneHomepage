@@ -6,6 +6,7 @@ import { ApiExceptionFilter } from "./api-exception.filter.js";
 import { ApiResponseInterceptor } from "./api-response.interceptor.js";
 import { configureRequestBodyParsers } from "./request-body-limit.js";
 import { RequestIdMiddleware } from "./request-id.middleware.js";
+import { listenForHttpTest } from "../test-utils/listen-test-app.js";
 
 const received = vi.fn((body: unknown) => body);
 
@@ -32,8 +33,7 @@ describe("request body size limit", () => {
     configureRequestBodyParsers(app, 128);
     app.useGlobalFilters(new ApiExceptionFilter());
     app.useGlobalInterceptors(new ApiResponseInterceptor());
-    await app.listen(0, "127.0.0.1");
-    baseUrl = await app.getUrl();
+    baseUrl = await listenForHttpTest(app);
   });
 
   afterAll(async () => app.close());

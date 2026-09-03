@@ -75,7 +75,9 @@ Prometheus 수집기는 `OPERATIONS_METRICS_TOKEN`을 Bearer 토큰으로 사용
 
 비밀번호 계정 탈퇴는 `DELETE /me`에 확인 문구 `회원탈퇴`와 현재 비밀번호를 전송합니다. 소셜 전용 계정은 `GET /me/account-deletion/oauth/{provider}/start`에서 연결된 제공사 ID를 다시 확인합니다. 완료 시 모든 세션과 로그인 수단을 제거하고 이메일을 비우므로 같은 이메일로 다시 가입할 수 있습니다. 결제·환불·감사 기록은 삭제하지 않고 익명화된 내부 계정 ID와 함께 보존 정책을 적용합니다.
 
-SMTP 발송을 확인하려면 `PUBLIC_APP_URL`, `SMTP_HOST`, `SMTP_PORT`, `MAIL_FROM`을 설정하고 인증이 필요한 서버에는 `SMTP_USER`, `SMTP_PASSWORD`를 함께 입력합니다. 587 포트는 `SMTP_SECURE=false`, `SMTP_REQUIRE_TLS=true`, 465 포트는 `SMTP_SECURE=true`, `SMTP_REQUIRE_TLS=false`를 사용합니다. 계정 API와 문의 답변 API는 메일 서버 응답을 기다리지 않으며 발송 결과는 감사로그에서 확인합니다. 문의 알림에는 문의 제목·본문·답변을 포함하지 않고 `PUBLIC_APP_URL`의 본인 문의함 링크만 제공합니다.
+SMTP 발송을 확인하려면 `PUBLIC_APP_URL`, `SMTP_HOST`, `SMTP_PORT`, `MAIL_FROM`, `MAIL_DKIM_SELECTOR`, `MAIL_BOUNCE_WEBHOOK_SECRET`을 설정하고 인증이 필요한 서버에는 `SMTP_USER`, `SMTP_PASSWORD`를 함께 입력합니다. 587 포트는 `SMTP_SECURE=false`, `SMTP_REQUIRE_TLS=true`, 465 포트는 `SMTP_SECURE=true`, `SMTP_REQUIRE_TLS=false`를 사용합니다. 발신 도메인에는 SPF TXT 레코드가 정확히 하나 있어야 하고, `{MAIL_DKIM_SELECTOR}._domainkey.{발신도메인}`에는 공개키가 있는 DKIM TXT 레코드, `_dmarc.{발신도메인}`에는 `p=quarantine` 또는 `p=reject` 정책이 필요합니다. API 빌드 후 `npm --prefix server run preflight:production`은 SMTP DNS·TLS·인증과 세 레코드를 실시간 확인하며 테스트 메일은 보내지 않습니다. 결과에는 DNS 원문 대신 DMARC 정책과 발신 도메인·DKIM 선택자·정규화된 세 레코드 집합의 SHA-256을 기록하므로, 인수 증빙에서 DNS 변경 여부를 대조할 수 있습니다.
+
+SMTP 공급자나 정규화 게이트웨이는 영구 반송을 `POST /api/v1/mail/webhooks/bounce`에 `Authorization: Bearer {MAIL_BOUNCE_WEBHOOK_SECRET}`과 `{ "event": "permanent_bounce", "eventId": "<provider event id>", "messageId": "<SMTP message id>" }` JSON으로 전달합니다. `eventId`는 영문·숫자와 `._:-`만 사용하는 200자 이하의 안정적인 공급자 식별자여야 합니다. 서버는 일치하는 계정 메일 또는 문의 알림 작업을 멱등하게 `BOUNCED`로 바꾸고 감사로그에 반송 유형과 event ID의 SHA-256만 기록합니다. 최초 상태 변경 응답의 `auditLogId`와 `eventIdSha256`을 보관하고, 운영 프리플라이트 JSON·웹훅 응답 JSON을 `npm --prefix server run verify:mail-operations`로 교차 검증하면 비식별 `mail-operations-evidence.json`을 생성할 수 있습니다. 결과에는 공급자 event ID 원문도 포함되지 않습니다. 수신자 주소, event ID 원문과 공급자의 원문 오류는 감사로그에 저장하지 않습니다. 계정 API와 문의 답변 API는 메일 서버 응답을 기다리지 않으며 발송·반송 결과는 감사로그에서 확인합니다. 문의 알림에는 문의 제목·본문·답변을 포함하지 않고 `PUBLIC_APP_URL`의 본인 문의함 링크만 제공합니다.
 
 OAuth는 제공사별 client ID·secret·redirect URI 세 항목을 모두 설정한 경우에만 활성화됩니다. React 설정의 `oauthEnabled`와 `oauthProviders`는 버튼 표시만 제어하며 secret을 포함하지 않습니다. API는 10분 기본 만료의 해시 state, PKCE와 nonce를 사용하고 콜백을 한 번만 소비합니다. 동일 이메일의 기존 계정은 자동 병합하지 않고 `/account`의 명시적 연결을 요구합니다. 한 계정에는 제공사별 연결 하나만 허용하며 타 계정 소유 ID와 마지막 로그인 수단의 해제를 차단합니다. OAuth·결제 공급자 모듈을 다른 NestJS 앱에서 사용하는 방법은 [재사용 통합 컴포넌트](../server/src/components/README.md)를 참고합니다.
 
@@ -119,9 +121,12 @@ HLS 워커 설정은 `HLS_TRANSCODE_POLL_INTERVAL_MS=5000`, 최대 시도 `HLS_T
 ```powershell
 npm run ci
 npm run test:e2e
+npm run test:e2e:performance
 ```
 
 브라우저 현장 검증만 빠르게 반복하려면 `npm run test:e2e:field`를 실행합니다. Chromium·Firefox 데스크톱, Pixel 7 Chrome, iPhone 14 WebKit에서 홈페이지와 React 진입 화면의 문서 가로 넘침, 모바일 메뉴 열기·선택 후 닫기, 시대 탭 가로 스크롤, 지연 노출 구간을 확인합니다. 모바일 프로젝트는 강의 API를 지연시켜 제목·기본 안내·로딩 상태가 데이터보다 먼저 표시되는지 확인하고, 최초 503 응답 뒤 수동 재시도로 강의 목록이 복구되는지도 검증합니다. 각 환경의 전체 페이지, 모바일 메뉴, 저속 로딩·장애·복구 화면은 `test-results`에 저장되며 CI에서는 14일 동안 artifact로 보관합니다. 로컬에 브라우저 실행 파일이 없으면 `npx playwright install chromium firefox webkit`을 먼저 실행합니다.
+
+`npm run test:e2e:performance`는 프로덕션 웹 빌드와 미리보기 서버를 자동으로 준비한 뒤 Chromium의 독립된 브라우저 컨텍스트에서 홈페이지를 세 번 콜드 스타트합니다. LCP·상호작용 지연·CLS의 중앙값이 각각 2.5초·200ms·0.1 이하인지 검사하고 JSON 측정값을 `test-results/performance`에 남깁니다. 이 검사는 배포 전 랩 회귀 게이트이며 실제 사용자 75백분위수는 운영 RUM에서 별도로 관찰해야 합니다.
 
 운영 환경 연동값을 준비한 뒤 빌드된 API 이미지 또는 로컬 `server/dist`에서 다음 명령으로 외부 의존성 프리플라이트를 실행합니다. 임시 S3 객체 외에는 데이터를 생성하지 않으며 해당 객체도 즉시 삭제합니다.
 

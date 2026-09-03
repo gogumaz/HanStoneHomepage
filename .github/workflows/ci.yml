@@ -96,6 +96,8 @@ jobs:
         id: browser_tests
         continue-on-error: true
         run: npm run test:e2e
+      - name: Enforce production Core Web Vitals lab budget
+        run: npm run test:e2e:performance
       - name: Upload browser field-validation evidence
         if: always()
         uses: actions/upload-artifact@v7

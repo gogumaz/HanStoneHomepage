@@ -7,8 +7,11 @@ import { ApiExceptionFilter } from "../common/api-exception.filter.js";
 import { ApiResponseInterceptor } from "../common/api-response.interceptor.js";
 import { RequestIdMiddleware } from "../common/request-id.middleware.js";
 import { PrismaService } from "../database/prisma.service.js";
+import { listenForHttpTest } from "../test-utils/listen-test-app.js";
 import {
   AccountStatus,
+  AgeBand,
+  MinorAccountStatus,
   RoleType,
   SubscriptionOrderStatus,
   SubscriptionPaymentStatus,
@@ -28,6 +31,11 @@ function createStore() {
       id: "operator-payment", email: "operator@example.com", displayName: "결제 운영자",
       status: AccountStatus.ACTIVE, roles: [{ role: RoleType.OPERATOR }],
     },
+    {
+      id: "minor-payment", email: "minor@example.com", displayName: "미성년 결제 학생",
+      status: AccountStatus.ACTIVE, ageBand: AgeBand.AGE_14_TO_18,
+      minorAccountStatus: MinorAccountStatus.ACTIVE, roles: [{ role: RoleType.STUDENT }],
+    },
   ];
   const plans = [
     { id: "subscription-1m", label: "1개월", months: 1, price: 10000, active: true },
@@ -36,6 +44,7 @@ function createStore() {
   const orders: Value[] = [];
   const subscriptions: Value[] = [];
   const refunds: Value[] = [];
+  let minorPaidConsent = false;
 
   const prisma = {
     session: {
@@ -43,6 +52,7 @@ function createStore() {
         const tokenUsers = new Map([
           [hashSessionToken("payment-token"), users[0]],
           [hashSessionToken("operator-payment-token"), users[1]],
+          [hashSessionToken("minor-payment-token"), users[2]],
         ]);
         const user = tokenUsers.get(where.tokenHash);
         if (!user) return null;
@@ -57,6 +67,9 @@ function createStore() {
       findFirst: vi.fn(async ({ where }: Value) =>
         plans.find((plan) => plan.id === where.id && plan.active === where.active) ?? null),
       findMany: vi.fn(async () => plans),
+    },
+    guardianConsent: {
+      findFirst: vi.fn(async () => minorPaidConsent ? { id: "minor-paid-consent" } : null),
     },
     subscriptionOrder: {
       findFirst: vi.fn(async ({ where }: Value) => orders.find((order) => {
@@ -157,7 +170,14 @@ function createStore() {
       return Promise.all(input as Promise<unknown>[]);
     }),
   };
-  return { prisma: prisma as unknown as PrismaService, orders, subscriptions, refunds };
+  return {
+    prisma: prisma as unknown as PrismaService,
+    plans,
+    orders,
+    subscriptions,
+    refunds,
+    setMinorPaidConsent(value: boolean) { minorPaidConsent = value; },
+  };
 }
 
 describe("subscription checkout HTTP API", () => {
@@ -216,6 +236,7 @@ describe("subscription checkout HTTP API", () => {
   };
   const cookie = { cookie: "baduk_session=payment-token", "content-type": "application/json" };
   const operatorCookie = { cookie: "baduk_session=operator-payment-token", "content-type": "application/json" };
+  const minorCookie = { cookie: "baduk_session=minor-payment-token", "content-type": "application/json" };
 
   beforeAll(async () => {
     process.env.NODE_ENV = "test";
@@ -230,11 +251,32 @@ describe("subscription checkout HTTP API", () => {
     app.use(requestId.use.bind(requestId));
     app.useGlobalFilters(new ApiExceptionFilter());
     app.useGlobalInterceptors(new ApiResponseInterceptor());
-    await app.listen(0, "127.0.0.1");
-    baseUrl = await app.getUrl();
+    baseUrl = await listenForHttpTest(app);
   });
 
   afterAll(async () => app.close());
+
+  it("requires a separate active guardian consent before a minor creates a paid checkout", async () => {
+    const request = () => fetch(`${baseUrl}/api/v1/orders/checkout`, {
+      method: "POST",
+      headers: minorCookie,
+      body: JSON.stringify({
+        items: [{ productType: "account_subscription", planId: "subscription-1m", quantity: 1 }],
+      }),
+    });
+
+    store.setMinorPaidConsent(false);
+    const blocked = await request();
+    const blockedBody = await blocked.json() as { error: { code: string } };
+    expect(blocked.status).toBe(403);
+    expect(blockedBody.error.code).toBe("MINOR_PAID_SUBSCRIPTION_CONSENT_REQUIRED");
+
+    store.setMinorPaidConsent(true);
+    const allowed = await request();
+    expect(allowed.status).toBe(201);
+    const minorOrderIndex = store.orders.findIndex((order) => order.userId === "minor-payment");
+    if (minorOrderIndex >= 0) store.orders.splice(minorOrderIndex, 1);
+  });
 
   it("uses the current server plan price and reuses the same pending checkout", async () => {
     const request = () => fetch(`${baseUrl}/api/v1/orders/checkout`, {
@@ -297,6 +339,65 @@ describe("subscription checkout HTTP API", () => {
     const duplicateBody = await duplicateCheckout.json() as { error: { code: string } };
     expect(duplicateCheckout.status).toBe(409);
     expect(duplicateBody.error.code).toBe("ACTIVE_SUBSCRIPTION_EXISTS");
+
+    const issuedSubscription = store.subscriptions[0];
+    if (!issuedSubscription) throw new Error("issued subscription is missing");
+    const originalEndsAt = issuedSubscription.endsAt;
+    issuedSubscription.endsAt = new Date(Date.now() - 1);
+    const expiredHistory = await fetch(`${baseUrl}/api/v1/me/subscriptions`, { headers: cookie });
+    const expiredHistoryBody = await expiredHistory.json() as {
+      data: { items: Array<{ id: string; active: boolean; endsAt: string }> };
+    };
+    expect(expiredHistory.status).toBe(200);
+    expect(expiredHistoryBody.data.items).toHaveLength(1);
+    expect(expiredHistoryBody.data.items[0]).toMatchObject({
+      id: issuedSubscription.id,
+      active: false,
+      endsAt: issuedSubscription.endsAt.toISOString(),
+    });
+    issuedSubscription.endsAt = originalEndsAt;
+  });
+
+  it("keeps historical order and subscription snapshots after the plan changes", async () => {
+    const plan = store.plans.find((item) => item.id === "subscription-6m");
+    if (!plan) throw new Error("subscription plan is missing");
+    const originalPlan = { ...plan };
+    Object.assign(plan, { label: "리뉴얼 9개월", months: 9, price: 77000 });
+
+    try {
+      const plansResponse = await fetch(`${baseUrl}/api/v1/subscription-plans`);
+      const plansBody = await plansResponse.json() as {
+        data: { items: Array<{ id: string; label: string; months: number; price: number }> };
+      };
+      expect(plansBody.data.items).toContainEqual(expect.objectContaining({
+        id: plan.id,
+        label: "리뉴얼 9개월",
+        months: 9,
+        price: 77000,
+      }));
+
+      const subscriptionsResponse = await fetch(`${baseUrl}/api/v1/me/subscriptions`, { headers: cookie });
+      const subscriptionsBody = await subscriptionsResponse.json() as {
+        data: { items: Array<{ planLabelSnapshot: string; monthsSnapshot: number; amountSnapshot: number }> };
+      };
+      expect(subscriptionsBody.data.items[0]).toMatchObject({
+        planLabelSnapshot: "6개월",
+        monthsSnapshot: 6,
+        amountSnapshot: 50000,
+      });
+
+      const ordersResponse = await fetch(`${baseUrl}/api/v1/me/orders`, { headers: cookie });
+      const ordersBody = await ordersResponse.json() as {
+        data: { items: Array<{ planLabelSnapshot: string; monthsSnapshot: number; amount: number }> };
+      };
+      expect(ordersBody.data.items[0]).toMatchObject({
+        planLabelSnapshot: "6개월",
+        monthsSnapshot: 6,
+        amount: 50000,
+      });
+    } finally {
+      Object.assign(plan, originalPlan);
+    }
   });
 
   it("allows only operators to inspect mismatches and re-query Toss Payments", async () => {

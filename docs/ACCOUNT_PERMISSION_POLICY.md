@@ -70,7 +70,7 @@ canViewClassStudent = activeOrganizationMembership
   AND requestedStudentBelongsToAssignedClass
 ```
 
-일반 지도자는 기관 라이선스 구매·좌석 변경·환불을 처리하지 않습니다. 해당 권한은 `organization_admin`에게만 부여합니다.
+일반 지도자는 기관 라이선스 구매·좌석 변경·환불을 처리하지 않습니다. 기관 라이선스·좌석 관리와 기관 환불 요청은 활성 관리자 멤버십을 가진 `organization_admin`에게만 부여하고, 외부 결제 취소 실행은 `operator` 또는 `admin`이 처리합니다.
 
 ## 5. 권장 데이터 모델
 
@@ -157,8 +157,10 @@ GuardianConsent
 
 - 학생이 시작하고 보호자가 수락하기 전까지 링크가 `pending`입니다.
 - 미완료 초대만으로 보호자에게 학습정보가 노출되지 않습니다.
-- 지도자는 인증 상태, 기관 멤버십, 담당 반을 모두 검사받습니다.
-- 기관 라이선스 만료나 퇴사 시 기관 범위 권한이 즉시 회수됩니다.
+- 지도자는 `GET /teacher/classes`에서 인증 상태, 활성 기관 멤버십, 유효한 담당 반 배정을 모두 검사받습니다.
+- 지도자의 `GET /teacher/classes/{classId}/students` 요청은 같은 기관의 현재 담당 반에서만 허용되며 비담당 반은 학생 데이터 조회 전에 차단되고 허용된 조회는 감사로그에 기록됩니다.
+- `GET /organization-admin/organizations`와 기관 관리 메뉴는 `organization_admin` 역할과 활성 `ADMIN` 멤버십을 모두 통과한 사용자에게만 라이선스·좌석·환불 요청 범위를 제공합니다.
+- 기관 라이선스 만료나 퇴사 시 기관 범위 권한만 즉시 회수되며 같은 세션의 개인 계정과 개인 구독은 유지됩니다.
 - 개인 구독과 기관 라이선스가 동시에 있어도 주문·진도·기관 데이터 소유권이 섞이지 않습니다.
 - 보호자 동의의 버전·범위·확인방법·시각·철회 이력이 감사 가능하게 저장됩니다.
 - 리포트 조회 때마다 활성 연결, 현재 정책 버전과 `learning_progress`·`learning_reports` 범위를 다시 검사하고 조회 감사로그를 남깁니다.

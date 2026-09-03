@@ -89,4 +89,39 @@ describe('LessonsPage network recovery', () => {
     expect(await screen.findByText('강의 목록은 계속 이용할 수 있습니다.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '플랜 다시 불러오기' })).toBeInTheDocument();
   });
+
+  it('loads lesson-card thumbnails lazily without losing their accessible name', async () => {
+    apiMocks.listEras.mockResolvedValue([era]);
+    apiMocks.listEraLessons.mockResolvedValue({
+      era,
+      items: [{
+        id: 'PRE-01',
+        era: { id: era.id, name: era.name },
+        order: 1,
+        level: '입문',
+        course: '선사시대',
+        title: '주먹도끼에서 배운 첫 수',
+        summary: '주변을 살피는 법을 배웁니다.',
+        instructor: '김선생',
+        difficulty: '쉬움',
+        durationMinutes: 5,
+        isFreeSample: true,
+        hasThumbnail: true,
+        access: 'free_sample',
+        publishedAt: '2026-08-28T00:00:00.000Z',
+        steps: [],
+      }],
+    });
+    apiMocks.getLessonThumbnail.mockResolvedValue({
+      lessonId: 'PRE-01',
+      url: 'https://assets.example.test/PRE-01.webp',
+      expiresAt: '2026-08-28T00:05:00.000Z',
+    });
+
+    renderPage();
+
+    const thumbnail = await screen.findByRole('img', { name: '주먹도끼에서 배운 첫 수 강의 썸네일' });
+    expect(thumbnail).toHaveAttribute('loading', 'lazy');
+    expect(thumbnail).toHaveAttribute('decoding', 'async');
+  });
 });

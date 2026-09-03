@@ -2,6 +2,9 @@ import type { CurrentUser } from "../auth/auth.types.js";
 
 export type ApiRequest = {
   headers: Record<string, string | string[] | undefined>;
+  method?: string;
+  originalUrl?: string;
+  url?: string;
   requestId?: string;
   user?: CurrentUser;
 };

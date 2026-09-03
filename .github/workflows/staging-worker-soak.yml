@@ -1,8 +1,14 @@
 name: Staging worker queue soak
+run-name: Staging worker queue soak · ${{ inputs.evidence_id }}
 
 on:
   workflow_dispatch:
     inputs:
+      evidence_id:
+        description: Correlation identifier for release evidence coordination
+        required: true
+        default: manual
+        type: string
       samples:
         description: Number of worker metric samples
         required: true
@@ -22,6 +28,16 @@ on:
         description: Maximum allowed due-job growth per queue
         required: true
         default: "0"
+        type: string
+      load_requests:
+        description: Read-only requests generated while queue metrics are observed
+        required: true
+        default: "2000"
+        type: string
+      load_concurrency:
+        description: Concurrent read-only clients during the soak
+        required: true
+        default: "20"
         type: string
 
 permissions:
@@ -44,6 +60,12 @@ jobs:
       WORKER_SOAK_MAX_CRITICAL_SAMPLES: "0"
       WORKER_SOAK_MAX_TERMINAL_ERROR_GROWTH: "0"
       WORKER_SOAK_TIMEOUT_MS: "5000"
+      LOAD_TEST_BASE_URL: ${{ secrets.STAGING_API_BASE_URL }}
+      LOAD_TEST_REQUESTS: ${{ inputs.load_requests }}
+      LOAD_TEST_CONCURRENCY: ${{ inputs.load_concurrency }}
+      LOAD_TEST_MAX_P95_MS: ${{ inputs.maximum_p95_ms }}
+      LOAD_TEST_MAX_ERROR_RATE_PERCENT: "1"
+      LOAD_TEST_TIMEOUT_MS: "5000"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v7
@@ -56,13 +78,27 @@ jobs:
       - name: Observe worker queues under controlled staging workload
         id: worker_soak
         continue-on-error: true
-        run: node dist/worker-soak.js > staging-worker-soak-report.json 2>&1
+        shell: bash
+        run: |
+          set +e
+          node dist/worker-soak.js > staging-worker-soak-report.json 2>&1 &
+          soak_pid=$!
+          sleep 5
+          node dist/read-only-load-test.js > staging-worker-controlled-load-report.json 2>&1
+          load_status=$?
+          wait "$soak_pid"
+          soak_status=$?
+          node -e 'const fs=require("node:fs"); const report={candidateCommit:process.env.GITHUB_SHA,generatedAt:new Date().toISOString(),workerSoakExitCode:Number(process.argv[1]),controlledLoadExitCode:Number(process.argv[2]),ok:process.argv[1]==="0"&&process.argv[2]==="0"}; fs.writeFileSync("staging-worker-soak-execution.json",JSON.stringify(report,null,2)+"\n")' "$soak_status" "$load_status"
+          test "$soak_status" -eq 0 -a "$load_status" -eq 0
       - name: Upload worker-soak evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: staging-worker-soak-report-${{ github.run_id }}
-          path: server/staging-worker-soak-report.json
+          path: |
+            server/staging-worker-soak-report.json
+            server/staging-worker-controlled-load-report.json
+            server/staging-worker-soak-execution.json
           if-no-files-found: error
           retention-days: 30
       - name: Enforce worker-soak thresholds

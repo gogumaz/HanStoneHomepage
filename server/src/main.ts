@@ -6,6 +6,7 @@ import helmet from "helmet";
 import { AppModule } from "./app.module.js";
 import { ApiExceptionFilter } from "./common/api-exception.filter.js";
 import { ApiResponseInterceptor } from "./common/api-response.interceptor.js";
+import { ApiInputBoundaryPipe } from "./common/api-input-boundary.pipe.js";
 import { RequestIdMiddleware } from "./common/request-id.middleware.js";
 import { configureRequestBodyParsers } from "./common/request-body-limit.js";
 import { apiSecurityHeaders } from "./common/security-headers.js";
@@ -27,6 +28,7 @@ async function bootstrap(): Promise<void> {
   const requestIdMiddleware = new RequestIdMiddleware();
   app.use(requestIdMiddleware.use.bind(requestIdMiddleware));
   configureRequestBodyParsers(app, config.requestBodyMaxBytes);
+  app.useGlobalPipes(new ApiInputBoundaryPipe());
   app.useGlobalFilters(new ApiExceptionFilter());
   app.useGlobalInterceptors(new ApiResponseInterceptor());
   app.enableCors({
