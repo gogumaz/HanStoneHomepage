@@ -73,7 +73,10 @@ def regular_files(root: Path) -> dict[str, Path]:
                 fail("HOSTING_INSTALL_SYMBOLIC_LINK_FORBIDDEN")
         for name in file_names:
             path = directory_path / name
-            mode = path.stat(follow_symlinks=False).st_mode
+            # pathlib.Path.stat() did not accept follow_symlinks on the
+            # Ubuntu 20.04 Python 3.8 runtime. lstat() provides the same
+            # no-follow guarantee on every supported Python version.
+            mode = os.lstat(path).st_mode
             if not stat.S_ISREG(mode):
                 fail("HOSTING_INSTALL_SPECIAL_FILE_FORBIDDEN")
             relative_name = path.relative_to(root).as_posix()
@@ -172,7 +175,7 @@ def verify_bundle(bundle_root: Path, expected_commit: str | None) -> tuple[dict,
 
 
 def verify_web_copy(web_root: Path, entries: dict[str, dict]) -> None:
-    expected = {name.removeprefix("web/"): entry for name, entry in entries.items() if name.startswith("web/")}
+    expected = {name[len("web/"):]: entry for name, entry in entries.items() if name.startswith("web/")}
     actual = regular_files(web_root)
     if set(actual) != set(expected):
         fail("HOSTING_INSTALL_WEB_COPY_MISMATCH")

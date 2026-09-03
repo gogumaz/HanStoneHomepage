@@ -70,6 +70,13 @@ afterEach(async () => {
 });
 
 describe('hosting release installer', () => {
+  it('avoids runtime APIs unavailable in Ubuntu 20.04 Python 3.8', async () => {
+    const source = await readFile(installer, 'utf8');
+
+    expect(source).not.toContain('.stat(follow_symlinks=');
+    expect(source).not.toContain('.removeprefix(');
+  });
+
   it('verifies every bundled file without changing the server', async () => {
     const python = pythonExecutable();
     expect(python, 'Python 3 is required to validate the hosting installer').toBeDefined();
