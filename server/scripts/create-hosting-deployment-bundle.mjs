@@ -79,7 +79,8 @@ function fail(code) {
 function usage() {
   process.stdout.write(`Usage:\n  npm run bundle:hosting -- [--output artifacts/name.tgz]\n\n`);
   process.stdout.write(`Creates a production deployment bundle only from a clean Git candidate.\n`);
-  process.stdout.write(`The output must be a new .tgz file below the project's artifacts directory.\n`);
+  process.stdout.write(`A valid default bundle for the current commit is reused without overwriting it.\n`);
+  process.stdout.write(`A custom output must be a new .tgz file below the project's artifacts directory.\n`);
 }
 
 function parseArguments(argv) {
@@ -247,6 +248,57 @@ async function copyCheckedFile(source, destination, logicalName) {
   if (logicalName.endsWith(".sh")) await chmod(destination, 0o755);
 }
 
+async function reuseExistingBundle(projectRoot, output, checksumOutput, commitSha, webRelease) {
+  try {
+    const checksumParts = (await readFile(checksumOutput, "utf8")).trim().split(/\s+/u);
+    const archiveSha256 = await sha256File(output);
+    if (
+      checksumParts.length !== 2
+      || !HASH.test(checksumParts[0])
+      || checksumParts[0] !== archiveSha256
+      || checksumParts[1] !== basename(output)
+    ) fail("HOSTING_BUNDLE_EXISTING_INVALID");
+
+    let manifest;
+    try {
+      manifest = JSON.parse(run(
+        "tar",
+        ["-xOzf", output, "hanstone-hosting/DEPLOYMENT_BUNDLE_MANIFEST.json"],
+        projectRoot,
+      ));
+    } catch {
+      fail("HOSTING_BUNDLE_EXISTING_INVALID");
+    }
+    if (
+      manifest?.schemaVersion !== 1
+      || manifest?.kind !== "hanstone-hosting-deployment-bundle"
+      || manifest?.ok !== true
+      || manifest?.commitSha !== commitSha
+      || manifest?.webDeploymentManifestSha256 !== webRelease.manifestSha256
+      || manifest?.containsSecrets !== false
+      || !Array.isArray(manifest?.files)
+      || !Number.isInteger(manifest?.totals?.files)
+      || !Number.isInteger(manifest?.totals?.bytes)
+      || manifest.totals.files !== manifest.files.length
+    ) fail("HOSTING_BUNDLE_EXISTING_INVALID");
+
+    process.stdout.write(`${JSON.stringify({
+      ok: true,
+      reused: true,
+      commitSha,
+      output: normalizedRelative(projectRoot, output),
+      checksumOutput: normalizedRelative(projectRoot, checksumOutput),
+      archiveSha256,
+      webDeploymentManifestSha256: webRelease.manifestSha256,
+      fileCount: manifest.totals.files,
+      totalBytes: manifest.totals.bytes,
+    })}\n`);
+  } catch (error) {
+    if (error instanceof Error && error.name === "HOSTING_BUNDLE_EXISTING_INVALID") throw error;
+    fail("HOSTING_BUNDLE_EXISTING_INVALID");
+  }
+}
+
 async function createBundle() {
   const options = parseArguments(process.argv.slice(2));
   if (options.help) {
@@ -269,7 +321,15 @@ async function createBundle() {
     fail("HOSTING_BUNDLE_OUTPUT_PATH_INVALID");
   }
   const checksumOutput = `${output}.sha256`;
-  if (await pathExists(output) || await pathExists(checksumOutput)) fail("HOSTING_BUNDLE_OUTPUT_EXISTS");
+  const outputExists = await pathExists(output);
+  const checksumExists = await pathExists(checksumOutput);
+  if (outputExists || checksumExists) {
+    if (options.output) fail("HOSTING_BUNDLE_OUTPUT_EXISTS");
+    if (!outputExists || !checksumExists) fail("HOSTING_BUNDLE_EXISTING_INVALID");
+    const webRelease = await verifyWebRelease(projectRoot, commitSha);
+    await reuseExistingBundle(projectRoot, output, checksumOutput, commitSha, webRelease);
+    return;
+  }
 
   const webRelease = await verifyWebRelease(projectRoot, commitSha);
   const stagingRoot = await mkdtemp(join(tmpdir(), "hanstone-hosting-bundle-"));

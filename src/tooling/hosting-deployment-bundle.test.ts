@@ -121,6 +121,29 @@ describe('hosting deployment bundle', () => {
     expect(JSON.parse(result.stderr)).toEqual({ ok: false, errorType: 'HOSTING_BUNDLE_GIT_DIRTY' });
   });
 
+  it('reuses an intact default bundle for the same commit', async () => {
+    const { root, commitSha } = await fixture();
+    const created = run(process.execPath, [script, '--project-root', root], root);
+    expect(created.status).toBe(0);
+
+    const result = run(process.execPath, [script, '--project-root', root], root);
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, reused: true, commitSha });
+  });
+
+  it('rejects a damaged existing default bundle', async () => {
+    const { root } = await fixture();
+    const created = run(process.execPath, [script, '--project-root', root], root);
+    expect(created.status).toBe(0);
+    const report = JSON.parse(created.stdout);
+    await writeFile(resolve(root, report.output), 'damaged archive', 'utf8');
+
+    const result = run(process.execPath, [script, '--project-root', root], root);
+    expect(result.status).toBe(1);
+    expect(JSON.parse(result.stderr)).toEqual({ ok: false, errorType: 'HOSTING_BUNDLE_EXISTING_INVALID' });
+  });
+
   it('rejects web files that no longer match the deployment manifest', async () => {
     const { root } = await fixture();
     await writeFile(resolve(root, 'dist', 'index.html'), '<!doctype html><title>tampered</title>', 'utf8');

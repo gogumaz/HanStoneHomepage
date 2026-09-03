@@ -11,7 +11,8 @@
 2. 현재 `HEAD`로 웹을 빌드했습니다.
 3. `dist/web-deployment-manifest.json`의 커밋과 파일 해시가 실제 `dist/`와 일치합니다.
 4. 필요한 Compose·Nginx·점검 파일이 모두 존재합니다.
-5. 출력 파일이 아직 존재하지 않습니다. 기존 패키지를 자동으로 덮어쓰지 않습니다.
+5. 사용자 지정 출력 파일은 아직 존재하지 않아야 합니다. 기본 이름의 기존 패키지는 현재
+   커밋·웹 매니페스트·체크섬이 모두 일치할 때만 덮어쓰지 않고 재사용합니다.
 
 ## 생성 방법
 
@@ -32,6 +33,10 @@ npm run bundle:hosting
 hanstone-hosting-{커밋 앞 12자리}.tgz
 hanstone-hosting-{커밋 앞 12자리}.tgz.sha256
 ```
+
+같은 커밋에서 명령을 다시 실행하면 기존 기본 번들의 체크섬과 내부 매니페스트를 검증한 뒤
+`"reused":true`로 성공합니다. 파일이 손상됐거나 TGZ와 체크섬 중 하나만 남아 있으면 안전을
+위해 `HOSTING_BUNDLE_EXISTING_INVALID`로 중단합니다.
 
 패키지 이름을 지정하려면 `artifacts/` 아래의 새 `.tgz` 경로만 사용할 수 있습니다.
 
