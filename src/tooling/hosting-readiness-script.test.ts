@@ -67,5 +67,9 @@ describe('hosting readiness audit', () => {
     ]) {
       expect(script).not.toContain(mutatingCommand);
     }
+
+    expect(script).toContain('SWAP_RECOMMENDED_KB=1048576');
+    expect(script).toContain('SWAP_HEADER_TOLERANCE_KB=4');
+    expect(script).toContain('SWAP_KB >= SWAP_MINIMUM_KB');
   });
 });

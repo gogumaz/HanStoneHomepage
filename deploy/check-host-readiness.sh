@@ -227,8 +227,13 @@ else
   fail 'Unable to read root filesystem free space'
 fi
 
+SWAP_RECOMMENDED_KB=1048576
+# Linux excludes the swap header page from SwapTotal, so a provisioned 1 GiB
+# partition can be reported a few KiB below its nominal size.
+SWAP_HEADER_TOLERANCE_KB=4
+SWAP_MINIMUM_KB=$((SWAP_RECOMMENDED_KB - SWAP_HEADER_TOLERANCE_KB))
 SWAP_KB="$(awk '/^SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || true)"
-if [[ "$SWAP_KB" =~ ^[0-9]+$ ]] && ((SWAP_KB >= 1048576)); then
+if [[ "$SWAP_KB" =~ ^[0-9]+$ ]] && ((SWAP_KB >= SWAP_MINIMUM_KB)); then
   pass "Swap is configured ($((SWAP_KB / 1024)) MiB)"
 else
   warn 'At least 1 GiB swap is recommended for this small host'

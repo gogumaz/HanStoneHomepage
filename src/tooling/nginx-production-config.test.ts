@@ -55,6 +55,8 @@ describe('production Nginx configuration', () => {
     expect(production).toContain('listen 443 ssl http2;');
     expect(production).toContain('/etc/letsencrypt/live/uzdream.com/fullchain.pem');
     expect(production).toContain('/etc/letsencrypt/live/uzdream.com/privkey.pem');
+    expect(production).toContain('include /etc/letsencrypt/options-ssl-nginx.conf;');
+    expect(production).not.toMatch(/^\s*ssl_session_(?:cache|timeout|tickets)\s/mu);
     expect(production).toContain('location /.well-known/acme-challenge/');
     expect(production).toContain('Strict-Transport-Security "max-age=31536000" always;');
   });
