@@ -26,6 +26,26 @@ test("homepage prioritizes the optimized hero image", async ({ page }) => {
   await expect(heroImage).toHaveCSS("object-fit", "cover");
 });
 
+test("homepage header reflects the signed-in account", async ({ page }) => {
+  await page.route("**/api/v1/me", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ data: { user: {
+      id: "00000000-0000-4000-8000-000000000001",
+      email: "signed-in@example.com",
+      emailVerified: true,
+      displayName: "최대길",
+      roles: ["student"],
+    } } }),
+  }));
+  await page.goto("/");
+
+  const accountButton = page.getByRole("button", { name: "최대길 계정 열기" });
+  await expect(accountButton).toHaveText("최대길님");
+  await accountButton.click();
+  await expect(page).toHaveURL(/\/account$/);
+});
+
 test("교재 주문을 서버 가격으로 생성하고 토스 결제를 멱등 승인한다", async ({ page }) => {
   await page.route("**/config.js", (route) => route.fulfill({
     status: 200,

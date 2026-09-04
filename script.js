@@ -119,7 +119,42 @@ function closeModal(modal) {
   }
   lastFocused?.focus?.();
 }
-$$('.login-open').forEach(button => button.addEventListener('click', () => openModal('#loginModal')));
+let currentUser = null;
+
+async function loadCurrentUser() {
+  try {
+    const response = await fetch(apiUrl('/me'), {
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) return null;
+
+    const payload = await response.json();
+    const user = payload?.data?.user;
+    if (!user || typeof user.displayName !== 'string') return null;
+
+    currentUser = user;
+    const displayName = user.displayName.trim() || '내 계정';
+    $$('.login-open').forEach(button => {
+      button.textContent = displayName === '내 계정' ? displayName : `${displayName}님`;
+      button.setAttribute('aria-label', `${displayName} 계정 열기`);
+      button.title = '내 계정';
+    });
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+const currentUserPromise = loadCurrentUser();
+$$('.login-open').forEach(button => button.addEventListener('click', async () => {
+  await currentUserPromise;
+  if (currentUser) {
+    window.location.assign('/account');
+    return;
+  }
+  openModal('#loginModal');
+}));
 $$('.trial-open').forEach(button => button.addEventListener('click', () => openModal('#trialModal')));
 $$('.mission-open').forEach(button => button.addEventListener('click', () => openModal('#missionModal')));
 $('#eraCta')?.addEventListener('click', () => {
