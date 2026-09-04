@@ -37,12 +37,27 @@ const revealObserver = new IntersectionObserver(entries => {
 $$('.reveal').forEach(element => revealObserver.observe(element));
 
 const eraData = {
-  prehistoric: { name: '선사시대', available: true, kicker: '선사시대 · 구석기', title: '주변을 살피면<br>살아갈 길이 보여요', description: '구석기 사람들은 자연을 세심히 살펴 도구와 먹을 것을 찾았어요. 바둑돌도 놓기 전에 주변의 ‘활로’를 먼저 확인해야 합니다.', tags: ['역사 이야기 2분', '바둑 미션 3개', '유물 카드 1장'], cta: '선사시대 여행 시작' },
-  gojoseon: { name: '고조선', available: true, kicker: '고조선 · 건국 이야기', title: '내 영역을 만들고<br>함께 지켜 나가요', description: '고조선이 하나의 나라로 성장한 이야기를 만나고, 바둑판에서 좋은 자리를 먼저 차지하는 포석의 원리를 배워요.', tags: ['건국 이야기 3분', '포석 미션 3개', '청동검 카드'], cta: '고조선 여행 시작' },
-  three: { name: '삼국시대', available: true, kicker: '삼국시대 · 성장과 교류', title: '연결할수록<br>더 큰 힘이 생겨요', description: '고구려·백제·신라가 성장하고 교류한 과정을 살펴보며 돌을 연결하고 상대의 연결을 끊는 방법을 익혀요.', tags: ['삼국 이야기 3분', '연결 미션 3개', '금관 카드'], cta: '삼국시대 여행 시작' },
-  goryeo: { name: '고려', available: false, kicker: '고려 · 곧 만나요', title: '균형을 잡는<br>새 여행을 준비 중이에요', description: '고려의 문화와 기초 사활을 연결한 다음 여행 코스를 만들고 있습니다.', tags: ['두 번째 시즌', '사활 미션', '청자 카드'], cta: '고려 여행 준비 중' },
-  joseon: { name: '조선', available: false, kicker: '조선 · 곧 만나요', title: '판 전체를 읽는<br>넓은 시야를 만나요', description: '조선의 인물과 사건을 따라가며 공배와 집 계산을 익히는 코스입니다.', tags: ['두 번째 시즌', '집 계산', '훈민정음 카드'], cta: '조선 여행 준비 중' },
-  modern: { name: '근현대', available: false, kicker: '근현대 · 곧 만나요', title: '한 수의 선택이<br>미래를 바꾸어요', description: '근현대사의 중요한 선택과 종합 바둑 문제를 연결한 마지막 여정입니다.', tags: ['세 번째 시즌', '종합 미션', '태극기 카드'], cta: '근현대 여행 준비 중' }
+  prehistoric: {
+    id: 'era_prehistoric', name: '선사시대', available: true, kicker: '선사시대 · 구석기', title: '주변을 살피면<br>살아갈 길이 보여요',
+    description: '구석기 사람들은 자연을 세심히 살펴 도구와 먹을 것을 찾았어요. 바둑돌도 놓기 전에 주변의 ‘활로’를 먼저 확인해야 합니다.',
+    tags: ['역사 이야기 2분', '바둑 미션 3개', '유물 카드 1장'], cta: '선사시대 여행 시작', art: '🏺',
+    quiz: { question: '바둑돌이 살아가기 위해 꼭 필요한 주변의 빈칸을 무엇이라고 할까요?', options: ['집', '활로', '포석'], answer: '활로', hint: '돌 주변의 빈칸을 떠올려 보세요.', explanation: '활로는 바둑돌이 숨 쉬는 길이에요.' },
+  },
+  gojoseon: {
+    id: 'era_gojoseon', name: '고조선', available: true, kicker: '고조선 · 건국 이야기', title: '내 영역을 만들고<br>함께 지켜 나가요',
+    description: '고조선이 하나의 나라로 성장한 이야기를 만나고, 바둑판에서 좋은 자리를 먼저 차지하는 포석의 원리를 배워요.',
+    tags: ['건국 이야기 3분', '포석 미션 3개', '청동검 카드'], cta: '고조선 여행 시작', art: '🗡️',
+    quiz: { question: '바둑 초반에 좋은 자리를 먼저 차지해 판의 기틀을 잡는 단계를 무엇이라고 할까요?', options: ['사활', '포석', '계가'], answer: '포석', hint: '바둑판에 돌을 펼쳐 놓는 초반 단계를 생각해 보세요.', explanation: '포석은 바둑 초반에 좋은 자리를 차지하며 판의 기틀을 잡는 과정이에요.' },
+  },
+  three: {
+    id: 'era_three_kingdoms', name: '삼국시대', available: true, kicker: '삼국시대 · 성장과 교류', title: '연결할수록<br>더 큰 힘이 생겨요',
+    description: '고구려·백제·신라가 성장하고 교류한 과정을 살펴보며 돌을 연결하고 상대의 연결을 끊는 방법을 익혀요.',
+    tags: ['삼국 이야기 3분', '연결 미션 3개', '금관 카드'], cta: '삼국시대 여행 시작', art: '👑',
+    quiz: { question: '떨어져 있는 내 돌을 이어서 한 무리로 만드는 기술을 무엇이라고 할까요?', options: ['연결', '따내기', '계가'], answer: '연결', hint: '서로 떨어진 돌이 하나의 힘이 되는 모습을 생각해 보세요.', explanation: '연결은 떨어진 내 돌을 이어 더 강한 한 무리로 만드는 기술이에요.' },
+  },
+  goryeo: { id: 'era_goryeo', name: '고려', available: false, kicker: '고려 · 곧 만나요', title: '균형을 잡는<br>새 여행을 준비 중이에요', description: '고려의 문화와 기초 사활을 연결한 다음 여행 코스를 만들고 있습니다.', tags: ['두 번째 시즌', '사활 미션', '청자 카드'], cta: '고려 여행 준비 중' },
+  joseon: { id: 'era_joseon', name: '조선', available: false, kicker: '조선 · 곧 만나요', title: '판 전체를 읽는<br>넓은 시야를 만나요', description: '조선의 인물과 사건을 따라가며 공배와 집 계산을 익히는 코스입니다.', tags: ['두 번째 시즌', '집 계산', '훈민정음 카드'], cta: '조선 여행 준비 중' },
+  modern: { id: 'era_modern', name: '근현대', available: false, kicker: '근현대 · 곧 만나요', title: '한 수의 선택이<br>미래를 바꾸어요', description: '근현대사의 중요한 선택과 종합 바둑 문제를 연결한 마지막 여정입니다.', tags: ['세 번째 시즌', '종합 미션', '태극기 카드'], cta: '근현대 여행 준비 중' }
 };
 
 const eraTabs = $$('.era-tab');
@@ -108,6 +123,23 @@ function resetMissionQuiz() {
   const nextMission = $('#missionNext');
   if (nextMission) nextMission.hidden = true;
 }
+function prepareMissionQuiz(data) {
+  if (!data?.quiz) return;
+  $('#missionEraLabel').textContent = `${data.name} · 첫 번째 미션`;
+  $('#missionStoryArt').textContent = data.art;
+  $('#missionStoryKicker').textContent = data.kicker;
+  $('#missionTitle').innerHTML = data.title;
+  $('#missionStoryDescription').textContent = data.description;
+  $('#missionQuizQuestion').textContent = data.quiz.question;
+  $$('.quiz-options button').forEach((button, index) => {
+    const option = data.quiz.options[index];
+    button.textContent = option;
+    button.dataset.answer = option === data.quiz.answer ? 'correct' : 'wrong';
+  });
+  const nextMission = $('#missionNext');
+  nextMission.href = `/missions?eraId=${encodeURIComponent(data.id)}&autostart=true`;
+  nextMission.dataset.era = data.id;
+}
 function openModal(id) {
   const modal = $(id);
   if (!modal) return;
@@ -167,7 +199,10 @@ $$('.login-open').forEach(button => button.addEventListener('click', async () =>
   openModal('#loginModal');
 }));
 $$('.trial-open').forEach(button => button.addEventListener('click', () => openModal('#trialModal')));
-$$('.mission-open').forEach(button => button.addEventListener('click', () => openModal('#missionModal')));
+$$('.mission-open').forEach(button => button.addEventListener('click', () => {
+  prepareMissionQuiz(eraData.prehistoric);
+  openModal('#missionModal');
+}));
 $('#eraCta')?.addEventListener('click', () => {
   const selectedEra = eraTabs.find(tab => tab.getAttribute('aria-selected') === 'true');
   const data = eraData[selectedEra?.dataset.era];
@@ -175,6 +210,7 @@ $('#eraCta')?.addEventListener('click', () => {
     showToast(`${data?.name || '선택한 시대'} 여행은 아직 준비 중입니다.`);
     return;
   }
+  prepareMissionQuiz(data);
   openModal('#missionModal');
 });
 $$('.consult-open').forEach(button => button.addEventListener('click', () => openModal('#consultModal')));
@@ -218,19 +254,22 @@ $('#trialContinue')?.addEventListener('click', () => {
   localStorage.setItem('bhj_demo_role', $('#trialContinue').dataset.roleId || 'student');
   closeModal($('#trialModal'));
   showToast(`${role} 여행 지도를 준비했어요. 첫 미션으로 출발합니다!`);
+  prepareMissionQuiz(eraData.prehistoric);
   setTimeout(() => openModal('#missionModal'), 550);
 });
 
 $$('.quiz-options button').forEach(button => button.addEventListener('click', () => {
   $$('.quiz-options button').forEach(item => item.classList.remove('correct', 'wrong'));
   if (button.dataset.answer === 'correct') {
+    const selectedEra = Object.values(eraData).find(data => data.id === $('#missionNext').dataset.era) || eraData.prehistoric;
     button.classList.add('correct');
     $$('.quiz-options button').forEach(item => { item.disabled = true; });
-    $('#quizFeedback').textContent = '정답이에요! 활로는 바둑돌이 숨 쉬는 길이에요. 다음 바둑미션으로 이동해 보세요. ★ +1';
+    $('#quizFeedback').textContent = `정답이에요! ${selectedEra.quiz.explanation} 다음 바둑미션으로 이동해 보세요. ★ +1`;
     $('#missionNext').hidden = false;
   } else {
+    const selectedEra = Object.values(eraData).find(data => data.id === $('#missionNext').dataset.era) || eraData.prehistoric;
     button.classList.add('wrong');
-    $('#quizFeedback').textContent = '한 번 더 생각해 볼까요? 돌 주변의 빈칸을 떠올려 보세요.';
+    $('#quizFeedback').textContent = `한 번 더 생각해 볼까요? ${selectedEra.quiz.hint}`;
   }
 }));
 

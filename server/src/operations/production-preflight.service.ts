@@ -35,7 +35,7 @@ export type ProductionPreflightReport = {
   checks: PreflightCheck[];
 };
 
-export const REQUIRED_PRODUCTION_MIGRATION = "20260830000400_minor_account_consent";
+export const REQUIRED_PRODUCTION_MIGRATION = "20260904000100_mission_era_catalog";
 
 class ConfigurationError extends Error {
   constructor(readonly code: string) {

@@ -231,8 +231,17 @@ test("잠금 시대는 준비 중으로 안내하고 공개 시대만 미션을 
   await expect(feedback).toContainText("정답이에요");
   await expect(feedback).toHaveAttribute("role", "status");
   await expect(nextMission).toBeVisible();
-  await expect(nextMission).toHaveAttribute("href", "/missions");
+  await expect(nextMission).toHaveAttribute("href", "/missions?eraId=era_prehistoric&autostart=true");
   await expect(dialog.locator(".quiz-options button:disabled")).toHaveCount(3);
+
+  await dialog.getByRole("button", { name: "닫기" }).click();
+  await page.getByRole("tab", { name: /고조선/ }).click();
+  await eraCta.click();
+  const gojoseonDialog = page.getByRole("dialog", { name: /내 영역을 만들고/ });
+  await expect(gojoseonDialog).toContainText("판의 기틀을 잡는 단계");
+  await gojoseonDialog.getByRole("button", { name: "포석" }).click();
+  await expect(gojoseonDialog.getByRole("link", { name: /바둑미션 계속하기/ }))
+    .toHaveAttribute("href", "/missions?eraId=era_gojoseon&autostart=true");
 });
 
 test("일반 텍스트가 WCAG AA 명암 대비를 충족한다", async ({ page }) => {

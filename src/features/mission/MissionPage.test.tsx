@@ -8,6 +8,7 @@ import type { Point } from './api';
 
 const mission = {
   id: 'MISSION-UI-9',
+  eraId: 'era_prehistoric',
   version: 1,
   title: '9줄 마지막 활로',
   instruction: '백돌의 마지막 활로를 막으세요.',
@@ -370,8 +371,28 @@ describe('Mission UI', () => {
     ));
   });
 
+  it('opens the first published mission for the homepage era without showing only the full catalog', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/v1/missions?eraId=era_prehistoric') return response({ items: [mission] });
+      if (url === `/api/v1/missions/${mission.id}`) return response({ mission, attempt: null });
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithQuery(<MissionPage />, ['/missions?eraId=era_prehistoric&autostart=true']);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('heading', { name: mission.title })).toBeInTheDocument();
+    expect(screen.getByText(/선택한 시대에 등록된 바둑미션/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/missions?eraId=era_prehistoric',
+      expect.objectContaining({ credentials: 'include' }),
+    );
+  });
+
   it('blocks a board-size change that would discard existing stones in the editor', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ items: [] })));
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/v1/eras'
+      ? response([{ id: 'era_prehistoric', order: 1, name: '선사시대', theme: '주변을 살펴라', description: '첫 시대', status: 'available', completedLessons: 0, totalLessons: 1 }])
+      : response({ items: [] })));
     renderWithQuery(<AdminMissionPage />);
 
     fireEvent.click(await screen.findByRole('button', { name: '19줄' }));
@@ -386,7 +407,7 @@ describe('Mission UI', () => {
   it('shows mission statistics and runs an admin preview without creating an attempt', async () => {
     const adminItem = {
       ...mission,
-      status: 'published', displayOrder: 1, eraId: null, lessonId: null, textbookPage: null,
+      status: 'published', displayOrder: 1, lessonId: null, textbookPage: null,
       ruleset: 'japanese_simple_ko', successCondition: null,
       solutionTree: {
         rootNodeId: 'root',
@@ -396,6 +417,7 @@ describe('Mission UI', () => {
       scheduledAt: null, publishedAt: new Date().toISOString(), rewardId: 'mission-star', rewardQuantity: 1,
     };
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/v1/eras') return response([{ id: 'era_prehistoric', order: 1, name: '선사시대', theme: '주변을 살펴라', description: '첫 시대', status: 'available', completedLessons: 0, totalLessons: 1 }]);
       if (url === '/api/v1/admin/missions') return response({ items: [adminItem] });
       if (url.endsWith('/statistics')) return response({
         mission: { id: mission.id, title: mission.title, version: 1, boardSize: 9 },

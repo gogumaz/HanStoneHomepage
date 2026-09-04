@@ -336,9 +336,9 @@ function validateMissionInput(body: unknown, create: boolean, current?: Record<s
   }
 
   const merged = { ...current, ...data };
-  const requiredText = ["title", "instruction", "level", "problemGroup", "category", "playerColor", "missionType", "correctExplanation", "rewardId"];
+  const requiredText = ["title", "instruction", "level", "problemGroup", "category", "playerColor", "missionType", "correctExplanation", "rewardId", "eraId"];
   if (requiredText.some((field) => !merged[field])) {
-    throw new ApiError("MISSION_REQUIRED_FIELD_MISSING", "문제 기본정보와 해설을 모두 입력해 주세요.", HttpStatus.BAD_REQUEST);
+    throw new ApiError("MISSION_REQUIRED_FIELD_MISSING", "시대를 포함한 문제 기본정보와 해설을 모두 입력해 주세요.", HttpStatus.BAD_REQUEST);
   }
   if (merged.title && (merged.title.length < 2 || merged.title.length > 120)) {
     throw new ApiError("MISSION_TITLE_INVALID", "문제 제목은 2자 이상 120자 이하로 입력해 주세요.", HttpStatus.BAD_REQUEST);

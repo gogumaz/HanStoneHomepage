@@ -45,6 +45,7 @@ export class MissionService {
     const category = readString(query.category);
     const problemGroup = readString(query.problemGroup);
     const missionType = readString(query.missionType);
+    const eraId = readString(query.eraId);
     const lessonId = readString(query.lessonId);
     const search = readString(query.q);
     const progressStatus = readProgressFilter(query.progress);
@@ -52,8 +53,8 @@ export class MissionService {
     if (search.length > 80) {
       throw new ApiError("MISSION_SEARCH_INVALID", "검색어는 80자 이하로 입력해 주세요.", HttpStatus.BAD_REQUEST);
     }
-    if (lessonId.length > 40) {
-      throw new ApiError("MISSION_FILTER_INVALID", "강의 식별자 필터를 확인해 주세요.", HttpStatus.BAD_REQUEST);
+    if (eraId.length > 40 || lessonId.length > 40) {
+      throw new ApiError("MISSION_FILTER_INVALID", "시대·강의 식별자 필터를 확인해 주세요.", HttpStatus.BAD_REQUEST);
     }
     if (volume !== undefined && (volume < 1 || volume > 6)
       || lessonNumber !== undefined && (lessonNumber < 1 || lessonNumber > 8)
@@ -72,6 +73,7 @@ export class MissionService {
       ...(category ? { category } : {}),
       ...(problemGroup ? { problemGroup } : {}),
       ...(missionType ? { missionType } : {}),
+      ...(eraId ? { eraId } : {}),
       ...(lessonId ? { lessonId } : {}),
       ...(difficulty !== undefined ? { difficulty } : {}),
       ...(search ? { OR: [
@@ -635,6 +637,7 @@ export class MissionService {
 function publicMission(mission: Record<string, any>, includeBoard = false) {
   return {
     id: mission.id,
+    eraId: mission.eraId,
     version: mission.version,
     title: mission.title,
     instruction: mission.instruction,

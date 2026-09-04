@@ -1292,6 +1292,7 @@ model BadukMission {
   classHelpers       ClassHelper[]
 
   @@index([status, displayOrder])
+  @@index([eraId, status, displayOrder])
   @@index([level, volume, lessonNumber, problemGroup])
   @@index([boardSize, category, difficulty])
   @@index([lessonId, status])

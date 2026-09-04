@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ApiClientError } from '../../lib/api-client';
+import { listEras } from '../content/api';
 import { GoBoard } from './GoBoard';
 import {
   createAdminMission,
@@ -20,6 +21,7 @@ import {
 type BoardTool = 'black' | 'white' | 'erase' | 'answer' | 'forbidden';
 type EditorState = {
   id: string;
+  eraId: string;
   title: string;
   instruction: string;
   level: string;
@@ -48,6 +50,7 @@ type EditorState = {
 
 const emptyEditor: EditorState = {
   id: '',
+  eraId: 'era_prehistoric',
   title: '',
   instruction: '',
   level: '입문',
@@ -80,6 +83,7 @@ const emptyEditor: EditorState = {
 export function AdminMissionPage() {
   const queryClient = useQueryClient();
   const missionsQuery = useQuery({ queryKey: ['admin-missions'], queryFn: listAdminMissions, retry: false });
+  const erasQuery = useQuery({ queryKey: ['eras'], queryFn: listEras, retry: false });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState>(emptyEditor);
   const [tool, setTool] = useState<BoardTool>('black');
@@ -205,7 +209,7 @@ export function AdminMissionPage() {
     });
   }
 
-  const error = [saveMutation.error, validationMutation.error, publishMutation.error, previewMutation.error, statisticsQuery.error, missionsQuery.error]
+  const error = [saveMutation.error, validationMutation.error, publishMutation.error, previewMutation.error, statisticsQuery.error, missionsQuery.error, erasQuery.error]
     .find((item) => item instanceof ApiClientError) as ApiClientError | undefined;
 
   return (
@@ -244,6 +248,7 @@ export function AdminMissionPage() {
               <label>문제 ID<input value={editor.id} onChange={(event) => setEditor({ ...editor, id: event.target.value })} placeholder="비우면 자동 생성" disabled={Boolean(selectedId)} /></label>
               <label>제목<input value={editor.title} onChange={(event) => setEditor({ ...editor, title: event.target.value })} required minLength={2} maxLength={120} /></label>
               <label className="span-2">문제 지시문<textarea value={editor.instruction} onChange={(event) => setEditor({ ...editor, instruction: event.target.value })} required maxLength={500} /></label>
+              <label>시대<select required value={editor.eraId} onChange={(event) => setEditor({ ...editor, eraId: event.target.value })}><option value="">시대를 선택하세요</option>{erasQuery.data?.map((era) => <option value={era.id} key={era.id}>{era.name}</option>)}</select></label>
               <label>과정<select value={editor.level} onChange={(event) => setEditor({ ...editor, level: event.target.value })}><option>입문</option><option>기초</option><option>기본</option></select></label>
               <label>권<input type="number" min="1" max="6" value={editor.volume} onChange={(event) => setEditor({ ...editor, volume: Number(event.target.value) })} /></label>
               <label>강<input type="number" min="1" max="8" value={editor.lessonNumber} onChange={(event) => setEditor({ ...editor, lessonNumber: Number(event.target.value) })} /></label>
@@ -339,6 +344,7 @@ function toPayload(editor: EditorState): Record<string, unknown> {
   try { solutionTree = JSON.parse(editor.solutionTreeText); } catch { throw new Error('수순 트리 JSON 형식을 확인해 주세요.'); }
   return {
     ...(editor.id ? { id: editor.id } : {}),
+    eraId: editor.eraId,
     title: editor.title,
     instruction: editor.instruction,
     level: editor.level,
@@ -369,6 +375,7 @@ function toPayload(editor: EditorState): Record<string, unknown> {
 function fromMission(mission: AdminMission): EditorState {
   return {
     id: mission.id,
+    eraId: mission.eraId ?? '',
     title: mission.title,
     instruction: mission.instruction,
     level: mission.level,

@@ -22,5 +22,6 @@ server/src/generated/prisma/
 playwright-report/
 test-results/
 .coverage/
+.tmp_docx/
 .DS_Store
 Thumbs.db

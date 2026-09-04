@@ -22,8 +22,10 @@ import {
 
 export function MissionPage() {
   const [searchParams] = useSearchParams();
+  const linkedEraId = searchParams.get('eraId')?.trim() ?? '';
   const linkedLessonId = searchParams.get('lessonId')?.trim() ?? '';
   const linkedMissionId = searchParams.get('missionId')?.trim() || null;
+  const autoStartEraMission = searchParams.get('autostart') === 'true' && Boolean(linkedEraId) && !linkedMissionId;
   const classroomMode = searchParams.get('mode') === 'classroom' && Boolean(linkedMissionId);
   const queryClient = useQueryClient();
   const [boardSize, setBoardSize] = useState<0 | 9 | 13 | 19>(0);
@@ -42,13 +44,15 @@ export function MissionPage() {
     ...(appliedFilters.difficulty ? { difficulty: Number(appliedFilters.difficulty) } : {}),
     ...(appliedFilters.progress ? { progress: appliedFilters.progress as MissionFilters['progress'] } : {}),
     ...(appliedFilters.favorite ? { favorite: true } : {}),
+    ...(linkedEraId ? { eraId: linkedEraId } : {}),
     ...(linkedLessonId ? { lessonId: linkedLessonId } : {}),
-  }), [appliedFilters, boardSize, linkedLessonId]);
+  }), [appliedFilters, boardSize, linkedEraId, linkedLessonId]);
   const missionsQuery = useQuery({
     queryKey: ['missions', queryFilters],
     queryFn: () => listMissions(queryFilters),
   });
   const selectedMission = missionsQuery.data?.items.find((mission) => mission.id === selectedId) ?? null;
+  const autoStartedEraRef = useRef<string | null>(null);
 
   useEffect(() => setSelectedId(linkedMissionId), [linkedMissionId]);
 
@@ -69,6 +73,13 @@ export function MissionPage() {
     window.history.pushState({ ...window.history.state, badukMissionDialog: id }, '');
     setSelectedId(id);
   }, []);
+
+  useEffect(() => {
+    if (!autoStartEraMission || missionsQuery.isLoading || autoStartedEraRef.current === linkedEraId) return;
+    autoStartedEraRef.current = linkedEraId;
+    const firstMission = missionsQuery.data?.items[0];
+    if (firstMission) openMission(firstMission.id);
+  }, [autoStartEraMission, linkedEraId, missionsQuery.data?.items, missionsQuery.isLoading, openMission]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -114,7 +125,8 @@ export function MissionPage() {
 
       {classroomMode ? (
         <p className="mission-linked-context">지도자 수업 화면입니다. 기존 문제풀이의 판과 시도 상태를 그대로 이어갑니다. <Link to="/missions">전체 미션 보기</Link></p>
-      ) : linkedLessonId ? <p className="mission-linked-context">강의 {linkedLessonId}에 연결된 바둑미션입니다. <Link to="/missions">전체 미션 보기</Link></p> : null}
+      ) : linkedLessonId ? <p className="mission-linked-context">강의 {linkedLessonId}에 연결된 바둑미션입니다. <Link to="/missions">전체 미션 보기</Link></p>
+        : linkedEraId ? <p className="mission-linked-context">선택한 시대에 등록된 바둑미션입니다. 가장 먼저 공개된 미션을 열었습니다. <Link to="/missions">전체 미션 보기</Link></p> : null}
 
       <form className="mission-search-filters" aria-label="바둑미션 상세 검색" onSubmit={(event) => { event.preventDefault(); setAppliedFilters(filterDraft); }}>
         <label className="mission-search-field">검색어<input value={filterDraft.q} maxLength={80} onChange={(event) => setFilterDraft({ ...filterDraft, q: event.target.value })} placeholder="제목·지시문·카테고리" /></label>
@@ -137,7 +149,7 @@ export function MissionPage() {
           <MissionCard key={mission.id} mission={mission} onOpen={() => openMission(mission.id)} onToggleFavorite={() => favoriteMutation.mutate({ id: mission.id, isFavorite: Boolean(mission.isFavorite) })} favoritePending={favoriteMutation.isPending && favoriteMutation.variables?.id === mission.id} />
         ))}
       </section>
-      {!missionsQuery.isLoading && missionsQuery.data?.items.length === 0 ? <p className="mission-empty">조건에 맞는 바둑미션이 없습니다.</p> : null}
+      {!missionsQuery.isLoading && missionsQuery.data?.items.length === 0 ? <p className="mission-empty">{linkedEraId ? '이 시대에 게시된 바둑미션이 아직 없습니다. 문제 입력기에서 시대를 지정하고 게시해 주세요.' : '조건에 맞는 바둑미션이 없습니다.'}</p> : null}
 
       {selectedMission ? (
         <MissionDialog

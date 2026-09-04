@@ -13,6 +13,7 @@ export type BoardState = {
 
 export type MissionSummary = {
   id: string;
+  eraId: string | null;
   version: number;
   title: string;
   instruction: string;
@@ -156,6 +157,7 @@ export type MissionFilters = {
   category?: string;
   problemGroup?: string;
   missionType?: string;
+  eraId?: string;
   lessonId?: string;
   difficulty?: number;
   progress?: 'not_started' | 'in_progress' | 'completed' | 'failed';
@@ -172,6 +174,7 @@ export function listMissions(filters: MissionFilters = {}): Promise<{ items: Mis
   if (filters.category) search.set('category', filters.category);
   if (filters.problemGroup) search.set('problemGroup', filters.problemGroup);
   if (filters.missionType) search.set('missionType', filters.missionType);
+  if (filters.eraId) search.set('eraId', filters.eraId);
   if (filters.lessonId) search.set('lessonId', filters.lessonId);
   if (filters.difficulty) search.set('difficulty', String(filters.difficulty));
   if (filters.progress) search.set('progress', filters.progress);

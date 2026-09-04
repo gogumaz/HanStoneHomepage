@@ -1,4 +1,4 @@
-export const REQUIRED_RECOVERY_MIGRATION = "20260830000400_minor_account_consent";
+export const REQUIRED_RECOVERY_MIGRATION = "20260904000100_mission_era_catalog";
 
 export const REQUIRED_RECOVERY_TABLES = [
   "User",

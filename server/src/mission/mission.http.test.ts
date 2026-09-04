@@ -32,7 +32,7 @@ function sampleMission(overrides: Record<string, any> = {}) {
     category: "따내기",
     difficulty: 1,
     displayOrder: 1,
-    eraId: null,
+    eraId: "era_prehistoric",
     lessonId: null,
     textbookPage: null,
     boardSize: 9,
@@ -136,6 +136,7 @@ function createPrismaMock() {
         && (!where?.category || mission.category === where.category)
         && (!where?.problemGroup || mission.problemGroup === where.problemGroup)
         && (!where?.missionType || mission.missionType === where.missionType)
+        && (!where?.eraId || mission.eraId === where.eraId)
         && (!where?.lessonId || mission.lessonId === where.lessonId)
         && (!where?.difficulty || mission.difficulty === where.difficulty))),
       findFirst: vi.fn(async ({ where }: { where: Record<string, any> }) => missions.find((mission) =>
@@ -412,7 +413,7 @@ describe("baduk mission HTTP flow", () => {
     await fetch(`${baseUrl}/api/v1/me/mission-favorites/MISSION-HTTP-9`, { method: "POST", headers, body: "{}" });
     expect(state.favorites).toHaveLength(1);
 
-    const search = new URLSearchParams({ q: "마지막", missionType: "capture", boardSize: "9", lessonId: "PRE-01", favorite: "true" });
+    const search = new URLSearchParams({ q: "마지막", missionType: "capture", boardSize: "9", eraId: "era_prehistoric", lessonId: "PRE-01", favorite: "true" });
     const listResponse = await fetch(`${baseUrl}/api/v1/missions?${search}`, { headers: { cookie: headers.cookie } });
     const list = await listResponse.json() as { data: { items: Array<Record<string, any>> } };
     expect(list.data.items).toHaveLength(1);
@@ -593,6 +594,7 @@ describe("baduk mission HTTP flow", () => {
       lessonNumber: 1,
       problemGroup: "개념 확인",
       category: "포석",
+      eraId: "era_prehistoric",
       difficulty: 1,
       displayOrder: 2,
       boardSize: 13,
@@ -614,6 +616,13 @@ describe("baduk mission HTTP flow", () => {
       isFreeSample: true,
     };
     const headers = { "content-type": "application/json", cookie: "baduk_session=mission-operator-token" };
+    const missingEraResponse = await fetch(`${baseUrl}/api/v1/admin/missions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...body, eraId: "" }),
+    });
+    expect(missingEraResponse.status).toBe(400);
+
     const createResponse = await fetch(`${baseUrl}/api/v1/admin/missions`, {
       method: "POST",
       headers,
