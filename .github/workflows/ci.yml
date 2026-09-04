@@ -122,6 +122,11 @@ jobs:
 
   supply-chain:
     runs-on: ubuntu-latest
+    env:
+      NPM_AUDIT_MAX_ATTEMPTS: "3"
+      NPM_AUDIT_RETRY_DELAY_MS: "10000"
+      NPM_CONFIG_FETCH_RETRIES: "1"
+      NPM_CONFIG_FETCH_TIMEOUT: "60000"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v7
@@ -132,10 +137,9 @@ jobs:
             package-lock.json
             server/package-lock.json
       - name: Audit web production dependencies
-        run: npm audit --omit=dev --audit-level=high
+        run: node server/scripts/npm-audit-with-retry.mjs .
       - name: Audit API production dependencies
-        working-directory: server
-        run: npm audit --omit=dev --audit-level=high
+        run: node server/scripts/npm-audit-with-retry.mjs server
       - name: Prepare evidence directory
         run: mkdir -p supply-chain
       - name: Generate web CycloneDX SBOM
