@@ -1,6 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
 test("홈과 주요 정적 자산이 정상 응답하고 브라우저 오류가 없다", async ({ page, request }) => {
+  await page.route("**/api/v1/me", (route) => route.fulfill({
+    status: 401,
+    contentType: "application/json",
+    body: JSON.stringify({ error: { code: "AUTH_REQUIRED", message: "로그인이 필요합니다." } }),
+  }));
+
   const resources = [
     "/",
     "/styles.css",
