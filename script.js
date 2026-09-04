@@ -98,9 +98,20 @@ const modalBackground = () => $$('.announcement, .site-header, main, footer');
 function setModalBackgroundInert(inert) {
   modalBackground().forEach(element => { element.inert = inert; });
 }
+function resetMissionQuiz() {
+  $$('.quiz-options button').forEach(button => {
+    button.classList.remove('correct', 'wrong');
+    button.disabled = false;
+  });
+  const feedback = $('#quizFeedback');
+  if (feedback) feedback.textContent = '';
+  const nextMission = $('#missionNext');
+  if (nextMission) nextMission.hidden = true;
+}
 function openModal(id) {
   const modal = $(id);
   if (!modal) return;
+  if (id === '#missionModal') resetMissionQuiz();
   lastFocused = document.activeElement;
   $$('.modal.open').forEach(item => closeModal(item));
   modal.classList.add('open');
@@ -214,7 +225,9 @@ $$('.quiz-options button').forEach(button => button.addEventListener('click', ()
   $$('.quiz-options button').forEach(item => item.classList.remove('correct', 'wrong'));
   if (button.dataset.answer === 'correct') {
     button.classList.add('correct');
-    $('#quizFeedback').textContent = '정답이에요! 활로는 바둑돌이 숨 쉬는 길이에요. ★ +1';
+    $$('.quiz-options button').forEach(item => { item.disabled = true; });
+    $('#quizFeedback').textContent = '정답이에요! 활로는 바둑돌이 숨 쉬는 길이에요. 다음 바둑미션으로 이동해 보세요. ★ +1';
+    $('#missionNext').hidden = false;
   } else {
     button.classList.add('wrong');
     $('#quizFeedback').textContent = '한 번 더 생각해 볼까요? 돌 주변의 빈칸을 떠올려 보세요.';

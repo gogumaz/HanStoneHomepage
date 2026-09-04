@@ -223,11 +223,16 @@ test("잠금 시대는 준비 중으로 안내하고 공개 시대만 미션을 
   await expect(dialog).toBeVisible();
 
   const feedback = dialog.locator("#quizFeedback");
+  const nextMission = dialog.getByRole("link", { name: /바둑미션 계속하기/ });
+  await expect(nextMission).toBeHidden();
   await dialog.getByRole("button", { name: "집" }).click();
   await expect(feedback).toContainText("한 번 더 생각해 볼까요");
   await dialog.getByRole("button", { name: "활로" }).click();
   await expect(feedback).toContainText("정답이에요");
   await expect(feedback).toHaveAttribute("role", "status");
+  await expect(nextMission).toBeVisible();
+  await expect(nextMission).toHaveAttribute("href", "/missions");
+  await expect(dialog.locator(".quiz-options button:disabled")).toHaveCount(3);
 });
 
 test("일반 텍스트가 WCAG AA 명암 대비를 충족한다", async ({ page }) => {
