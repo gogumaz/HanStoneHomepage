@@ -54,6 +54,10 @@ export class ApiInputBoundaryPipe implements PipeTransform {
       assertSafeValue(value, 0, 100_000);
     }
     if (metadata.type === "query" && value !== undefined) {
+      if (metadata.data !== undefined) {
+        assertSafeValue(value, 0, MAX_QUERY_VALUE_LENGTH);
+        return value;
+      }
       if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
       assertSafeValue(value, 0, MAX_QUERY_VALUE_LENGTH);
     }

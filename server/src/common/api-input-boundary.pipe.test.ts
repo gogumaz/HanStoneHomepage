@@ -2,7 +2,7 @@ import type { ArgumentMetadata } from "@nestjs/common";
 import { describe, expect, it } from "vitest";
 import { ApiInputBoundaryPipe } from "./api-input-boundary.pipe.js";
 
-const metadata = (type: ArgumentMetadata["type"]): ArgumentMetadata => ({ type });
+const metadata = (type: ArgumentMetadata["type"], data?: string): ArgumentMetadata => ({ type, data });
 
 describe("API input boundary", () => {
   const pipe = new ApiInputBoundaryPipe();
@@ -19,6 +19,16 @@ describe("API input boundary", () => {
     expect(() => pipe.transform("", metadata("param"))).toThrow(/요청 본문 또는 URL/);
     expect(() => pipe.transform("x".repeat(201), metadata("param"))).toThrow(/요청 본문 또는 URL/);
     expect(() => pipe.transform("lesson\u0000id", metadata("param"))).toThrow(/요청 본문 또는 URL/);
+  });
+
+  it("accepts a scalar value selected by a named query decorator", () => {
+    expect(pipe.transform("/account", metadata("query", "returnTo"))).toBe("/account");
+    expect(pipe.transform(undefined, metadata("query", "returnTo"))).toBeUndefined();
+  });
+
+  it("rejects unsafe scalar values selected by a named query decorator", () => {
+    expect(() => pipe.transform("x".repeat(2_049), metadata("query", "returnTo"))).toThrow();
+    expect(() => pipe.transform("/account\u0000", metadata("query", "returnTo"))).toThrow();
   });
 
   it("rejects unsafe body and query shapes before semantic service validation", () => {
