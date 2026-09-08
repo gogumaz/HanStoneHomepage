@@ -61,6 +61,10 @@ export function MissionPage() {
   }, []);
   const closeMission = useCallback(() => {
     if (!selectedId) return;
+    if (autoStartEraMission) {
+      window.location.assign('/');
+      return;
+    }
     if (window.history.state?.badukMissionDialog === selectedId) {
       window.history.back();
       return;
@@ -68,7 +72,7 @@ export function MissionPage() {
     const id = selectedId;
     setSelectedId(null);
     restoreCardFocus(id);
-  }, [restoreCardFocus, selectedId]);
+  }, [autoStartEraMission, restoreCardFocus, selectedId]);
   const openMission = useCallback((id: string) => {
     window.history.pushState({ ...window.history.state, badukMissionDialog: id }, '');
     setSelectedId(id);
@@ -156,6 +160,7 @@ export function MissionPage() {
           summary={selectedMission}
           source={classroomMode ? 'class_helper' : linkedLessonId ? 'lesson' : 'mission_list'}
           displayMode={classroomMode ? 'classroom' : 'modal'}
+          returnToHomepage={autoStartEraMission}
           onClose={closeMission}
         />
       ) : null}
@@ -188,7 +193,7 @@ function MissionCard({ mission, onOpen, onToggleFavorite, favoritePending }: { m
   );
 }
 
-function MissionDialog({ summary, source, displayMode, onClose }: { summary: MissionSummary; source: string; displayMode: 'modal' | 'classroom'; onClose: () => void }) {
+function MissionDialog({ summary, source, displayMode, returnToHomepage, onClose }: { summary: MissionSummary; source: string; displayMode: 'modal' | 'classroom'; returnToHomepage: boolean; onClose: () => void }) {
   const dialogRef = useRef<HTMLElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const startRequestIdRef = useRef<string | null>(null);
@@ -388,7 +393,11 @@ function MissionDialog({ summary, source, displayMode, onClose }: { summary: Mis
             <p>{mission.level} {mission.volume}권 {mission.lessonNumber}강 · {mission.boardSize}줄</p>
             <h2 ref={titleRef} id="mission-dialog-title" tabIndex={-1}>{mission.title}</h2>
           </div>
-          <button type="button" className="dialog-close" aria-label="바둑미션 닫기" onClick={onClose}>×</button>
+          {returnToHomepage ? (
+            <Link reloadDocument className="dialog-close" to="/" aria-label="바둑미션을 닫고 홈페이지로 돌아가기">×</Link>
+          ) : (
+            <button type="button" className="dialog-close" aria-label="바둑미션 닫기" onClick={onClose}>×</button>
+          )}
         </header>
         <div className="mission-player-layout">
           <div className="mission-board-panel">
@@ -446,7 +455,10 @@ function MissionDialog({ summary, source, displayMode, onClose }: { summary: Mis
                     </button>
                   </div>
                 ) : (
-                  <button type="button" onClick={() => retryMutation.mutate()} disabled={!isOnline || retryMutation.isPending}>처음부터 다시 풀기</button>
+                  <div className="mission-controls">
+                    {returnToHomepage ? <Link reloadDocument className="mission-home-link" to="/">홈페이지로 돌아가기</Link> : null}
+                    <button type="button" onClick={() => retryMutation.mutate()} disabled={!isOnline || retryMutation.isPending}>처음부터 다시 풀기</button>
+                  </div>
                 )}
               </>
             )}

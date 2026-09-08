@@ -382,11 +382,32 @@ describe('Mission UI', () => {
 
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByRole('heading', { name: mission.title })).toBeInTheDocument();
+    expect(within(dialog).getByRole('link', { name: '바둑미션을 닫고 홈페이지로 돌아가기' })).toHaveAttribute('href', '/');
     expect(screen.getByText(/선택한 시대에 등록된 바둑미션/)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/missions?eraId=era_prehistoric',
       expect.objectContaining({ credentials: 'include' }),
     );
+  });
+
+  it('returns to the homepage after a homepage-era mission is finished', async () => {
+    const completedAttempt = {
+      id: 'attempt-homepage-complete', missionId: mission.id, missionVersion: 1, source: 'mission_list', status: 'completed' as const,
+      boardState: { ...initialBoard(), captures: { black: 1, white: 0 } }, boardHash: 'e'.repeat(64),
+      moveCount: 1, wrongMoveCount: 0, attemptCount: 1, hintLevel: 0, hintUseCount: 0, score: 100,
+      startedAt: new Date().toISOString(), lastPlayedAt: new Date().toISOString(), completedAt: new Date().toISOString(),
+    };
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/v1/missions?eraId=era_prehistoric') return response({ items: [mission] });
+      if (url === `/api/v1/missions/${mission.id}`) return response({ mission, attempt: completedAttempt });
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithQuery(<MissionPage />, ['/missions?eraId=era_prehistoric&autostart=true']);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByRole('link', { name: '홈페이지로 돌아가기' })).toHaveAttribute('href', '/');
+    expect(within(dialog).getByRole('button', { name: '처음부터 다시 풀기' })).toBeInTheDocument();
   });
 
   it('blocks a board-size change that would discard existing stones in the editor', async () => {

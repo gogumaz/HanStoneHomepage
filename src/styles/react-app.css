@@ -1499,10 +1499,19 @@ select {
 }
 
 .dialog-close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
   width: 44px;
   height: 44px;
   padding: 0;
+  border: 1px solid #8c8275;
+  color: #30281f;
+  background: #fffdf8;
   font-size: 28px;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
 }
 
 .mission-player-layout {
@@ -1596,6 +1605,19 @@ select {
 .mission-controls {
   display: grid;
   gap: 8px;
+}
+
+.mission-home-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  color: #fff;
+  background: #315b42;
+  font-weight: 800;
+  text-decoration: none;
 }
 
 .admin-mission-layout {
