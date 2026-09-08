@@ -35,6 +35,7 @@ const roleLabels: Record<string, string> = {
 
 type AuthMode = 'login' | 'signup' | 'reset';
 const oauthLabels = { naver: '네이버', kakao: '카카오', google: 'Google' } as const;
+const oauthMarks = { naver: 'N', kakao: 'K', google: 'G' } as const;
 
 export function AuthPage() {
   const queryClient = useQueryClient();
@@ -209,7 +210,7 @@ export function AuthPage() {
             <p className={`email-status ${meQuery.data.emailVerified ? 'is-verified' : ''}`}>
               이메일 {meQuery.data.emailVerified ? '인증 완료' : '인증 필요'}
             </p>
-            <ul aria-label="계정 역할">
+            <ul className="account-role-list" aria-label="계정 역할">
               {meQuery.data.roles.map((item) => <li key={item}>{roleLabels[item] ?? item}</li>)}
             </ul>
             {meQuery.data.minorAccountStatus === 'age_declaration_required' ? (
@@ -265,19 +266,28 @@ export function AuthPage() {
             {visibleProviders.length > 0 ? (
               <section className="account-security oauth-account-links" aria-labelledby="oauth-account-links-title">
                 <h2 id="oauth-account-links-title">소셜 계정 연결</h2>
-                <p>연결 과정은 현재 로그인 계정과 일회성 OAuth 요청에 묶입니다. 마지막 로그인 수단은 해제할 수 없습니다.</p>
+                <p>로그인에 사용할 소셜 계정을 연결하거나 해제할 수 있습니다. 마지막으로 남은 로그인 방법은 계정 보호를 위해 해제할 수 없습니다.</p>
                 {oauthAccountsQuery.isLoading ? <p role="status">소셜 계정 연결 상태를 확인하고 있습니다.</p> : null}
                 <ul>
                   {visibleProviders.map((provider) => {
                     const account = oauthAccountsQuery.data?.items?.find((item) => item.provider === provider);
                     return (
-                      <li key={provider}>
-                        <span>
-                          <strong>{oauthLabels[provider]}</strong>
-                          <small>{account ? account.email ?? '이메일 비공개' : '연결되지 않음'}</small>
-                        </span>
+                      <li className={`oauth-account-link oauth-account-link--${provider}`} key={provider}>
+                        <div className="oauth-provider-identity">
+                          <span
+                            className={`oauth-provider-mark oauth-provider-mark--${provider}`}
+                            aria-hidden="true"
+                          >{oauthMarks[provider]}</span>
+                          <span className="oauth-provider-details">
+                            <strong>{oauthLabels[provider]}</strong>
+                            <small data-linked={account ? 'true' : 'false'}>
+                              {account ? account.email ?? '이메일 비공개' : '연결되지 않음'}
+                            </small>
+                          </span>
+                        </div>
                         {account ? (
                           <button
+                            className="oauth-account-action oauth-account-action--unlink"
                             type="button"
                             disabled={unlinkOAuthMutation.isPending}
                             onClick={() => {
@@ -287,7 +297,11 @@ export function AuthPage() {
                             }}
                           >연결 해제</button>
                         ) : enabledProviders.has(provider) ? (
-                          <a href={oauthLinkStartUrl(provider)}>{oauthLabels[provider]} 연결</a>
+                          <a
+                            className="oauth-account-action oauth-account-action--link"
+                            href={oauthLinkStartUrl(provider)}
+                            aria-label={`${oauthLabels[provider]} 연결`}
+                          >연결하기</a>
                         ) : null}
                       </li>
                     );

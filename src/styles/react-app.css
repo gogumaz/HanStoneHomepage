@@ -875,14 +875,15 @@ select {
   background: #f4ecde;
 }
 
-.signed-in-panel ul {
+.account-role-list {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 0;
   list-style: none;
 }
 
-.signed-in-panel li {
+.account-role-list > li {
   padding: 5px 9px;
   border-radius: 999px;
   color: #fff;
@@ -941,33 +942,112 @@ select {
 }
 
 .oauth-account-links li {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 10px 0;
-  border-top: 1px solid #e3d7c5;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e3d7c5;
+  border-radius: 12px;
+  color: #2d2823;
+  background: #fff;
 }
 
-.oauth-account-links li span {
-  display: grid;
+.oauth-provider-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
+}
+
+.oauth-provider-mark {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border-radius: 10px;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.oauth-provider-mark--naver {
+  color: #fff;
+  background: #03c75a;
+}
+
+.oauth-provider-mark--kakao {
+  color: #191919;
+  background: #fee500;
+}
+
+.oauth-provider-mark--google {
+  color: #4285f4;
+  border: 1px solid #dadce0;
+  background: #fff;
+}
+
+.oauth-provider-details {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.oauth-provider-details strong {
+  color: #2d2823;
+  font-size: 15px;
+  line-height: 1.25;
 }
 
 .oauth-account-links li small {
   overflow-wrap: anywhere;
   color: #76695e;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
-.oauth-account-links li a {
-  flex: 0 0 auto;
-  color: #2f5d45;
+.oauth-account-links li small[data-linked='true'] {
+  color: #2f6b4e;
+}
+
+.oauth-account-action {
+  display: inline-flex;
+  min-width: 76px;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-size: 13px;
   font-weight: 800;
+  line-height: 1;
+  text-decoration: none;
 }
 
-.oauth-account-links li button {
+.oauth-account-links .oauth-account-action--link {
+  color: #fff;
+  background: #2f5d45;
+}
+
+.oauth-account-links .oauth-account-action--unlink {
   width: auto;
-  flex: 0 0 auto;
+  border: 1px solid #c9655a;
+  color: #8d241c;
+  background: #fff7f5;
+}
+
+@media (max-width: 480px) {
+  .oauth-account-links li {
+    grid-template-columns: 1fr;
+  }
+
+  .oauth-account-action {
+    width: 100%;
+    justify-self: stretch;
+  }
 }
 
 .account-deletion {
