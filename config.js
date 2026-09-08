@@ -2,7 +2,7 @@ window.APP_CONFIG = Object.freeze({
   apiBaseUrl: "/api/v1",
   oauthEnabled: false,
   oauthProviders: Object.freeze([]),
-  boardApiEnabled: false,
+  boardApiEnabled: true,
   lectureApiEnabled: false,
   demoRoleSwitcher: true,
   paymentProvider: "toss-payments",
