@@ -344,6 +344,22 @@ select {
   color: #6a5d50;
 }
 
+.subscription-resume-button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid #ad3a2f;
+  border-radius: 9px;
+  color: #8d2f27;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.subscription-resume-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 @media (max-width: 800px) {
   .subscription-plan-grid-react {
     grid-template-columns: repeat(2, minmax(0, 1fr));

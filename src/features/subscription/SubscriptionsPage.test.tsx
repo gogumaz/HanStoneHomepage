@@ -22,7 +22,7 @@ function apiResponse(data: unknown, status = 200) {
   });
 }
 
-function installApiMock() {
+function installApiMock(orders: unknown[] = []) {
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith('/me')) {
@@ -41,7 +41,8 @@ function installApiMock() {
         items: [{ id: 'subscription-1m', label: '1개월', months: 1, price: 10_000, recommended: false }],
       });
     }
-    if (url.endsWith('/me/subscriptions') || url.endsWith('/me/orders')) return apiResponse({ items: [] });
+    if (url.endsWith('/me/subscriptions')) return apiResponse({ items: [] });
+    if (url.endsWith('/me/orders')) return apiResponse({ items: orders });
     if (url.endsWith('/orders/checkout') && init?.method === 'POST') return apiResponse(checkout, 201);
     throw new Error(`Unexpected request: ${url}`);
   });
@@ -126,6 +127,68 @@ describe('SubscriptionsPage Toss test widget', () => {
     })));
   });
 
+  it('does not create an order when the browser client key is missing', async () => {
+    const fetchMock = installApiMock();
+    window.APP_CONFIG = {
+      apiBaseUrl: '/api/v1',
+      tossPayments: { mode: 'test', clientKey: '' },
+    };
+
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '결제하기' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('새 주문은 생성되지 않았습니다.');
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/orders/checkout'))).toBe(false);
+  });
+
+  it('offers a valid pending order again and labels an expired order clearly', async () => {
+    installApiMock([
+      {
+        id: 'sub_pending_future_001',
+        planId: 'subscription-1m',
+        orderName: '바둑대국 1개월 구독',
+        amount: 10_000,
+        planLabelSnapshot: '1개월',
+        monthsSnapshot: 1,
+        status: 'pending',
+        provider: 'toss-payments',
+        paymentId: null,
+        paymentMethod: null,
+        paidAt: null,
+        refundedAmount: 0,
+        refundedAt: null,
+        expiresAt: '2099-01-01T00:00:00.000Z',
+        createdAt: '2026-09-08T10:37:00.000Z',
+      },
+      {
+        id: 'sub_pending_expired_001',
+        planId: 'subscription-1m',
+        orderName: '바둑대국 1개월 구독',
+        amount: 10_000,
+        planLabelSnapshot: '1개월',
+        monthsSnapshot: 1,
+        status: 'pending',
+        provider: 'toss-payments',
+        paymentId: null,
+        paymentMethod: null,
+        paidAt: null,
+        refundedAmount: 0,
+        refundedAt: null,
+        expiresAt: '2020-01-01T00:00:00.000Z',
+        createdAt: '2020-01-01T00:00:00.000Z',
+      },
+    ]);
+    window.APP_CONFIG = {
+      apiBaseUrl: '/api/v1',
+      tossPayments: { mode: 'test', clientKey: 'test_gck_subscription_12345678' },
+    };
+
+    renderPage();
+
+    expect((await screen.findAllByRole('button', { name: '결제 계속하기' })).length).toBe(2);
+    expect(screen.getByText('결제 기한 만료')).toBeInTheDocument();
+  });
+
   it('keeps payment disabled and explains a widget rendering failure', async () => {
     installApiMock();
     window.APP_CONFIG = {
@@ -143,9 +206,9 @@ describe('SubscriptionsPage Toss test widget', () => {
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: '결제하기' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(
       '결제위젯을 표시하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.',
-    );
+    ));
     expect(screen.getByRole('button', { name: '결제위젯 준비 중…' })).toBeDisabled();
   });
 });
