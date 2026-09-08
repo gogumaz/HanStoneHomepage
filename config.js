@@ -8,7 +8,7 @@ window.APP_CONFIG = Object.freeze({
   paymentProvider: "toss-payments",
   tossPayments: Object.freeze({
     mode: "test",
-    clientKey: "",
+    clientKey: "test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm",
     paymentMethodVariantKey: "DEFAULT",
     agreementVariantKey: "AGREEMENT"
   })
