@@ -1,7 +1,7 @@
 window.APP_CONFIG = Object.freeze({
   apiBaseUrl: "/api/v1",
-  oauthEnabled: false,
-  oauthProviders: Object.freeze([]),
+  oauthEnabled: true,
+  oauthProviders: Object.freeze(["naver", "kakao", "google"]),
   boardApiEnabled: true,
   lectureApiEnabled: false,
   demoRoleSwitcher: true,
