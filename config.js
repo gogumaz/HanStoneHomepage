@@ -3,8 +3,8 @@ window.APP_CONFIG = Object.freeze({
   oauthEnabled: true,
   oauthProviders: Object.freeze(["naver", "kakao", "google"]),
   boardApiEnabled: true,
-  lectureApiEnabled: false,
-  demoRoleSwitcher: true,
+  lectureApiEnabled: true,
+  demoRoleSwitcher: false,
   paymentProvider: "toss-payments",
   tossPayments: Object.freeze({
     mode: "test",
