@@ -111,7 +111,12 @@ async function loadLessons() {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error?.message || '강의 목록을 불러오지 못했습니다.');
   const items = payload.data?.items || payload.data || payload.items || [];
-  lessons = items.map(item => ({ ...item, isFreeSample: isFreeSampleLesson(item) }));
+  lessons = items.map(item => ({
+    ...item,
+    era: typeof item.era === 'object' ? item.era?.name || '' : item.era,
+    status: item.status || 'published',
+    isFreeSample: isFreeSampleLesson(item)
+  }));
 }
 
 async function loadSubscriptionPlans() {
