@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
 import type { CurrentUser as CurrentUserValue } from "../auth/auth.types.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import { Roles } from "../auth/roles.decorator.js";
@@ -8,6 +8,8 @@ import type { ApiRequest } from "../common/http-types.js";
 import { EditorialContentType } from "../generated/prisma/enums.js";
 import { EditorialService } from "./editorial.service.js";
 
+type RedirectResponse = { redirect(status: number, url: string): void };
+
 @Controller()
 export class EditorialController {
   constructor(private readonly editorial: EditorialService) {}
@@ -15,6 +17,12 @@ export class EditorialController {
   @Get("notices")
   listNotices(@Query() query: Record<string, unknown>) {
     return this.editorial.listPublicNotices(query);
+  }
+
+  @Get("notices/:contentId/attachment")
+  async downloadNotice(@Param("contentId") contentId: string, @Res() response: RedirectResponse) {
+    const signed = await this.editorial.downloadNotice(contentId);
+    response.redirect(302, signed.url);
   }
 
   @Get("faqs")
@@ -27,6 +35,14 @@ export class EditorialController {
   @Roles("operator", "admin")
   listAdminNotices(@Query() query: Record<string, unknown>) {
     return this.editorial.listAdminNotices(query);
+  }
+
+  @Get("admin/notices/:contentId/attachment")
+  @UseGuards(SessionAuthGuard, RolesGuard)
+  @Roles("operator", "admin")
+  async downloadAdminNotice(@Param("contentId") contentId: string, @Res() response: RedirectResponse) {
+    const signed = await this.editorial.downloadNotice(contentId, true);
+    response.redirect(302, signed.url);
   }
 
   @Get("admin/faqs")

@@ -1,4 +1,4 @@
-export const REQUIRED_RECOVERY_MIGRATION = "20260904000100_mission_era_catalog";
+export const REQUIRED_RECOVERY_MIGRATION = "20260913000100_notice_attachments";
 
 export const REQUIRED_RECOVERY_TABLES = [
   "User",

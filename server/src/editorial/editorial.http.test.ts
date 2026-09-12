@@ -7,6 +7,8 @@ import { ApiExceptionFilter } from "../common/api-exception.filter.js";
 import { ApiResponseInterceptor } from "../common/api-response.interceptor.js";
 import { RequestIdMiddleware } from "../common/request-id.middleware.js";
 import { PrismaService } from "../database/prisma.service.js";
+import { MalwareScannerService } from "../storage/malware-scanner.service.js";
+import { ObjectStorageService } from "../storage/object-storage.service.js";
 import { listenForHttpTest } from "../test-utils/listen-test-app.js";
 import {
   AccountStatus,
@@ -52,6 +54,7 @@ function createPrismaMock() {
       publishedAt: new Date("2100-01-01T00:00:00.000Z"),
     }),
   ];
+  const attachments: Array<Record<string, any>> = [];
   const auditCreate = vi.fn(async () => ({ id: "editorial-audit" }));
   const matches = (record: Record<string, any>, where: Record<string, any>) => {
     if (where.type && record.type !== where.type) return false;
@@ -77,20 +80,72 @@ function createPrismaMock() {
         }
         return 0;
       });
-      return filtered.slice(skip, skip + take);
+      return filtered.slice(skip, skip + take).map(withAttachment);
     }),
     count: vi.fn(async ({ where }: { where: Record<string, any> }) => records.filter((record) => matches(record, where)).length),
-    findFirst: vi.fn(async ({ where }: { where: Record<string, any> }) => records.find((record) => matches(record, where)) ?? null),
+    findFirst: vi.fn(async ({ where }: { where: Record<string, any> }) => {
+      const record = records.find((item) => matches(item, where));
+      return record ? withAttachment(record) : null;
+    }),
     create: vi.fn(async ({ data }: { data: Record<string, any> }) => {
       const record = editorial({ id: `editorial-${records.length + 1}`, ...data });
       records.push(record);
-      return record;
+      return withAttachment(record);
     }),
     update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, any> }) => {
       const record = records.find((item) => item.id === where.id);
       if (!record) throw new Error("editorial content missing");
       Object.assign(record, data, { updatedAt: new Date() });
-      return record;
+      return withAttachment(record);
+    }),
+    findUniqueOrThrow: vi.fn(async ({ where }: { where: { id: string } }) => {
+      const record = records.find((item) => item.id === where.id);
+      if (!record) throw new Error("editorial content missing");
+      return withAttachment(record);
+    }),
+  };
+  function withAttachment(record: Record<string, any>) {
+    return {
+      ...record,
+      attachment: attachments.find((item) => item.editorialContentId === record.id) ?? null,
+    };
+  }
+  const attachmentMatches = (attachment: Record<string, any>, where: Record<string, any>) => Object.entries(where)
+    .every(([key, value]) => key === "editorialContent" || value === undefined || attachment[key] === value);
+  const communityAttachment = {
+    create: vi.fn(async ({ data }: { data: Record<string, any> }) => {
+      const now = new Date();
+      const attachment = {
+        postId: null,
+        editorialContentId: null,
+        status: "QUARANTINED",
+        scanProvider: null,
+        scanResult: null,
+        scannedAt: null,
+        createdAt: now,
+        updatedAt: now,
+        ...data,
+      };
+      attachments.push(attachment);
+      return attachment;
+    }),
+    findFirst: vi.fn(async ({ where }: { where: Record<string, any> }) => {
+      if (where.editorialContent) {
+        const content = records.find((record) => record.id === where.editorialContentId);
+        if (!content || !matches(content, where.editorialContent)) return null;
+      }
+      return attachments.find((item) => attachmentMatches(item, where)) ?? null;
+    }),
+    update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, any> }) => {
+      const attachment = attachments.find((item) => item.id === where.id);
+      if (!attachment) throw new Error("attachment missing");
+      Object.assign(attachment, data, { updatedAt: new Date() });
+      return attachment;
+    }),
+    updateMany: vi.fn(async ({ where, data }: { where: Record<string, any>; data: Record<string, any> }) => {
+      const matched = attachments.filter((item) => attachmentMatches(item, where));
+      matched.forEach((item) => Object.assign(item, data, { updatedAt: new Date() }));
+      return { count: matched.length };
     }),
   };
   const sessions = new Map([
@@ -99,6 +154,7 @@ function createPrismaMock() {
   ]);
   const prisma = {
     editorialContent,
+    communityAttachment,
     auditLog: { create: auditCreate },
     session: {
       findUnique: vi.fn(async ({ where }: { where: { tokenHash: string } }) => {
@@ -113,9 +169,38 @@ function createPrismaMock() {
       }),
     },
     isReady: vi.fn(async () => true),
-    $transaction: vi.fn(async (operation: (transaction: unknown) => unknown) => operation(prisma)),
+    $transaction: vi.fn(async (operation: (transaction: unknown) => unknown) => {
+      const recordSnapshot = records.map((record) => ({ ...record }));
+      const attachmentSnapshot = attachments.map((attachment) => ({ ...attachment }));
+      try {
+        return await operation(prisma);
+      } catch (error) {
+        records.splice(0, records.length, ...recordSnapshot);
+        attachments.splice(0, attachments.length, ...attachmentSnapshot);
+        throw error;
+      }
+    }),
   };
-  return { prisma: prisma as unknown as PrismaService, records, auditCreate };
+  const storage = {
+    getCommunityAttachmentMaxBytes: vi.fn(() => 20 * 1024 * 1024),
+    createCommunityAttachmentUpload: vi.fn(async ({ attachmentId, extension }: { attachmentId: string; extension: string }) => ({
+      method: "POST" as const,
+      url: "https://storage.example.test/upload",
+      fields: { key: `community-attachments/${attachmentId}/source.${extension}` },
+      expiresAt: new Date(Date.now() + 60_000),
+    })),
+    inspectCommunityAttachment: vi.fn(async () => new TextEncoder().encode("%PDF-1.7 notice")),
+    signAssetUrl: vi.fn(async () => ({ url: "https://cdn.example.test/notices/notice.pdf", expiresAt: new Date(Date.now() + 60_000) })),
+  };
+  const scanner = { scan: vi.fn(async () => ({ clean: true, provider: "clamav", result: "OK" })) };
+  return {
+    prisma: prisma as unknown as PrismaService,
+    storage: storage as unknown as ObjectStorageService,
+    scanner: scanner as unknown as MalwareScannerService,
+    records,
+    attachments,
+    auditCreate,
+  };
 }
 
 function editorial(overrides: Record<string, any>) {
@@ -150,6 +235,10 @@ describe("editorial content HTTP flow", () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PrismaService)
       .useValue(state.prisma)
+      .overrideProvider(ObjectStorageService)
+      .useValue(state.storage)
+      .overrideProvider(MalwareScannerService)
+      .useValue(state.scanner)
       .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix("api/v1");
@@ -201,19 +290,111 @@ describe("editorial content HTTP flow", () => {
     expect(attachment.status).toBe(400);
     expect((await attachment.json() as any).error.code).toBe("EDITORIAL_ATTACHMENT_NOT_SUPPORTED");
 
-    const created = await request("baduk_session=editorial-operator");
+    const missingAttachment = await request("baduk_session=editorial-operator", {
+      attachmentId: "00000000-0000-4000-8000-000000000799",
+    });
+    expect(missingAttachment.status).toBe(409);
+    expect((await missingAttachment.json() as any).error.code).toBe("EDITORIAL_ATTACHMENT_NOT_READY");
+
+    const operatorHeaders = {
+      "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
+      cookie: "baduk_session=editorial-operator",
+    };
+    const uploadIntent = await fetch(`${baseUrl}/api/v1/community-attachments/uploads`, {
+      method: "POST",
+      headers: operatorHeaders,
+      body: JSON.stringify({
+        kind: "material",
+        fileName: "notice.pdf",
+        contentType: "application/pdf",
+        size: 16,
+      }),
+    });
+    const uploadPayload = await uploadIntent.json() as any;
+    expect(uploadIntent.status, JSON.stringify(uploadPayload)).toBe(201);
+    const attachmentId = uploadPayload.data.attachment.id as string;
+    const completed = await fetch(`${baseUrl}/api/v1/community-attachments/${attachmentId}/complete`, {
+      method: "POST",
+      headers: { "x-requested-with": "XMLHttpRequest", cookie: "baduk_session=editorial-operator" },
+    });
+    expect(completed.status).toBe(201);
+
+    const created = await request("baduk_session=editorial-operator", { attachmentId });
     const createdPayload = await created.json() as any;
     expect(created.status, JSON.stringify(createdPayload)).toBe(201);
-    expect(createdPayload.data.item).toMatchObject({ title: "새 강의 공개 안내", status: "published" });
+    expect(createdPayload.data.item).toMatchObject({
+      title: "새 강의 공개 안내",
+      status: "published",
+      attachment: {
+        id: attachmentId,
+        originalName: "notice.pdf",
+        status: "ready",
+        downloadUrl: `/api/v1/admin/notices/${createdPayload.data.item.id}/attachment`,
+      },
+    });
     const publicList = await fetch(`${baseUrl}/api/v1/notices?category=${encodeURIComponent("콘텐츠")}`);
-    expect((await publicList.json() as any).data.items).toHaveLength(1);
+    const publicPayload = await publicList.json() as any;
+    expect(publicPayload.data.items).toHaveLength(1);
+    expect(publicPayload.data.items[0].attachment.downloadUrl)
+      .toBe(`/api/v1/notices/${createdPayload.data.item.id}/attachment`);
+    const download = await fetch(`${baseUrl}${publicPayload.data.items[0].attachment.downloadUrl}`, {
+      redirect: "manual",
+    });
+    expect(download.status).toBe(302);
+    expect(download.headers.get("location")).toBe("https://cdn.example.test/notices/notice.pdf");
     expect(state.auditCreate).toHaveBeenLastCalledWith({
       data: expect.objectContaining({
         action: "editorial.notice.created",
-        metadata: { type: "notice", category: "콘텐츠", status: "published" },
+        metadata: { type: "notice", category: "콘텐츠", status: "published", hasAttachment: true },
       }),
     });
     expect(JSON.stringify(state.auditCreate.mock.calls.at(-1))).not.toContain("새로운 강의가 공개되었습니다");
+
+    const noticeId = createdPayload.data.item.id as string;
+    const rejectedReplacement = await fetch(`${baseUrl}/api/v1/admin/notices/${noticeId}`, {
+      method: "PATCH",
+      headers: operatorHeaders,
+      body: JSON.stringify({ attachmentId: "00000000-0000-4000-8000-000000000798" }),
+    });
+    expect(rejectedReplacement.status).toBe(409);
+    expect(state.attachments.find((item) => item.id === attachmentId)?.editorialContentId).toBe(noticeId);
+
+    const replacementIntent = await fetch(`${baseUrl}/api/v1/community-attachments/uploads`, {
+      method: "POST",
+      headers: operatorHeaders,
+      body: JSON.stringify({
+        kind: "material",
+        fileName: "notice-replacement.pdf",
+        contentType: "application/pdf",
+        size: 16,
+      }),
+    });
+    const replacementPayload = await replacementIntent.json() as any;
+    expect(replacementIntent.status, JSON.stringify(replacementPayload)).toBe(201);
+    const replacementId = replacementPayload.data.attachment.id as string;
+    expect((await fetch(`${baseUrl}/api/v1/community-attachments/${replacementId}/complete`, {
+      method: "POST",
+      headers: { "x-requested-with": "XMLHttpRequest", cookie: "baduk_session=editorial-operator" },
+    })).status).toBe(201);
+
+    const replaced = await fetch(`${baseUrl}/api/v1/admin/notices/${noticeId}`, {
+      method: "PATCH",
+      headers: operatorHeaders,
+      body: JSON.stringify({ attachmentId: replacementId }),
+    });
+    expect((await replaced.json() as any).data.item.attachment.id).toBe(replacementId);
+    expect(state.attachments.find((item) => item.id === attachmentId)?.editorialContentId).toBeNull();
+    expect(state.attachments.find((item) => item.id === replacementId)?.editorialContentId).toBe(noticeId);
+
+    const detached = await fetch(`${baseUrl}/api/v1/admin/notices/${noticeId}`, {
+      method: "PATCH",
+      headers: operatorHeaders,
+      body: JSON.stringify({ attachmentId: null }),
+    });
+    expect((await detached.json() as any).data.item.attachment).toBeNull();
+    expect(state.attachments.find((item) => item.id === replacementId)?.editorialContentId).toBeNull();
+    expect((await fetch(`${baseUrl}/api/v1/notices/${noticeId}/attachment`)).status).toBe(404);
   });
 
   it("keeps FAQ drafts private, publishes them, and archives instead of deleting", async () => {

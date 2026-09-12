@@ -211,6 +211,7 @@ describe("LessonVideoCleanupWorkerService", () => {
       id: "00000000-0000-4000-8000-000000000702",
       ownerUserId: "00000000-0000-4000-8000-000000000402",
       postId: null,
+      editorialContentId: null,
       objectKey: "community-attachments/00000000-0000-4000-8000-000000000702/source.pdf",
       status: "READY",
       createdAt: new Date("2026-08-23T11:59:59.000Z"),
@@ -220,7 +221,9 @@ describe("LessonVideoCleanupWorkerService", () => {
     const prisma: Value = {
       communityAttachment: {
         findMany: vi.fn(async () => [candidate]),
-        deleteMany: vi.fn(async () => ({ count: candidate.postId === null ? 1 : 0 })),
+        deleteMany: vi.fn(async () => ({
+          count: candidate.postId === null && candidate.editorialContentId === null ? 1 : 0,
+        })),
       },
       objectDeletionJob: { upsert: deletionUpsert },
       auditLog: { create: auditCreate },
@@ -232,6 +235,12 @@ describe("LessonVideoCleanupWorkerService", () => {
     );
 
     await expect(worker.scheduleAbandonedCommunityAttachments(now)).resolves.toBe(1);
+    expect(prisma.communityAttachment.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ postId: null, editorialContentId: null }),
+    }));
+    expect(prisma.communityAttachment.deleteMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ postId: null, editorialContentId: null }),
+    }));
     expect(deletionUpsert).toHaveBeenCalledWith(expect.objectContaining({
       create: expect.objectContaining({
         reason: "COMMUNITY_ATTACHMENT_UNATTACHED_EXPIRED",

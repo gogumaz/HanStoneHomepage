@@ -185,6 +185,7 @@ function createPrismaMock() {
       const now = new Date();
       const attachment = {
         postId: null,
+        editorialContentId: null,
         status: CommunityAttachmentStatus.QUARANTINED,
         scanProvider: null,
         scanResult: null,

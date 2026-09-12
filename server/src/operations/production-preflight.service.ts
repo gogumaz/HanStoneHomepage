@@ -35,7 +35,7 @@ export type ProductionPreflightReport = {
   checks: PreflightCheck[];
 };
 
-export const REQUIRED_PRODUCTION_MIGRATION = "20260904000100_mission_era_catalog";
+export const REQUIRED_PRODUCTION_MIGRATION = "20260913000100_notice_attachments";
 
 class ConfigurationError extends Error {
   constructor(readonly code: string) {

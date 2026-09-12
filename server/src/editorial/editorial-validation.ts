@@ -1,6 +1,6 @@
 import { HttpStatus } from "@nestjs/common";
 import { ApiError } from "../common/api-error.js";
-import { readInputObject, requiredInteger, requiredString } from "../common/input-validation.js";
+import { optionalString, readInputObject, requiredInteger, requiredString } from "../common/input-validation.js";
 import { EditorialContentStatus } from "../generated/prisma/enums.js";
 
 export const NOTICE_CATEGORIES = ["서비스", "점검", "콘텐츠", "이벤트"] as const;
@@ -14,11 +14,12 @@ const STATUS_VALUES = {
 
 const INVALID_CODE = "EDITORIAL_CONTENT_INVALID";
 const INVALID_MESSAGE = "게시글 입력 내용을 확인해 주세요.";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export function validateNoticeCreate(body: unknown) {
   const input = readInputObject(
     body,
-    ["category", "title", "content", "publishedAt", "isPinned", "attachment"],
+    ["category", "title", "content", "publishedAt", "isPinned", "attachment", "attachmentId"],
     INVALID_CODE,
     INVALID_MESSAGE,
   );
@@ -29,6 +30,13 @@ export function validateNoticeCreate(body: unknown) {
     content: content(input),
     publishedAt: requiredDate(input.publishedAt),
     isPinned: optionalBoolean(input.isPinned, false),
+    attachmentId: optionalString(
+      input,
+      "attachmentId",
+      { maxLength: 36, pattern: UUID_PATTERN },
+      INVALID_CODE,
+      INVALID_MESSAGE,
+    ),
   };
 }
 
@@ -53,7 +61,7 @@ export function validateFaqCreate(body: unknown, now = new Date()) {
 export function validateNoticeUpdate(body: unknown) {
   const input = readInputObject(
     body,
-    ["category", "title", "content", "publishedAt", "isPinned", "status", "attachment"],
+    ["category", "title", "content", "publishedAt", "isPinned", "status", "attachment", "attachmentId"],
     INVALID_CODE,
     INVALID_MESSAGE,
   );
@@ -65,6 +73,15 @@ export function validateNoticeUpdate(body: unknown) {
     ...(input.publishedAt !== undefined ? { publishedAt: requiredDate(input.publishedAt) } : {}),
     ...(input.isPinned !== undefined ? { isPinned: optionalBoolean(input.isPinned, false) } : {}),
     ...(input.status !== undefined ? { status: status(input.status) } : {}),
+    ...(Object.hasOwn(input, "attachmentId") ? {
+      attachmentId: optionalString(
+        input,
+        "attachmentId",
+        { maxLength: 36, pattern: UUID_PATTERN },
+        INVALID_CODE,
+        INVALID_MESSAGE,
+      ),
+    } : {}),
   };
   requireChange(data);
   return data;
@@ -149,7 +166,7 @@ function rejectAttachment(value: unknown): void {
   if (value !== undefined && value !== null && value !== "") {
     throw new ApiError(
       "EDITORIAL_ATTACHMENT_NOT_SUPPORTED",
-      "공지 첨부파일은 아직 지원하지 않습니다.",
+      "공지 첨부파일은 안전 검사를 완료한 첨부 ID로 연결해 주세요.",
       HttpStatus.BAD_REQUEST,
     );
   }

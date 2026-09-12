@@ -7,7 +7,7 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const REQUIRED_MIGRATION = "20260830000400_minor_account_consent";
+const REQUIRED_MIGRATION = "20260913000100_notice_attachments";
 const { Client } = pg;
 const client = new Client({ connectionString: databaseUrl });
 let transactionStarted = false;
@@ -62,6 +62,7 @@ try {
   const communityPostId = randomUUID();
   const communityReportId = randomUUID();
   const communityAttachmentId = randomUUID();
+  const noticeAttachmentId = randomUUID();
   const teachingMaterialId = randomUUID();
   const teachingMaterialAssetId = randomUUID();
   const teachingMaterialRevisionId = randomUUID();
@@ -128,6 +129,27 @@ try {
      VALUES ($1, $2, $3, 'MATERIAL', $4, $5, 'application/pdf', 128, 'READY', 'clamav', 'OK', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
     [communityAttachmentId, userId, communityPostId, `community-attachments/${communityAttachmentId}/source.pdf`, "database-smoke.pdf"],
   );
+  await client.query(
+    `INSERT INTO "CommunityAttachment"
+       ("id", "ownerUserId", "editorialContentId", "kind", "objectKey", "originalName", "contentType", "size", "status", "scanProvider", "scanResult", "scannedAt", "updatedAt")
+     VALUES ($1, $2, $3, 'MATERIAL', $4, $5, 'application/pdf', 128, 'READY', 'clamav', 'OK', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [noticeAttachmentId, userId, editorialContentId, `community-attachments/${noticeAttachmentId}/source.pdf`, "database-smoke-notice.pdf"],
+  );
+  await client.query("SAVEPOINT notice_attachment_parent_check");
+  let singleParentEnforced = false;
+  try {
+    await client.query(
+      `UPDATE "CommunityAttachment" SET "postId" = $1 WHERE "id" = $2`,
+      [communityPostId, noticeAttachmentId],
+    );
+  } catch (error) {
+    if (error && typeof error === "object" && error.code === "23514") singleParentEnforced = true;
+    else throw error;
+  } finally {
+    await client.query("ROLLBACK TO SAVEPOINT notice_attachment_parent_check");
+    await client.query("RELEASE SAVEPOINT notice_attachment_parent_check");
+  }
+  if (!singleParentEnforced) throw new Error("COMMUNITY_ATTACHMENT_SINGLE_PARENT_NOT_ENFORCED");
   await client.query(
     `INSERT INTO "TeachingMaterial"
        ("id", "category", "title", "content", "lessonId", "version", "accessLevel", "status", "publishedAt", "createdById", "updatedById", "updatedAt")
@@ -275,11 +297,12 @@ try {
        EXISTS (SELECT 1 FROM "ClassHelper" WHERE "id" = $17 AND "lessonId" = $15 AND "badukMissionId" = $3 AND "status" = 'PUBLISHED') AS "classHelper",
        ((SELECT COUNT(*) FROM "ClassHelperAsset" WHERE "classHelperId" = $17 AND "ownerUserId" = $2 AND "status" = 'READY') = 6) AS "classHelperAssets",
        EXISTS (SELECT 1 FROM "AccountToken" WHERE "id" = $18 AND "userId" = $2) AS "accountToken",
-       EXISTS (SELECT 1 FROM "AccountMailJob" WHERE "id" = $19 AND "tokenId" = $18 AND "status" = 'PENDING') AS "accountMailJob"`,
-    [oauthAttemptId, userId, mission.rows[0].id, missionAttemptId, consultationId, inquiryId, inquiryNotificationId, userNotificationId, inquiryAttachmentId, editorialContentId, communityPostId, communityReportId, communityAttachmentId, teachingMaterialId, lesson.rows[0].id, teachingMaterialAssetId, classHelperId, accountTokenId, accountMailJobId],
+       EXISTS (SELECT 1 FROM "AccountMailJob" WHERE "id" = $19 AND "tokenId" = $18 AND "status" = 'PENDING') AS "accountMailJob",
+       EXISTS (SELECT 1 FROM "CommunityAttachment" WHERE "id" = $20 AND "editorialContentId" = $10 AND "postId" IS NULL AND "ownerUserId" = $2 AND "status" = 'READY') AS "noticeAttachment"`,
+    [oauthAttemptId, userId, mission.rows[0].id, missionAttemptId, consultationId, inquiryId, inquiryNotificationId, userNotificationId, inquiryAttachmentId, editorialContentId, communityPostId, communityReportId, communityAttachmentId, teachingMaterialId, lesson.rows[0].id, teachingMaterialAssetId, classHelperId, accountTokenId, accountMailJobId, noticeAttachmentId],
   );
   const result = verified.rows[0];
-  if (!result.oauth || !result.favorite || !result.reward || !result.consultation || !result.inquiry || !result.notification || !result.userNotification || !result.inquiryAttachment || !result.editorialContent || !result.communityPost || !result.communityReport || !result.communityAttachment || !result.teachingMaterial || !result.teachingMaterialAsset || !result.classHelper || !result.classHelperAssets || !result.accountToken || !result.accountMailJob) {
+  if (!result.oauth || !result.favorite || !result.reward || !result.consultation || !result.inquiry || !result.notification || !result.userNotification || !result.inquiryAttachment || !result.editorialContent || !result.communityPost || !result.communityReport || !result.communityAttachment || !result.noticeAttachment || !result.teachingMaterial || !result.teachingMaterialAsset || !result.classHelper || !result.classHelperAssets || !result.accountToken || !result.accountMailJob) {
     throw new Error("DATABASE_RELATION_VERIFICATION_FAILED");
   }
   const revisions = await client.query(
@@ -303,7 +326,7 @@ try {
   process.stdout.write(`${JSON.stringify({
     ok: true,
     migration: REQUIRED_MIGRATION,
-    checks: ["sql-parameterization", "oauth-link", "mission-attempt", "mission-favorite", "reward-grant", "consultation-consent", "private-inquiry", "inquiry-notification-outbox", "user-notification", "inquiry-attachment", "editorial-content", "community-post", "community-report", "community-attachment", "teaching-material", "teaching-material-asset", "teaching-material-revision", "class-helper", "class-helper-assets", "class-helper-revision"],
+    checks: ["sql-parameterization", "oauth-link", "mission-attempt", "mission-favorite", "reward-grant", "consultation-consent", "private-inquiry", "inquiry-notification-outbox", "user-notification", "inquiry-attachment", "editorial-content", "community-post", "community-report", "community-attachment", "notice-attachment", "attachment-single-parent", "teaching-material", "teaching-material-asset", "teaching-material-revision", "class-helper", "class-helper-assets", "class-helper-revision"],
     mutation: "rolled-back",
   })}\n`);
 } catch (error) {

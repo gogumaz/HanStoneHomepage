@@ -488,11 +488,13 @@ POST /api/v1/store/orders/checkout
 | `PATCH` | `/me/notifications/{id}/read` | 본인 알림 읽음 처리 |
 | `PATCH` | `/me/notifications/read-all` | 본인 미확인 알림 전체 읽음 처리 |
 | `GET` | `/notices` | 공지사항 |
+| `GET` | `/notices/{id}/attachment` | 공개 상태·공개 시각을 재검사한 공지 첨부 다운로드로 리다이렉트 |
 | `GET` | `/faqs` | FAQ 목록 |
 | `GET` | `/admin/notices`, `/admin/faqs` | 운영자 초안·예약·공개·보관 콘텐츠 조회 |
 | `POST` | `/admin/notices`, `/admin/faqs` | 운영자 공지·FAQ 등록 |
 | `PATCH` | `/admin/notices/{id}`, `/admin/faqs/{id}` | 운영자 내용·공개 상태·순서 수정 |
 | `DELETE` | `/admin/notices/{id}`, `/admin/faqs/{id}` | 삭제 대신 보관 상태로 전환 |
+| `GET` | `/admin/notices/{id}/attachment` | 운영자 공지 첨부 다운로드로 리다이렉트 |
 | `GET` | `/posts?type=classTip|travel` | 공개 글과 로그인한 지도자 본인의 검토 중 글 조회 |
 | `POST` | `/posts` | 지도자 검토 요청 또는 운영자 즉시 공개 등록 |
 | `PATCH`, `DELETE` | `/posts/{id}` | 작성자·운영자 수정과 삭제 대신 보관 |
@@ -502,9 +504,11 @@ POST /api/v1/store/orders/checkout
 | `POST` | `/posts/{id}/reports` | 로그인 회원의 공개 게시글 신고(시간당 10회, 게시글별 1회) |
 | `GET` | `/admin/community-reports` | 운영자 신고 상태·게시판 유형·페이지 조회 |
 | `POST` | `/admin/community-reports/{id}/resolve` | 운영자 게시글 숨김 또는 신고 기각 |
-| `POST` | `/community-attachments/uploads` | 지도자·운영자 커뮤니티 첨부 격리 업로드 정책 생성 |
+| `POST` | `/community-attachments/uploads` | 지도자·운영자 공지·커뮤니티 첨부 격리 업로드 정책 생성 |
 | `POST` | `/community-attachments/{id}/complete` | 파일 시그니처·EXIF GPS·ClamAV 검사 완료 |
 | `GET` | `/posts/{id}/attachment` | 공개 글 또는 작성자·운영자용 짧은 첨부 URL로 리다이렉트 |
+
+공지 첨부는 커뮤니티의 `material` 안전 업로드 파이프라인을 공유합니다. PDF·PPTX·DOCX·HWPX 확장자와 MIME·크기·객체 메타데이터·파일 시그니처·압축 컨테이너 구조·ClamAV 검사를 모두 통과한 운영자 소유 파일만 `attachmentId`로 연결합니다. DB 제약과 조건부 갱신으로 하나의 첨부가 공지와 커뮤니티 글에 동시에 연결되는 것을 막고, 공개 전·예약·보관 공지의 공개 다운로드를 차단합니다.
 
 상담 입력값은 허용 필드·형식·길이를 서버에서 검증하고, 개인정보 동의 문서 버전과 동의 시간을 서버 시각으로 함께 저장합니다. 공개 접수는 IP별 시간당 5회로 제한하고 접수 응답에는 연락처와 이메일을 포함하지 않습니다. 로그인 사용자는 `/me/consultations`에서 본인 접수만 조회할 수 있습니다. 학생 등 일반 회원의 공개 게시 기능을 추가할 경우 현재 신고·숨김 흐름에 금칙어와 반복 위반자 정책을 추가해야 합니다.
 

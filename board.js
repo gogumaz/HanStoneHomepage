@@ -28,7 +28,7 @@ const BOARD_CONFIG = {
       { name: 'content', label: '내용', type: 'textarea', required: true, full: true },
       { name: 'publishedAt', label: '공개일', type: 'date', required: true },
       { name: 'isPinned', label: '상단 고정', type: 'checkbox' },
-      { name: 'attachment', label: '첨부파일', type: 'file', full: true }
+      { name: 'attachment', label: '첨부파일', type: 'file', accept: '.pdf,.pptx,.docx,.hwpx', full: true }
     ]
   },
   classTip: {
@@ -552,6 +552,8 @@ function renderDetailAttachments(record) {
         kind: typeof value === 'object' ? value.kind : null,
         downloadUrl: boardType === 'inquiry' && typeof value === 'object'
           ? apiUrl(`/me/inquiries/${encodeURIComponent(record.id)}/attachment`)
+          : boardType === 'notice' && typeof value === 'object' && value.downloadUrl
+            ? apiUrl(String(value.downloadUrl).replace(/^\/api\/v1/, ''))
           : ['classTip', 'travel'].includes(boardType) && typeof value === 'object' && value.downloadUrl
             ? apiUrl(String(value.downloadUrl).replace(/^\/api\/v1/, ''))
             : boardType === 'resource' && typeof value === 'object' && value.downloadUrl
@@ -568,8 +570,18 @@ function renderDetailAttachments(record) {
     container.replaceChildren();
     return;
   }
+  const attachmentHeading = boardType === 'inquiry'
+    ? '문의 첨부파일'
+    : boardType === 'notice'
+      ? '공지 첨부파일'
+      : `첨부 수업자료 ${attachments.length}개`;
+  const attachmentDescription = boardType === 'inquiry'
+    ? '안전 검사를 통과한 비공개 파일입니다.'
+    : boardType === 'notice'
+      ? '안전 검사를 통과한 공지 자료입니다.'
+      : '게시물 하나에서 순서대로 활용하세요.';
   container.innerHTML = `
-    <div class="attachment-heading"><strong>${boardType === 'inquiry' ? '문의 첨부파일' : `첨부 수업자료 ${attachments.length}개`}</strong><span>${boardType === 'inquiry' ? '안전 검사를 통과한 비공개 파일입니다.' : '게시물 하나에서 순서대로 활용하세요.'}</span></div>
+    <div class="attachment-heading"><strong>${attachmentHeading}</strong><span>${attachmentDescription}</span></div>
     <div class="attachment-package-list">
       ${attachments.map((item, index) => `
         <div class="${item.kind === 'photo' ? 'attachment-photo' : ''}"><b>${String(index + 1).padStart(2, '0')}</b><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.fileName)}</small>${item.kind === 'photo' && item.downloadUrl ? `<img src="${escapeHtml(item.downloadUrl)}" alt="${escapeHtml(record.title || '여행기')} 첨부 사진" loading="lazy">` : ''}</span>${item.downloadUrl ? `<a href="${escapeHtml(item.downloadUrl)}">${item.kind === 'photo' ? '원본 보기' : '다운로드'}</a>` : '<em>첨부</em>'}</div>`).join('')}
@@ -854,7 +866,7 @@ async function submitRecord(event) {
   const inquiryAttachmentFile = boardType === 'inquiry' && config.boardApiEnabled
     ? form.elements.attachment?.files?.[0] || null
     : null;
-  const communityAttachmentFile = ['classTip', 'travel'].includes(boardType) && config.boardApiEnabled
+  const communityAttachmentFile = ['notice', 'classTip', 'travel'].includes(boardType) && config.boardApiEnabled
     ? form.elements.attachment?.files?.[0] || null
     : null;
   const materialFile = boardType === 'resource' && config.boardApiEnabled
@@ -881,9 +893,11 @@ async function submitRecord(event) {
   try {
     if (config.boardApiEnabled) {
       if (['classTip', 'travel'].includes(boardType)) submitted.type = boardType;
-      if (communityAttachmentFile) {
+      if (['notice', 'classTip', 'travel'].includes(boardType)) {
         delete submitted.attachment;
-        submitted.attachmentId = await uploadCommunityAttachment(communityAttachmentFile, boardType);
+        if (communityAttachmentFile) {
+          submitted.attachmentId = await uploadCommunityAttachment(communityAttachmentFile, boardType);
+        }
       }
       if (boardType === 'inquiry') {
         delete submitted.attachment;

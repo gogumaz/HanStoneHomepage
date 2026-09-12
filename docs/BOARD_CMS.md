@@ -245,6 +245,10 @@ Consultation
 | `POST` | `/admin/notices` | 운영자 |
 | `PATCH` | `/admin/notices/{id}` | 운영자 |
 | `DELETE` | `/admin/notices/{id}` | 운영자 |
+| `GET` | `/notices/{id}/attachment` | 공개 중인 공지의 검사 완료 첨부 다운로드 |
+| `GET` | `/admin/notices/{id}/attachment` | 운영자, 공개 전·보관 공지의 검사 완료 첨부 다운로드 |
+| `POST` | `/community-attachments/uploads` | 지도자·운영자, 공지·커뮤니티 격리 업로드 정책 발급 |
+| `POST` | `/community-attachments/{id}/complete` | 소유권·객체 메타데이터·파일 시그니처·ClamAV 검사 완료 |
 | `GET` | `/posts?type=classTip` | 공개 |
 | `GET` | `/posts?type=travel` | 공개 |
 | `POST` | `/posts` | 지도자·운영자 |
@@ -317,6 +321,8 @@ Consultation
 5. 객체 저장소에 원본 저장
 6. 게시글에 `attachmentId` 연결
 7. 다운로드 시 게시판 및 이용권 권한 재검사
+
+공지는 PDF·PPTX·DOCX·HWPX만 받습니다. 운영자가 `material` 종류로 업로드하고 안전 검사를 완료한 파일 ID만 공지 등록·수정 요청의 `attachmentId`로 연결할 수 있습니다. 첨부는 공지 또는 커뮤니티 게시글 중 한 곳에만 연결되며, 공개 다운로드는 게시 상태와 공개 시각을 다시 확인한 뒤 짧은 만료시간의 서명 URL로 이동합니다. 저장소 객체 키는 API 응답에 포함하지 않습니다.
 
 여행기 사진은 서버에서 EXIF GPS 포함 여부를 검사하며, 위치정보가 있으면 거부되어 제거 후 다시 첨부해야 합니다. 공개 동의도 함께 확인합니다.
 

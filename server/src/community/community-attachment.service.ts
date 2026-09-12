@@ -79,7 +79,7 @@ export class CommunityAttachmentService {
 
   async completeUpload(user: CurrentUser, attachmentId: string, requestId?: string) {
     const attachment = await this.prisma.communityAttachment.findFirst({
-      where: { id: attachmentId, ownerUserId: user.id, postId: null },
+      where: { id: attachmentId, ownerUserId: user.id, postId: null, editorialContentId: null },
     });
     if (!attachment) notFound();
     if (attachment.status === CommunityAttachmentStatus.READY) return attachmentView(attachment);

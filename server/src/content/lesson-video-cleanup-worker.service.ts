@@ -195,7 +195,7 @@ export class LessonVideoCleanupWorkerService {
   async scheduleAbandonedCommunityAttachments(now = new Date()): Promise<number> {
     const cutoff = new Date(now.getTime() - this.communityAttachmentRetentionMs);
     const candidates = await this.prisma.communityAttachment.findMany({
-      where: { postId: null, createdAt: { lte: cutoff } },
+      where: { postId: null, editorialContentId: null, createdAt: { lte: cutoff } },
       orderBy: { createdAt: "asc" },
       take: 20,
     });
@@ -203,7 +203,7 @@ export class LessonVideoCleanupWorkerService {
     for (const candidate of candidates) {
       const claimed = await this.prisma.$transaction(async (transaction) => {
         const deleted = await transaction.communityAttachment.deleteMany({
-          where: { id: candidate.id, postId: null, createdAt: { lte: cutoff } },
+          where: { id: candidate.id, postId: null, editorialContentId: null, createdAt: { lte: cutoff } },
         });
         if (deleted.count !== 1) return false;
         await transaction.objectDeletionJob.upsert({

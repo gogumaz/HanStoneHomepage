@@ -351,63 +351,63 @@ enum ClassHelperAssetStatus {
 }
 
 model User {
-  id                            String                   @id @default(uuid()) @db.Uuid
-  email                         String?                  @unique
+  id                            String                        @id @default(uuid()) @db.Uuid
+  email                         String?                       @unique
   displayName                   String
   passwordHash                  String?
   emailVerifiedAt               DateTime?
-  status                        AccountStatus            @default(ACTIVE)
-  ageBand                       AgeBand                  @default(ADULT)
-  minorAccountStatus            MinorAccountStatus       @default(NOT_APPLICABLE)
+  status                        AccountStatus                 @default(ACTIVE)
+  ageBand                       AgeBand                       @default(ADULT)
+  minorAccountStatus            MinorAccountStatus            @default(NOT_APPLICABLE)
   guardianConsentVerifiedAt     DateTime?
-  createdAt                     DateTime                 @default(now())
-  updatedAt                     DateTime                 @updatedAt
+  createdAt                     DateTime                      @default(now())
+  updatedAt                     DateTime                      @updatedAt
   deletedAt                     DateTime?
   roles                         UserRoleAssignment[]
   oauthAccounts                 OAuthAccount[]
   oauthLoginAttempts            OAuthLoginAttempt[]
   sessions                      Session[]
   accountTokens                 AccountToken[]
-  guardianInvitations           GuardianInvitation[]     @relation("InvitationStudent")
-  studentLinks                  GuardianLink[]           @relation("StudentGuardianLinks")
-  guardianLinks                 GuardianLink[]           @relation("GuardianStudentLinks")
-  studentConsents               GuardianConsent[]        @relation("StudentGuardianConsents")
-  guardianConsents              GuardianConsent[]        @relation("GuardianUserConsents")
+  guardianInvitations           GuardianInvitation[]          @relation("InvitationStudent")
+  studentLinks                  GuardianLink[]                @relation("StudentGuardianLinks")
+  guardianLinks                 GuardianLink[]                @relation("GuardianStudentLinks")
+  studentConsents               GuardianConsent[]             @relation("StudentGuardianConsents")
+  guardianConsents              GuardianConsent[]             @relation("GuardianUserConsents")
   subscriptions                 AccountSubscription[]
   subscriptionOrders            SubscriptionOrder[]
   storeOrders                   StoreOrder[]
   storeCartItems                StoreCartItem[]
-  requestedRefunds              SubscriptionRefund[]     @relation("RefundRequester")
+  requestedRefunds              SubscriptionRefund[]          @relation("RefundRequester")
   lessonProgress                LessonProgress[]
-  auditLogs                     AuditLog[]               @relation("AuditActor")
-  createdMissions               BadukMission[]           @relation("MissionCreatedBy")
-  updatedMissions               BadukMission[]           @relation("MissionUpdatedBy")
-  publishedMissions             BadukMission[]           @relation("MissionPublishedBy")
+  auditLogs                     AuditLog[]                    @relation("AuditActor")
+  createdMissions               BadukMission[]                @relation("MissionCreatedBy")
+  updatedMissions               BadukMission[]                @relation("MissionUpdatedBy")
+  publishedMissions             BadukMission[]                @relation("MissionPublishedBy")
   missionAttempts               MissionAttempt[]
   rewardGrants                  RewardGrant[]
   missionFavorites              MissionFavorite[]
   consultations                 Consultation[]
-  inquiries                     Inquiry[]                @relation("InquiryRequester")
-  answeredInquiries             Inquiry[]                @relation("InquiryAnswerer")
-  inquiryNotifications          InquiryNotificationJob[] @relation("InquiryNotificationRecipient")
-  requestedInquiryNotifications InquiryNotificationJob[] @relation("InquiryNotificationRequester")
+  inquiries                     Inquiry[]                     @relation("InquiryRequester")
+  answeredInquiries             Inquiry[]                     @relation("InquiryAnswerer")
+  inquiryNotifications          InquiryNotificationJob[]      @relation("InquiryNotificationRecipient")
+  requestedInquiryNotifications InquiryNotificationJob[]      @relation("InquiryNotificationRequester")
   notifications                 UserNotification[]
   inquiryAttachments            InquiryAttachment[]
-  createdEditorialContents      EditorialContent[]       @relation("EditorialContentCreatedBy")
-  updatedEditorialContents      EditorialContent[]       @relation("EditorialContentUpdatedBy")
-  communityPosts                CommunityPost[]          @relation("CommunityPostAuthor")
-  reviewedCommunityPosts        CommunityPost[]          @relation("CommunityPostReviewer")
-  communityReports              CommunityPostReport[]    @relation("CommunityReportReporter")
-  resolvedCommunityReports      CommunityPostReport[]    @relation("CommunityReportResolver")
+  createdEditorialContents      EditorialContent[]            @relation("EditorialContentCreatedBy")
+  updatedEditorialContents      EditorialContent[]            @relation("EditorialContentUpdatedBy")
+  communityPosts                CommunityPost[]               @relation("CommunityPostAuthor")
+  reviewedCommunityPosts        CommunityPost[]               @relation("CommunityPostReviewer")
+  communityReports              CommunityPostReport[]         @relation("CommunityReportReporter")
+  resolvedCommunityReports      CommunityPostReport[]         @relation("CommunityReportResolver")
   communityAttachments          CommunityAttachment[]
-  createdTeachingMaterials      TeachingMaterial[]       @relation("TeachingMaterialCreatedBy")
-  updatedTeachingMaterials      TeachingMaterial[]       @relation("TeachingMaterialUpdatedBy")
+  createdTeachingMaterials      TeachingMaterial[]            @relation("TeachingMaterialCreatedBy")
+  updatedTeachingMaterials      TeachingMaterial[]            @relation("TeachingMaterialUpdatedBy")
   teachingMaterialAssets        TeachingMaterialAsset[]
-  teachingMaterialRevisions     TeachingMaterialRevision[] @relation("TeachingMaterialRevisionChangedBy")
-  createdClassHelpers           ClassHelper[]             @relation("ClassHelperCreatedBy")
-  updatedClassHelpers           ClassHelper[]             @relation("ClassHelperUpdatedBy")
+  teachingMaterialRevisions     TeachingMaterialRevision[]    @relation("TeachingMaterialRevisionChangedBy")
+  createdClassHelpers           ClassHelper[]                 @relation("ClassHelperCreatedBy")
+  updatedClassHelpers           ClassHelper[]                 @relation("ClassHelperUpdatedBy")
   classHelperAssets             ClassHelperAsset[]
-  classHelperRevisions          ClassHelperRevision[]      @relation("ClassHelperRevisionChangedBy")
+  classHelperRevisions          ClassHelperRevision[]         @relation("ClassHelperRevisionChangedBy")
   organizationMemberships       OrganizationMembership[]
   organizationClassEnrollments  OrganizationClassEnrollment[]
 
@@ -475,17 +475,17 @@ model Organization {
 }
 
 model OrganizationMembership {
-  id                 String                       @id @default(uuid()) @db.Uuid
-  organizationId     String                       @db.Uuid
-  userId             String                       @db.Uuid
+  id                 String                               @id @default(uuid()) @db.Uuid
+  organizationId     String                               @db.Uuid
+  userId             String                               @db.Uuid
   role               OrganizationMembershipRole
-  status             OrganizationMembershipStatus @default(ACTIVE)
-  startsAt           DateTime                     @default(now())
+  status             OrganizationMembershipStatus         @default(ACTIVE)
+  startsAt           DateTime                             @default(now())
   endsAt             DateTime?
-  createdAt          DateTime                     @default(now())
-  updatedAt          DateTime                     @updatedAt
-  organization       Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user               User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt          DateTime                             @default(now())
+  updatedAt          DateTime                             @updatedAt
+  organization       Organization                         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user               User                                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   teacherAssignments OrganizationClassTeacherAssignment[]
 
   @@unique([organizationId, userId])
@@ -654,33 +654,33 @@ model Era {
 }
 
 model Lesson {
-  id               String             @id @db.VarChar(40)
-  eraId            String             @db.VarChar(40)
-  order            Int
-  level            String
-  course           String
-  title            String
-  summary          String
-  instructor       String
-  difficulty       String
-  durationMinutes  Int
-  status           LessonStatus       @default(DRAFT)
-  isFreeSample     Boolean            @default(false)
-  videoAssetKey    String?
-  thumbnailKey     String?
-  publishedAt      DateTime?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  era              Era                @relation(fields: [eraId], references: [id], onDelete: Restrict)
-  steps            LessonStep[]
-  progress         LessonProgress[]
-  assets           LessonAsset[]
-  videoAssets      LessonVideoAsset[]
-  hlsTranscodeJobs HlsTranscodeJob[]
-  missions         BadukMission[]
+  id                String             @id @db.VarChar(40)
+  eraId             String             @db.VarChar(40)
+  order             Int
+  level             String
+  course            String
+  title             String
+  summary           String
+  instructor        String
+  difficulty        String
+  durationMinutes   Int
+  status            LessonStatus       @default(DRAFT)
+  isFreeSample      Boolean            @default(false)
+  videoAssetKey     String?
+  thumbnailKey      String?
+  publishedAt       DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  era               Era                @relation(fields: [eraId], references: [id], onDelete: Restrict)
+  steps             LessonStep[]
+  progress          LessonProgress[]
+  assets            LessonAsset[]
+  videoAssets       LessonVideoAsset[]
+  hlsTranscodeJobs  HlsTranscodeJob[]
+  missions          BadukMission[]
   teachingMaterials TeachingMaterial[]
-  classHelpers       ClassHelper[]
-  qrCodes            LessonQrCode[]
+  classHelpers      ClassHelper[]
+  qrCodes           LessonQrCode[]
 
   @@unique([eraId, order])
   @@index([status, eraId, order])
@@ -893,29 +893,29 @@ model StoreProduct {
 }
 
 model StoreOrder {
-  id                String           @id @db.VarChar(64)
-  userId            String           @db.Uuid
-  orderName         String
-  amount            Int
-  status            StoreOrderStatus @default(PENDING)
-  provider          String           @default("toss-payments")
-  providerPaymentId String?          @unique
-  paymentMethod     String?
-  paidAt            DateTime?
-  refundedAmount    Int              @default(0)
-  refundedAt        DateTime?
-  recipientName     String?
-  recipientPhone    String?          @db.VarChar(30)
-  postalCode        String?          @db.VarChar(10)
-  addressLine1      String?
-  addressLine2      String?
+  id                  String           @id @db.VarChar(64)
+  userId              String           @db.Uuid
+  orderName           String
+  amount              Int
+  status              StoreOrderStatus @default(PENDING)
+  provider            String           @default("toss-payments")
+  providerPaymentId   String?          @unique
+  paymentMethod       String?
+  paidAt              DateTime?
+  refundedAmount      Int              @default(0)
+  refundedAt          DateTime?
+  recipientName       String?
+  recipientPhone      String?          @db.VarChar(30)
+  postalCode          String?          @db.VarChar(10)
+  addressLine1        String?
+  addressLine2        String?
   inventoryReservedAt DateTime?
   inventoryReleasedAt DateTime?
-  expiresAt         DateTime
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items             StoreOrderItem[]
+  expiresAt           DateTime
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  user                User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items               StoreOrderItem[]
 
   @@index([userId, status, createdAt])
   @@index([expiresAt])
@@ -1026,33 +1026,34 @@ model EditorialContent {
   updatedAt    DateTime               @updatedAt
   createdBy    User?                  @relation("EditorialContentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy    User?                  @relation("EditorialContentUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  attachment   CommunityAttachment?
 
   @@index([type, status, publishedAt])
   @@index([type, status, displayOrder])
 }
 
 model CommunityPost {
-  id                        String              @id @default(uuid()) @db.Uuid
+  id                        String                @id @default(uuid()) @db.Uuid
   type                      CommunityPostType
-  authorUserId              String              @db.Uuid
-  category                  String              @db.VarChar(30)
-  title                     String              @db.VarChar(160)
+  authorUserId              String                @db.Uuid
+  category                  String                @db.VarChar(30)
+  title                     String                @db.VarChar(160)
   content                   String
-  targetGrade               String?             @db.VarChar(30)
-  era                       String?             @db.VarChar(30)
-  badukLevel                String?             @db.VarChar(20)
-  className                 String?             @db.VarChar(100)
-  publicationConsentVersion String?             @db.VarChar(80)
+  targetGrade               String?               @db.VarChar(30)
+  era                       String?               @db.VarChar(30)
+  badukLevel                String?               @db.VarChar(20)
+  className                 String?               @db.VarChar(100)
+  publicationConsentVersion String?               @db.VarChar(80)
   publicationConsentedAt    DateTime?
-  status                    CommunityPostStatus @default(PENDING_REVIEW)
-  rejectionReason           String?             @db.VarChar(500)
-  reviewedById              String?             @db.Uuid
+  status                    CommunityPostStatus   @default(PENDING_REVIEW)
+  rejectionReason           String?               @db.VarChar(500)
+  reviewedById              String?               @db.Uuid
   reviewedAt                DateTime?
   publishedAt               DateTime?
-  createdAt                 DateTime            @default(now())
-  updatedAt                 DateTime            @updatedAt
-  author                    User                @relation("CommunityPostAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
-  reviewedBy                User?               @relation("CommunityPostReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+  author                    User                  @relation("CommunityPostAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
+  reviewedBy                User?                 @relation("CommunityPostReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
   reports                   CommunityPostReport[]
   attachment                CommunityAttachment?
 
@@ -1061,47 +1062,49 @@ model CommunityPost {
 }
 
 model CommunityAttachment {
-  id           String                    @id @default(uuid()) @db.Uuid
-  ownerUserId  String                    @db.Uuid
-  postId       String?                   @unique @db.Uuid
-  kind         CommunityAttachmentKind
-  objectKey    String                    @unique
-  originalName String                    @db.VarChar(255)
-  contentType  String                    @db.VarChar(100)
-  size         Int
-  status       CommunityAttachmentStatus @default(QUARANTINED)
-  scanProvider String?                   @db.VarChar(50)
-  scanResult   String?                   @db.VarChar(100)
-  scannedAt    DateTime?
-  createdAt    DateTime                  @default(now())
-  updatedAt    DateTime                  @updatedAt
-  owner        User                      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
-  post         CommunityPost?            @relation(fields: [postId], references: [id], onDelete: Cascade)
+  id                 String                    @id @default(uuid()) @db.Uuid
+  ownerUserId        String                    @db.Uuid
+  postId             String?                   @unique @db.Uuid
+  editorialContentId String?                   @unique @db.Uuid
+  kind               CommunityAttachmentKind
+  objectKey          String                    @unique
+  originalName       String                    @db.VarChar(255)
+  contentType        String                    @db.VarChar(100)
+  size               Int
+  status             CommunityAttachmentStatus @default(QUARANTINED)
+  scanProvider       String?                   @db.VarChar(50)
+  scanResult         String?                   @db.VarChar(100)
+  scannedAt          DateTime?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  owner              User                      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  post               CommunityPost?            @relation(fields: [postId], references: [id], onDelete: Cascade)
+  editorialContent   EditorialContent?         @relation(fields: [editorialContentId], references: [id], onDelete: Cascade)
 
   @@index([ownerUserId, status, createdAt])
   @@index([status, createdAt])
 }
 
 model TeachingMaterial {
-  id           String                 @id @default(uuid()) @db.Uuid
-  category     String                 @db.VarChar(30)
-  title        String                 @db.VarChar(160)
-  content      String
-  lessonId     String                 @db.VarChar(40)
-  version      String                 @db.VarChar(30)
-  accessLevel  TeachingMaterialAccess
-  status       TeachingMaterialStatus @default(DRAFT)
-  publishedAt  DateTime?
-  createdById  String?                @db.Uuid
-  updatedById  String?                @db.Uuid
-  revision     Int                    @default(1)
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
-  lesson       Lesson                 @relation(fields: [lessonId], references: [id], onDelete: Restrict)
-  createdBy    User?                  @relation("TeachingMaterialCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedBy    User?                  @relation("TeachingMaterialUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  asset        TeachingMaterialAsset?
-  revisions    TeachingMaterialRevision[]
+  id          String                     @id @default(uuid()) @db.Uuid
+  category    String                     @db.VarChar(30)
+  title       String                     @db.VarChar(160)
+  content     String
+  lessonId    String                     @db.VarChar(40)
+  version     String                     @db.VarChar(30)
+  accessLevel TeachingMaterialAccess
+  status      TeachingMaterialStatus     @default(DRAFT)
+  publishedAt DateTime?
+  createdById String?                    @db.Uuid
+  updatedById String?                    @db.Uuid
+  revision    Int                        @default(1)
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+  lesson      Lesson                     @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+  createdBy   User?                      @relation("TeachingMaterialCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy   User?                      @relation("TeachingMaterialUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  asset       TeachingMaterialAsset?
+  revisions   TeachingMaterialRevision[]
 
   @@index([status, publishedAt])
   @@index([lessonId, status])
@@ -1147,30 +1150,30 @@ model TeachingMaterialRevision {
 }
 
 model ClassHelper {
-  id                  String            @id @default(uuid()) @db.Uuid
-  category            String            @db.VarChar(30)
-  title               String            @db.VarChar(160)
-  lessonId            String            @db.VarChar(40)
-  badukMissionId      String            @db.VarChar(60)
-  targetGrade         String            @db.VarChar(30)
-  lessonDuration      String            @db.VarChar(30)
+  id                  String                @id @default(uuid()) @db.Uuid
+  category            String                @db.VarChar(30)
+  title               String                @db.VarChar(160)
+  lessonId            String                @db.VarChar(40)
+  badukMissionId      String                @db.VarChar(60)
+  targetGrade         String                @db.VarChar(30)
+  lessonDuration      String                @db.VarChar(30)
   content             String
   introductionContent String
   conceptContent      String
   problemContent      String
   quizContent         String
   wrapUpContent       String
-  status              ClassHelperStatus @default(DRAFT)
+  status              ClassHelperStatus     @default(DRAFT)
   publishedAt         DateTime?
-  createdById         String?           @db.Uuid
-  updatedById         String?           @db.Uuid
-  revision            Int               @default(1)
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-  lesson              Lesson            @relation(fields: [lessonId], references: [id], onDelete: Restrict)
-  badukMission        BadukMission       @relation(fields: [badukMissionId], references: [id], onDelete: Restrict)
-  createdBy           User?              @relation("ClassHelperCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedBy           User?              @relation("ClassHelperUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdById         String?               @db.Uuid
+  updatedById         String?               @db.Uuid
+  revision            Int                   @default(1)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  lesson              Lesson                @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+  badukMission        BadukMission          @relation(fields: [badukMissionId], references: [id], onDelete: Restrict)
+  createdBy           User?                 @relation("ClassHelperCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy           User?                 @relation("ClassHelperUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   assets              ClassHelperAsset[]
   revisions           ClassHelperRevision[]
 
@@ -1220,20 +1223,20 @@ model ClassHelperRevision {
 }
 
 model CommunityPostReport {
-  id             String                    @id @default(uuid()) @db.Uuid
-  postId         String                    @db.Uuid
-  reporterUserId String                    @db.Uuid
+  id             String                     @id @default(uuid()) @db.Uuid
+  postId         String                     @db.Uuid
+  reporterUserId String                     @db.Uuid
   reason         CommunityReportReason
-  detail         String?                   @db.VarChar(500)
-  status         CommunityReportStatus     @default(OPEN)
+  detail         String?                    @db.VarChar(500)
+  status         CommunityReportStatus      @default(OPEN)
   resolution     CommunityReportResolution?
-  resolvedById   String?                   @db.Uuid
+  resolvedById   String?                    @db.Uuid
   resolvedAt     DateTime?
-  createdAt      DateTime                  @default(now())
-  updatedAt      DateTime                  @updatedAt
-  post           CommunityPost             @relation(fields: [postId], references: [id], onDelete: Cascade)
-  reporter       User                      @relation("CommunityReportReporter", fields: [reporterUserId], references: [id], onDelete: Cascade)
-  resolvedBy     User?                     @relation("CommunityReportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+  post           CommunityPost              @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reporter       User                       @relation("CommunityReportReporter", fields: [reporterUserId], references: [id], onDelete: Cascade)
+  resolvedBy     User?                      @relation("CommunityReportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
 
   @@unique([postId, reporterUserId])
   @@index([status, createdAt])

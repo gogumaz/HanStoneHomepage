@@ -465,6 +465,49 @@ test("운영자가 공지사항을 서버에 등록하고 공개 목록에서 �
     isPinned: false, displayOrder: null, status: "published",
   }];
   let submitted: Record<string, unknown> | undefined;
+  let uploadedAttachment = false;
+  let completedAttachment = false;
+  const attachmentId = "00000000-0000-4000-8000-000000000711";
+  const attachmentBytes = Buffer.from("%PDF-1.7 notice guide");
+  await page.route("**/api/v1/community-attachments/uploads", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      kind: "material",
+      fileName: "신규-강의-안내.pdf",
+      contentType: "application/pdf",
+      size: attachmentBytes.length,
+    });
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ data: {
+        attachment: { id: attachmentId, kind: "material", status: "quarantined" },
+        upload: {
+          method: "POST",
+          url: "https://storage.example.test/notice-upload",
+          fields: { key: "notice.pdf" },
+        },
+      } }),
+    });
+  });
+  await page.route("https://storage.example.test/notice-upload", async (route) => {
+    uploadedAttachment = true;
+    await route.fulfill({ status: 204, body: "" });
+  });
+  await page.route(`**/api/v1/community-attachments/${attachmentId}/complete`, async (route) => {
+    completedAttachment = true;
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ data: {
+        id: attachmentId,
+        kind: "material",
+        originalName: "신규-강의-안내.pdf",
+        contentType: "application/pdf",
+        size: attachmentBytes.length,
+        status: "ready",
+      } }),
+    });
+  });
   await page.route("**/api/v1/notices", async (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
@@ -475,9 +518,18 @@ test("운영자가 공지사항을 서버에 등록하고 공개 목록에서 �
   }));
   await page.route("**/api/v1/admin/notices", async (route) => {
     submitted = route.request().postDataJSON() as Record<string, unknown>;
+    const { attachmentId: submittedAttachmentId, ...fields } = submitted;
     notices.unshift({
-      id: "notice-new-e2e", ...submitted, authorLabel: "운영자",
+      id: "notice-new-e2e", ...fields, authorLabel: "운영자",
       publishedAt: `${String(submitted.publishedAt)}T00:00:00.000Z`, status: "published",
+      attachment: submittedAttachmentId ? {
+        id: submittedAttachmentId,
+        originalName: "신규-강의-안내.pdf",
+        contentType: "application/pdf",
+        size: attachmentBytes.length,
+        status: "ready",
+        downloadUrl: "/api/v1/notices/notice-new-e2e/attachment",
+      } : null,
     });
     await route.fulfill({
       status: 201,
@@ -496,6 +548,11 @@ test("운영자가 공지사항을 서버에 등록하고 공개 목록에서 �
   await form.getByLabel("내용 *").fill("선사시대 신규 강의가 공개되었습니다.");
   await form.getByLabel("공개일 *").fill("2026-08-24");
   await form.getByLabel("상단 고정").check();
+  await form.getByLabel("첨부파일").setInputFiles({
+    name: "신규-강의-안내.pdf",
+    mimeType: "application/pdf",
+    buffer: attachmentBytes,
+  });
   await form.getByRole("button", { name: "저장하기" }).click();
 
   await expect(page.locator("#toast")).toContainText("글이 저장되었습니다.");
@@ -506,8 +563,15 @@ test("운영자가 공지사항을 서버에 등록하고 공개 목록에서 �
     content: "선사시대 신규 강의가 공개되었습니다.",
     publishedAt: "2026-08-24",
     isPinned: true,
-    attachment: "",
+    attachmentId,
   });
+  expect(uploadedAttachment).toBe(true);
+  expect(completedAttachment).toBe(true);
+  await page.getByRole("button", { name: /새 강의 공개 안내/ }).click();
+  await expect(page.getByRole("link", { name: "다운로드" })).toHaveAttribute(
+    "href",
+    /\/api\/v1\/notices\/notice-new-e2e\/attachment$/,
+  );
 });
 
 test("지도자 수업 팁을 검토 대기로 저장하고 운영자가 승인한다", async ({ page }) => {
