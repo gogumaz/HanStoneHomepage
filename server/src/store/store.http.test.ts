@@ -7,6 +7,8 @@ import { RolesGuard } from "../auth/roles.guard.js";
 import { ApiError } from "../common/api-error.js";
 import { ApiExceptionFilter } from "../common/api-exception.filter.js";
 import { ApiResponseInterceptor } from "../common/api-response.interceptor.js";
+import { RateLimitGuard } from "../common/rate-limit.guard.js";
+import { MemoryRateLimitStore, RATE_LIMIT_STORE } from "../common/rate-limit.store.js";
 import { RequestIdMiddleware } from "../common/request-id.middleware.js";
 import { PAYMENT_PROVIDER } from "../components/payments/index.js";
 import { PrismaService } from "../database/prisma.service.js";
@@ -192,6 +194,8 @@ describe("store order and Toss confirmation HTTP API", () => {
         StoreService,
         SessionAuthGuard,
         RolesGuard,
+        RateLimitGuard,
+        { provide: RATE_LIMIT_STORE, useValue: new MemoryRateLimitStore() },
         { provide: PrismaService, useValue: store.prisma },
         { provide: PAYMENT_PROVIDER, useValue: provider },
         { provide: AuthService, useValue: authService },

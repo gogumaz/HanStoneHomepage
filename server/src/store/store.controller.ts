@@ -5,6 +5,8 @@ import { SessionAuthGuard } from "../auth/session-auth.guard.js";
 import { Roles } from "../auth/roles.decorator.js";
 import { RolesGuard } from "../auth/roles.guard.js";
 import type { ApiRequest } from "../common/http-types.js";
+import { TOSS_PAYMENT_WEBHOOK_RATE_LIMIT } from "../common/payment-webhook-rate-limit.js";
+import { RateLimit, RateLimitGuard } from "../common/rate-limit.guard.js";
 import { StoreService } from "./store.service.js";
 
 @Controller()
@@ -61,6 +63,8 @@ export class StoreController {
   }
 
   @Post("payments/toss/webhook")
+  @RateLimit(TOSS_PAYMENT_WEBHOOK_RATE_LIMIT)
+  @UseGuards(RateLimitGuard)
   tossWebhook(@Body() body: unknown, @Req() request: ApiRequest) {
     return this.storeService.syncWebhook(body, request.requestId);
   }

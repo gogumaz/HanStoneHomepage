@@ -645,6 +645,32 @@ describe("subscription checkout HTTP API", () => {
       paymentStatus: SubscriptionPaymentStatus.PAID,
     });
   });
+
+  it("shares one bounded request budget across store and subscription Toss webhooks", async () => {
+    const webhookHeaders = {
+      "content-type": "application/json",
+      "x-forwarded-for": "198.51.100.77",
+    };
+    app.getHttpAdapter().getInstance().set("trust proxy", 1);
+    const call = (path: string) => fetch(`${baseUrl}/api/v1/${path}`, {
+      method: "POST",
+      headers: webhookHeaders,
+      body: JSON.stringify({ eventType: "UNSUPPORTED_EVENT", data: {} }),
+    });
+
+    for (let index = 0; index < 60; index += 1) {
+      expect((await call("payments/toss/webhook")).status).toBe(201);
+      expect((await call("payments/toss/subscriptions/webhook")).status).toBe(200);
+    }
+
+    const blocked = await call("payments/toss/webhook");
+    const body = await blocked.json() as { error: { code: string } };
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("RateLimit-Limit")).toBe("120");
+    expect(blocked.headers.get("RateLimit-Remaining")).toBe("0");
+    expect(blocked.headers.get("Retry-After")).toMatch(/^[1-9][0-9]*$/u);
+    expect(body.error.code).toBe("TOSS_PAYMENT_WEBHOOK_RATE_LIMITED");
+  });
 });
 
 describe("subscription end calculation", () => {
