@@ -14,6 +14,8 @@ describe("staging evidence workflow coordination contract", () => {
     expect(workflow).toContain("evidence_id:");
     expect(workflow).toContain("${{ inputs.evidence_id }}");
     expect(workflow).toContain("permissions:\n  contents: read");
+    expect(workflow).toContain("actions/upload-artifact@v7");
+    expect(workflow).not.toMatch(/actions\/upload-artifact@v[1-6]\b/u);
     expect(workflow).not.toContain("environment: production");
     expect(workflow).not.toContain("pull_request_target");
   });

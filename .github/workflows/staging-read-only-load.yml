@@ -62,7 +62,7 @@ jobs:
         run: node dist/read-only-load-test.js > staging-read-only-load-report.json 2>&1
       - name: Upload load-test evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: staging-read-only-load-report-${{ github.run_id }}
           path: server/staging-read-only-load-report.json

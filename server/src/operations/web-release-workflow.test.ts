@@ -30,4 +30,11 @@ describe("web release workflow contract", () => {
     expect(uploadBlock).toContain("if-no-files-found: error");
     expect(uploadBlock).toContain("retention-days: 90");
   });
+
+  it("uses the current artifact runtime for every CI evidence upload", async () => {
+    const workflow = await readFile(workflowPath, "utf8");
+
+    expect(workflow.match(/actions\/upload-artifact@v7/g)).toHaveLength(3);
+    expect(workflow).not.toMatch(/actions\/upload-artifact@v[1-6]\b/u);
+  });
 });

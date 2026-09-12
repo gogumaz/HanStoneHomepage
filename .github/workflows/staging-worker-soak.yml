@@ -92,7 +92,7 @@ jobs:
           test "$soak_status" -eq 0 -a "$load_status" -eq 0
       - name: Upload worker-soak evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: staging-worker-soak-report-${{ github.run_id }}
           path: |
