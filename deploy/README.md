@@ -253,7 +253,7 @@ npm --prefix server run build
 npm --prefix server run configure:release-secrets
 ```
 
-dry-run은 스테이징·롤백 리허설·운영 HTTPS, 비운영 호스트 표식, PostgreSQL TLS, 복구 DB 격리, 토큰 형식, 운영 환경 파일의 설정 유효성과 DB·웹 URL·메트릭 토큰 일치, 최초 반송 응답과 공급자 event ID 해시 일치, 법무 승인 JSON의 정책·승인일·문서 해시와 운영 환경 일치를 검사합니다. 보고서에는 Secret 이름과 판정 코드만 남고 값이나 파일 내용은 포함되지 않습니다. 모든 검사가 통과한 경우에만 아래 명시적 확인으로 저장소 Secret 6개와 `production` 환경 Secret 9개를 표준입력으로 등록한 뒤 이름만 다시 조회해 검증합니다. 빈 값이나 예시 값을 자동 생성하지 않습니다.
+dry-run은 스테이징·롤백 리허설·운영 HTTPS, 비운영 호스트 표식, PostgreSQL TLS, 복구 DB 격리, 토큰 형식, 운영 환경 파일의 설정 유효성과 DB·웹 URL·메트릭 토큰 일치, 최초 반송 응답과 공급자 event ID 해시 일치, 법무 승인 JSON의 정책·승인일·문서 해시와 운영 환경 일치를 검사합니다. 또한 `RELEASE_READINESS_TOKEN`으로 후보 커밋·워크플로·저장소 Secret·환경·production 환경 Secret 메타데이터를 실제 조회해 필수 읽기 권한을 적용 전에 검증합니다. 보고서에는 Secret 이름과 판정 코드만 남고 값이나 파일 내용은 포함되지 않습니다. 모든 검사가 통과한 경우에만 아래 명시적 확인으로 저장소 Secret 6개와 `production` 환경 Secret 9개를 표준입력으로 등록한 뒤 이름만 다시 조회해 검증합니다. 빈 값이나 예시 값을 자동 생성하지 않습니다.
 
 ```powershell
 npm --prefix server run configure:release-secrets -- --apply --confirm CONFIGURE_RELEASE_SECRETS

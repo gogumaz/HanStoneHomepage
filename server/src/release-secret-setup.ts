@@ -46,6 +46,33 @@ async function secretCommand(args: string[], value: string, code: string): Promi
   });
 }
 
+async function verifyReadinessTokenAccess(repository: string, token: string | undefined): Promise<boolean> {
+  if (!token) return false;
+  const endpoints = [
+    `repos/${repository}`,
+    `repos/${repository}/commits/HEAD`,
+    `repos/${repository}/actions/workflows?per_page=1`,
+    `repos/${repository}/actions/secrets?per_page=1`,
+    `repos/${repository}/environments?per_page=1`,
+    `repos/${repository}/environments/production/secrets?per_page=1`,
+  ];
+  try {
+    await Promise.all(endpoints.map((endpoint) => execFileAsync(
+      ghExecutable,
+      ["api", endpoint],
+      {
+        encoding: "utf8",
+        maxBuffer: maxOutputBytes,
+        windowsHide: true,
+        env: { ...process.env, GH_TOKEN: token },
+      },
+    )));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function json<T>(raw: string, code: string): T {
   try {
     return JSON.parse(raw) as T;
@@ -130,11 +157,16 @@ async function main(): Promise<void> {
   }
   const preflightValue = await protectedPreflightFileValue(process.env.PRODUCTION_PREFLIGHT_ENV_FILE);
   if (preflightValue) values.PRODUCTION_PREFLIGHT_ENV_FILE_BASE64 = preflightValue;
+  const readinessTokenAccessVerified = await verifyReadinessTokenAccess(
+    repositoryInfo.nameWithOwner,
+    values.RELEASE_READINESS_TOKEN,
+  );
 
   const report = new ReleaseSecretSetupService().plan({
     repository: repositoryInfo.nameWithOwner,
     actorLogin: actor.login,
     values,
+    readinessTokenAccessVerified,
     applyRequested: options.apply,
     confirmation: options.confirmation,
   });

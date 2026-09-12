@@ -26,6 +26,7 @@ export type ReleaseSecretSetupInput = {
   repository: string;
   actorLogin: string;
   values: Partial<Record<ReleaseSecretName, string>>;
+  readinessTokenAccessVerified: boolean;
   applyRequested: boolean;
   confirmation: string | null;
 };
@@ -210,9 +211,10 @@ export class ReleaseSecretSetupService {
       input.values.PRODUCTION_LEGAL_APPROVAL_EVIDENCE_BASE64,
       preflightEnv,
     );
+    const releaseReadinessTokenFormatValid = validToken(input.values.RELEASE_READINESS_TOKEN, 512);
 
     const validators: Record<ReleaseSecretName, boolean> = {
-      RELEASE_READINESS_TOKEN: validToken(input.values.RELEASE_READINESS_TOKEN, 512),
+      RELEASE_READINESS_TOKEN: releaseReadinessTokenFormatValid && input.readinessTokenAccessVerified,
       STAGING_API_BASE_URL: validStagingTarget(input.values.STAGING_API_BASE_URL),
       STAGING_OPERATIONS_METRICS_TOKEN: validToken(input.values.STAGING_OPERATIONS_METRICS_TOKEN),
       ROLLBACK_DRILL_API_BASE_URL: validRollbackDrillTarget(input.values.ROLLBACK_DRILL_API_BASE_URL),
@@ -237,7 +239,12 @@ export class ReleaseSecretSetupService {
       ...RELEASE_SECRET_NAMES.map((name) => check(
         `secret:${name}`,
         validators[name],
-        input.values[name] ? "RELEASE_SECRET_VALUE_INVALID" : "RELEASE_SECRET_VALUE_MISSING",
+        !input.values[name]
+          ? "RELEASE_SECRET_VALUE_MISSING"
+          : name === "RELEASE_READINESS_TOKEN" && releaseReadinessTokenFormatValid
+              && !input.readinessTokenAccessVerified
+            ? "RELEASE_READINESS_TOKEN_ACCESS_NOT_VERIFIED"
+            : "RELEASE_SECRET_VALUE_INVALID",
       )),
       check(
         "preflight:databaseConsistency",

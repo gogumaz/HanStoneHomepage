@@ -66,6 +66,7 @@ function validInput(): ReleaseSecretSetupInput {
       PRODUCTION_MAIL_PROVIDER_EVENT_ID: providerEventId,
       PRODUCTION_LEGAL_APPROVAL_EVIDENCE_BASE64: legalApproval,
     },
+    readinessTokenAccessVerified: true,
     applyRequested: false,
     confirmation: null,
   };
@@ -117,6 +118,20 @@ describe("ReleaseSecretSetupService", () => {
     });
     expect(confirmed.ok).toBe(true);
     expect(confirmed.applyAuthorized).toBe(true);
+  });
+
+  it("rejects a well-formed readiness token whose required read access was not verified", () => {
+    const report = new ReleaseSecretSetupService().plan({
+      ...validInput(),
+      readinessTokenAccessVerified: false,
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.checks).toContainEqual({
+      name: "secret:RELEASE_READINESS_TOKEN",
+      status: "fail",
+      code: "RELEASE_READINESS_TOKEN_ACCESS_NOT_VERIFIED",
+    });
   });
 
   it.each([
