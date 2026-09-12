@@ -63,6 +63,7 @@ jobs:
       PREFLIGHT_ENV_BASE64: ${{ secrets.PRODUCTION_PREFLIGHT_ENV_FILE_BASE64 }}
       MAIL_BOUNCE_RESPONSE_BASE64: ${{ secrets.PRODUCTION_MAIL_BOUNCE_RESPONSE_BASE64 }}
       MAIL_PROVIDER_EVENT_ID: ${{ secrets.PRODUCTION_MAIL_PROVIDER_EVENT_ID }}
+      PAYMENT_OPERATIONS_BASE64: ${{ secrets.PRODUCTION_PAYMENT_OPERATIONS_BASE64 }}
       LEGAL_APPROVAL_EVIDENCE_BASE64: ${{ secrets.PRODUCTION_LEGAL_APPROVAL_EVIDENCE_BASE64 }}
     steps:
       - name: Validate immutable deployment identities
@@ -113,6 +114,9 @@ jobs:
           printf '%s' "$MAIL_BOUNCE_RESPONSE_BASE64" | base64 --decode > evidence/transport/mail-bounce-response.json
           test -s evidence/transport/mail-bounce-response.json
           chmod 600 evidence/transport/mail-bounce-response.json
+          printf '%s' "$PAYMENT_OPERATIONS_BASE64" | base64 --decode > evidence/transport/payment-operations-capture.json
+          test -s evidence/transport/payment-operations-capture.json
+          chmod 600 evidence/transport/payment-operations-capture.json
           printf '%s' "$LEGAL_APPROVAL_EVIDENCE_BASE64" | base64 --decode > evidence/transport/legal-policy-approval.json
           test -s evidence/transport/legal-policy-approval.json
           chmod 600 evidence/transport/legal-policy-approval.json
@@ -144,6 +148,15 @@ jobs:
           MAIL_EVIDENCE_PROVIDER_EVENT_ID: ${{ secrets.PRODUCTION_MAIL_PROVIDER_EVENT_ID }}
           MAIL_EVIDENCE_MAX_AGE_HOURS: "24"
         run: node dist/mail-operations-evidence.js > mail-operations-evidence.json 2>&1
+      - name: Verify live payment approval, idempotency, webhook, and refund
+        id: payment_operations
+        continue-on-error: true
+        env:
+          PAYMENT_EVIDENCE_PREFLIGHT_REPORT: ${{ github.workspace }}/evidence/acceptance/evidence/production-preflight.json
+          PAYMENT_EVIDENCE_CAPTURE_REPORT: ${{ github.workspace }}/evidence/transport/payment-operations-capture.json
+          PAYMENT_EVIDENCE_RELEASE_ID: ${{ inputs.release_id }}
+          PAYMENT_EVIDENCE_MAX_AGE_HOURS: "24"
+        run: node dist/payment-operations-evidence.js > payment-operations-evidence.json 2>&1
       - name: Bind signed legal approval to the deployed candidate
         id: legal_approval
         continue-on-error: true
@@ -160,8 +173,8 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: >-
           rm -f -- evidence/transport/production.env evidence/transport/mail-bounce-response.json
-          evidence/transport/legal-policy-approval.json
-      - name: Upload deployment, transport, mail, and legal verification evidence
+          evidence/transport/payment-operations-capture.json evidence/transport/legal-policy-approval.json
+      - name: Upload deployment, transport, mail, payment, and legal verification evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -170,6 +183,7 @@ jobs:
             server/production-deployment-verification.json
             server/transport-security-evidence.json
             server/mail-operations-evidence.json
+            server/payment-operations-evidence.json
             server/legal-approval-binding.json
           if-no-files-found: error
           retention-days: 90
@@ -178,5 +192,6 @@ jobs:
           steps.deployment_verification.outcome != 'success' ||
           steps.transport_security.outcome != 'success' ||
           steps.mail_operations.outcome != 'success' ||
+          steps.payment_operations.outcome != 'success' ||
           steps.legal_approval.outcome != 'success'
         run: exit 1

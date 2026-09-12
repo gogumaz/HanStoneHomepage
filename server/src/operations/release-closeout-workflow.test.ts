@@ -33,6 +33,10 @@ describe("release closeout workflow contract", () => {
     expect(workflow).toContain("evidence/deployment/mail-operations-evidence.json");
     expect(workflow).toContain("RELEASE_CLOSEOUT_MAIL_OPERATIONS_REPORT");
     expect(workflow).toContain('(has("providerEventId") | not)');
+    expect(workflow).toContain("evidence/deployment/payment-operations-evidence.json");
+    expect(workflow).toContain("RELEASE_CLOSEOUT_PAYMENT_OPERATIONS_REPORT");
+    expect(workflow).toContain('(has("paymentKey") | not)');
+    expect(workflow).toContain('(has("subscriptionId") | not)');
     expect(workflow).toContain("evidence/deployment/legal-approval-binding.json");
     expect(workflow).toContain("RELEASE_CLOSEOUT_LEGAL_APPROVAL_BINDING_REPORT");
   });
@@ -51,8 +55,9 @@ describe("release closeout workflow contract", () => {
 
     expect(reportSchema("transport-security-evidence.json")).toContain(".schemaVersion == 3");
     expect(reportSchema("mail-operations-evidence.json")).toContain(".schemaVersion == 2");
+    expect(reportSchema("payment-operations-evidence.json")).toContain(".schemaVersion == 1");
     expect(reportSchema("legal-approval-binding.json")).toContain(".schemaVersion == 2");
-    expect(identityBlock).not.toContain(".schemaVersion == 1");
+    expect(identityBlock.match(/\.schemaVersion == 1/g)).toHaveLength(1);
   });
 
   it("runs closeout in the accepted image and uploads only the final input records", async () => {
@@ -69,6 +74,7 @@ describe("release closeout workflow contract", () => {
     expect(uploadBlock).toContain("release-closeout.json");
     expect(uploadBlock).toContain("transport-security-evidence.json");
     expect(uploadBlock).toContain("mail-operations-evidence.json");
+    expect(uploadBlock).toContain("payment-operations-evidence.json");
     expect(uploadBlock).toContain("legal-approval-binding.json");
     expect(uploadBlock).not.toMatch(/^\s+evidence\s*$/m);
   });

@@ -15,6 +15,10 @@ import {
 import { REQUIRED_PRODUCTION_SECRETS } from "./release-readiness.service.js";
 
 export const PRODUCTION_DEPLOYMENT_CONFIRMATION = "DEPLOYED_ACCEPTED_CANDIDATE";
+export const REQUIRED_PRODUCTION_VERIFICATION_SECRETS = [
+  ...REQUIRED_PRODUCTION_SECRETS,
+  "PRODUCTION_PAYMENT_OPERATIONS_BASE64",
+] as const;
 
 export type FinalizationEvidenceRun = {
   runId: number;
@@ -113,6 +117,11 @@ const MAIL_CHECKS = [
   "preflight", "candidateCommit", "smtpCheck", "smtpDetail", "preflightTimestamp",
   "preflightFreshness", "bounceWebhook", "providerEventCorrelation", "bounceAuditLog",
 ] as const;
+const PAYMENT_CHECKS = [
+  "preflight", "candidateCommit", "preflightPaymentConfig", "captureSchema", "productionMode",
+  "captureTimestamp", "paymentIdentity", "approval", "idempotentApproval", "webhook", "refund",
+  "providerCancellation",
+] as const;
 const LEGAL_CHECKS = [
   "approvalEvidence", "policyVersion", "candidateCommit", "approvalTimestamp",
   "documentSha256", "generatedTimestamp", "preflight",
@@ -177,7 +186,8 @@ const CLOSEOUT_CHECKS = [
   "acceptance", "acceptanceEvidence", "stagingEvidenceBundle", "acceptanceManifest",
   "acceptanceImageReference", "deploymentVerification", "rollbackDecision", "deploymentSamples",
   "deploymentLatency", "deploymentHealth", "candidateIdentity", "webDeployment", "webCandidateIdentity",
-  "transportSecurity", "mailOperations", "legalApprovalBinding", "timelineOrder", "timelineDelay", "timelineFuture",
+  "transportSecurity", "mailOperations", "paymentOperations", "legalApprovalBinding", "timelineOrder", "timelineDelay",
+  "timelineFuture",
 ] as const;
 
 function closeoutDigestValid(report: JsonObject | null, artifacts: JsonObject | null): boolean {
@@ -204,6 +214,7 @@ function closeoutDigestValid(report: JsonObject | null, artifacts: JsonObject | 
       || typeof artifacts.deploymentVerificationSha256 !== "string"
       || typeof artifacts.transportSecuritySha256 !== "string"
       || typeof artifacts.mailOperationsSha256 !== "string"
+      || typeof artifacts.paymentOperationsSha256 !== "string"
       || typeof artifacts.legalApprovalBindingSha256 !== "string") return false;
 
   const canonicalArtifacts = {
@@ -211,6 +222,7 @@ function closeoutDigestValid(report: JsonObject | null, artifacts: JsonObject | 
     deploymentVerificationSha256: artifacts.deploymentVerificationSha256,
     transportSecuritySha256: artifacts.transportSecuritySha256,
     mailOperationsSha256: artifacts.mailOperationsSha256,
+    paymentOperationsSha256: artifacts.paymentOperationsSha256,
     legalApprovalBindingSha256: artifacts.legalApprovalBindingSha256,
   };
   const canonicalTimeline = {
@@ -593,6 +605,7 @@ function evidenceDigestMatches(report: JsonObject | null, source: JsonObject): b
 function auxiliaryEvidenceDigestsValid(
   transport: JsonObject | null,
   mail: JsonObject | null,
+  payment: JsonObject | null,
   legal: JsonObject | null,
 ): boolean {
   const transportArtifacts = object(transport?.artifacts);
@@ -600,12 +613,14 @@ function auxiliaryEvidenceDigestsValid(
   const transportTlsEndpoints = object(transport?.tlsEndpoints);
   const mailArtifacts = object(mail?.artifacts);
   const mailDnsEvidence = object(mail?.dnsEvidence);
+  const paymentArtifacts = object(payment?.artifacts);
   const legalArtifacts = object(legal?.artifacts);
   if (!orderedNamedChecksPassed(transport?.checks, TRANSPORT_CHECKS)
       || !orderedNamedChecksPassed(mail?.checks, MAIL_CHECKS)
+      || !orderedNamedChecksPassed(payment?.checks, PAYMENT_CHECKS)
       || !orderedNamedChecksPassed(legal?.checks, LEGAL_CHECKS)
       || transportArtifacts === null || transportActive === null || transportTlsEndpoints === null
-      || mailArtifacts === null || mailDnsEvidence === null || legalArtifacts === null) return false;
+      || mailArtifacts === null || mailDnsEvidence === null || paymentArtifacts === null || legalArtifacts === null) return false;
   const passedChecks = (value: unknown) => (value as Array<{ name: string; status: "pass" }>).map(
     ({ name, status }) => ({ name, status }),
   );
@@ -634,6 +649,19 @@ function auxiliaryEvidenceDigestsValid(
     artifacts: mailArtifacts,
     checks: passedChecks(mail?.checks),
   };
+  const paymentSource = {
+    schemaVersion: 1,
+    releaseId: payment?.releaseId,
+    commitSha: payment?.commitSha,
+    checkedAt: payment?.checkedAt,
+    capturedAt: payment?.capturedAt,
+    paymentKeySha256: payment?.paymentKeySha256,
+    orderIdSha256: payment?.orderIdSha256,
+    subscriptionIdSha256: payment?.subscriptionIdSha256,
+    amount: payment?.amount,
+    artifacts: paymentArtifacts,
+    checks: passedChecks(payment?.checks),
+  };
   const legalSource = {
     schemaVersion: 2,
     releaseId: legal?.releaseId,
@@ -647,6 +675,7 @@ function auxiliaryEvidenceDigestsValid(
   };
   return evidenceDigestMatches(transport, transportSource)
     && evidenceDigestMatches(mail, mailSource)
+    && evidenceDigestMatches(payment, paymentSource)
     && evidenceDigestMatches(legal, legalSource);
 }
 
@@ -663,25 +692,30 @@ function verificationValid(
   const webExpected = object(web?.expected);
   const transport = object(run?.relatedReports?.["transport-security-evidence.json"]);
   const mail = object(run?.relatedReports?.["mail-operations-evidence.json"]);
+  const payment = object(run?.relatedReports?.["payment-operations-evidence.json"]);
   const legal = object(run?.relatedReports?.["legal-approval-binding.json"]);
   const transportArtifacts = object(transport?.artifacts);
   const mailArtifacts = object(mail?.artifacts);
+  const paymentArtifacts = object(payment?.artifacts);
   const legalArtifacts = object(legal?.artifacts);
   const deploymentAt = Date.parse(typeof report?.completedAt === "string" ? report.completedAt : "");
   const transportAt = Date.parse(typeof transport?.checkedAt === "string" ? transport.checkedAt : "");
   const mailAt = Date.parse(typeof mail?.checkedAt === "string" ? mail.checkedAt : "");
+  const paymentAt = Date.parse(typeof payment?.checkedAt === "string" ? payment.checkedAt : "");
   const legalAt = Date.parse(typeof legal?.checkedAt === "string" ? legal.checkedAt : "");
   const auxiliaryLineageValid = typeof run?.reportSha256 === "string"
     && transportArtifacts?.deploymentVerificationSha256 === run.reportSha256
     && typeof transportArtifacts?.preflightSha256 === "string"
     && transportArtifacts.preflightSha256 === mailArtifacts?.preflightSha256
+    && transportArtifacts.preflightSha256 === paymentArtifacts?.preflightSha256
     && transportArtifacts.preflightSha256 === legalArtifacts?.preflightSha256
     && typeof transportArtifacts.environmentSha256 === "string"
     && transportArtifacts.environmentSha256 === legalArtifacts?.environmentSha256
-    && [deploymentAt, transportAt, mailAt, legalAt].every(Number.isFinite)
-    && deploymentAt <= transportAt && transportAt <= mailAt && mailAt <= legalAt
+    && [deploymentAt, transportAt, mailAt, paymentAt, legalAt].every(Number.isFinite)
+    && deploymentAt <= transportAt && transportAt <= mailAt && mailAt <= paymentAt && paymentAt <= legalAt
     && artifactTimestampValid(run, transport?.checkedAt)
     && artifactTimestampValid(run, mail?.checkedAt)
+    && artifactTimestampValid(run, payment?.checkedAt)
     && artifactTimestampValid(run, legal?.checkedAt);
   const auxiliaryEvidenceValid = releaseId !== null &&
     transport?.schemaVersion === 3 && transport?.releaseId === releaseId && transport?.ok === true &&
@@ -690,11 +724,16 @@ function verificationValid(
     mail?.schemaVersion === 2 && mail?.releaseId === releaseId && mail?.ok === true && mail.commitSha === commitSha &&
     mail.preflightCheckedAt === transport.preflightCheckedAt && allNamedChecksPassed(mail.checks, MAIL_CHECKS) &&
     !("providerEventId" in (mail ?? {})) &&
+    payment?.schemaVersion === 1 && payment?.releaseId === releaseId && payment?.ok === true &&
+    payment.commitSha === commitSha && allNamedChecksPassed(payment.checks, PAYMENT_CHECKS) &&
+    typeof payment.paymentKeySha256 === "string" && typeof payment.orderIdSha256 === "string" &&
+    typeof payment.subscriptionIdSha256 === "string" && !("paymentKey" in (payment ?? {})) &&
+    !("orderId" in (payment ?? {})) && !("subscriptionId" in (payment ?? {})) &&
     legal?.schemaVersion === 2 && legal?.releaseId === releaseId && legal?.ok === true && legal.commitSha === commitSha &&
     allNamedChecksPassed(legal.checks, LEGAL_CHECKS) &&
     typeof legalArtifacts?.preflightSha256 === "string" &&
     legalArtifacts.preflightSha256 === mailArtifacts?.preflightSha256 &&
-    auxiliaryEvidenceDigestsValid(transport, mail, legal) && auxiliaryLineageValid;
+    auxiliaryEvidenceDigestsValid(transport, mail, payment, legal) && auxiliaryLineageValid;
   return run !== null && artifactRetentionValid(run) && report?.ok === true && report.rollbackRecommended === false
     && releaseId !== null && successfulDeploymentVerificationEvidenceValid(report, releaseId)
     && expected?.commitSha === commitSha && imageDigest !== null && expected.imageDigest === imageDigest
@@ -736,6 +775,9 @@ function closeoutValid(
     typeof artifacts.mailOperationsSha256 === "string" &&
     artifacts.mailOperationsSha256 === hashes?.["mail-operations-evidence.json"] &&
     artifacts.mailOperationsSha256 === verificationRelatedSha256?.["mail-operations-evidence.json"] &&
+    typeof artifacts.paymentOperationsSha256 === "string" &&
+    artifacts.paymentOperationsSha256 === hashes?.["payment-operations-evidence.json"] &&
+    artifacts.paymentOperationsSha256 === verificationRelatedSha256?.["payment-operations-evidence.json"] &&
     typeof artifacts.legalApprovalBindingSha256 === "string" &&
     artifacts.legalApprovalBindingSha256 === hashes?.["legal-approval-binding.json"] &&
     artifacts.legalApprovalBindingSha256 === verificationRelatedSha256?.["legal-approval-binding.json"];
@@ -823,7 +865,7 @@ export class ReleaseFinalizationCoordinatorService {
       input.maximumVerificationDelayHours,
     );
     const verificationSecrets = new Set(input.productionSecretNames);
-    const verificationSecretNames = REQUIRED_PRODUCTION_SECRETS;
+    const verificationSecretNames = REQUIRED_PRODUCTION_VERIFICATION_SECRETS;
     const hasInvalidAcceptance = input.acceptance !== null && !acceptance.valid;
     const hasInvalidVerification = input.verification !== null && !verificationIsValid;
     const hasInvalidCloseout = input.closeout !== null && !closeoutIsValid;

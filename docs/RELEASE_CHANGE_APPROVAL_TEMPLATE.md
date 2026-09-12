@@ -22,7 +22,8 @@
 | 법무 최종 승인 | `legal-approval-binding.json`의 후보·정책·승인일·문서 SHA-256·7개 통과 판정·세 원본 artifact SHA-256 |  | 대기 |
 | SMTP 도메인 인증 | `mail-operations-evidence.json`의 후보 SHA·DNS 레코드 집합 SHA-256·DMARC 정책 |  | 대기 |
 | SMTP 반송 처리 | 비식별 event ID SHA-256·영구 반송 감사기록 ID·9개 통과 판정·원본 artifact SHA-256 |  | 대기 |
-| 운영 HTTPS | `transport-security-evidence.json` 스키마 2의 후보 SHA·18개 통과 판정·API/웹 TLS 버전·인증서 SHA-256·유효기간·원본 artifact SHA-256 |  | 대기 |
+| 운영 결제 왕복 | `payment-operations-evidence.json`의 후보 SHA·비식별 결제/주문/구독 해시·12개 통과 판정·원본 artifact SHA-256 |  | 대기 |
+| 운영 HTTPS | `transport-security-evidence.json` 스키마 3의 후보 SHA·18개 통과 판정·API/웹 TLS 버전·인증서 SHA-256·유효기간·원본 artifact SHA-256 |  | 대기 |
 
 법무 승인 메타데이터는 현재 정책 버전 `guardian-link-v1`과 일치해야 합니다. 운영 환경 파일 원문이나 `LEGAL_POLICY_APPROVAL_SHA256` 값 자체를 이 문서에 복제하지 않고, 승인 원본과 배포 설정의 해시가 일치하는지만 기록합니다.
 

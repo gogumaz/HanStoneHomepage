@@ -9,11 +9,13 @@ export type ReleaseCloseoutInput = {
   deploymentVerification: unknown;
   transportSecurity: unknown;
   mailOperations: unknown;
+  paymentOperations: unknown;
   legalApprovalBinding: unknown;
   acceptanceSha256: string;
   deploymentVerificationSha256: string;
   transportSecuritySha256: string;
   mailOperationsSha256: string;
+  paymentOperationsSha256: string;
   legalApprovalBindingSha256: string;
   maximumVerificationDelayHours: number;
 };
@@ -34,6 +36,7 @@ export type ReleaseCloseoutReport = {
     deploymentVerificationSha256: string;
     transportSecuritySha256: string;
     mailOperationsSha256: string;
+    paymentOperationsSha256: string;
     legalApprovalBindingSha256: string;
   };
   timeline: {
@@ -74,6 +77,12 @@ const TRANSPORT_SECURITY_CHECK_NAMES = [
 const MAIL_OPERATIONS_CHECK_NAMES = [
   "preflight", "candidateCommit", "smtpCheck", "smtpDetail", "preflightTimestamp",
   "preflightFreshness", "bounceWebhook", "providerEventCorrelation", "bounceAuditLog",
+] as const;
+
+const PAYMENT_OPERATIONS_CHECK_NAMES = [
+  "preflight", "candidateCommit", "preflightPaymentConfig", "captureSchema", "productionMode",
+  "captureTimestamp", "paymentIdentity", "approval", "idempotentApproval", "webhook", "refund",
+  "providerCancellation",
 ] as const;
 
 const LEGAL_APPROVAL_BINDING_CHECK_NAMES = [
@@ -158,6 +167,7 @@ export class ReleaseCloseoutService {
       !artifactHashPattern.test(input.deploymentVerificationSha256) ||
       !artifactHashPattern.test(input.transportSecuritySha256) ||
       !artifactHashPattern.test(input.mailOperationsSha256) ||
+      !artifactHashPattern.test(input.paymentOperationsSha256) ||
       !artifactHashPattern.test(input.legalApprovalBindingSha256)) {
       throw closeoutError("RELEASE_CLOSEOUT_ARTIFACT_SHA256_INVALID");
     }
@@ -166,8 +176,10 @@ export class ReleaseCloseoutService {
     const deployment = object(input.deploymentVerification);
     const transport = object(input.transportSecurity);
     const mailOperations = object(input.mailOperations);
+    const paymentOperations = object(input.paymentOperations);
     const legalApprovalBinding = object(input.legalApprovalBinding);
     const mailArtifacts = object(mailOperations?.artifacts);
+    const paymentArtifacts = object(paymentOperations?.artifacts);
     const legalArtifacts = object(legalApprovalBinding?.artifacts);
     const expected = object(deployment?.expected);
     const samples = object(deployment?.samples);
@@ -264,6 +276,20 @@ export class ReleaseCloseoutService {
         "MAIL_OPERATIONS_EVIDENCE_INVALID",
       ),
       check(
+        "paymentOperations",
+        paymentOperations?.schemaVersion === 1 && paymentOperations?.releaseId === releaseId &&
+          paymentOperations?.ok === true && paymentOperations?.commitSha === commitSha &&
+          allNamedChecksPassed(paymentOperations?.checks, PAYMENT_OPERATIONS_CHECK_NAMES) &&
+          typeof paymentOperations.paymentKeySha256 === "string" &&
+          typeof paymentOperations.orderIdSha256 === "string" &&
+          typeof paymentOperations.subscriptionIdSha256 === "string" &&
+          !("paymentKey" in (paymentOperations ?? {})) && !("orderId" in (paymentOperations ?? {})) &&
+          !("subscriptionId" in (paymentOperations ?? {})) &&
+          typeof paymentArtifacts?.preflightSha256 === "string" &&
+          paymentArtifacts.preflightSha256 === mailArtifacts?.preflightSha256,
+        "PAYMENT_OPERATIONS_EVIDENCE_INVALID",
+      ),
+      check(
         "legalApprovalBinding",
         legalApprovalBinding?.schemaVersion === 2 && legalApprovalBinding?.releaseId === releaseId &&
           legalApprovalBinding?.ok === true &&
@@ -283,6 +309,7 @@ export class ReleaseCloseoutService {
       deploymentVerificationSha256: input.deploymentVerificationSha256.toLowerCase(),
       transportSecuritySha256: input.transportSecuritySha256.toLowerCase(),
       mailOperationsSha256: input.mailOperationsSha256.toLowerCase(),
+      paymentOperationsSha256: input.paymentOperationsSha256.toLowerCase(),
       legalApprovalBindingSha256: input.legalApprovalBindingSha256.toLowerCase(),
     };
     const timeline = {

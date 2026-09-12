@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import { calculateDeploymentVerificationEvidenceSha256 } from "./deployment-verification.service.js";
 import {
   PRODUCTION_DEPLOYMENT_CONFIRMATION,
+  REQUIRED_PRODUCTION_VERIFICATION_SECRETS,
   ReleaseFinalizationCoordinatorService,
   type FinalizationEvidenceRun,
   type ReleaseFinalizationCoordinatorInput,
 } from "./release-finalization-coordinator.service.js";
-import { REQUIRED_PRODUCTION_SECRETS } from "./release-readiness.service.js";
 
 const commitSha = "a".repeat(40);
 const imageDigest = `sha256:${"b".repeat(64)}`;
@@ -331,6 +331,32 @@ function verificationRun(): FinalizationEvidenceRun {
       checks: mailChecks.map(({ name, status }) => ({ name, status })),
     })).digest("hex"),
   };
+  const paymentChecks = passed([
+    "preflight", "candidateCommit", "preflightPaymentConfig", "captureSchema", "productionMode",
+    "captureTimestamp", "paymentIdentity", "approval", "idempotentApproval", "webhook", "refund",
+    "providerCancellation",
+  ]);
+  const paymentBase = {
+    schemaVersion: 1,
+    releaseId: "release-2026.08.31",
+    commitSha,
+    checkedAt: "2026-08-31T00:10:25.000Z",
+    capturedAt: "2026-08-31T00:10:15.000Z",
+    paymentKeySha256: "c".repeat(64),
+    orderIdSha256: "d".repeat(64),
+    subscriptionIdSha256: "e".repeat(64),
+    amount: 1_000,
+    artifacts: { preflightSha256, captureSha256: "f".repeat(64) },
+    checks: paymentChecks,
+  };
+  const payment = {
+    ok: true,
+    ...paymentBase,
+    evidenceSha256: createHash("sha256").update(JSON.stringify({
+      ...paymentBase,
+      checks: paymentChecks.map(({ name, status }) => ({ name, status })),
+    })).digest("hex"),
+  };
   const legalChecks = passed([
     "approvalEvidence", "policyVersion", "candidateCommit", "approvalTimestamp",
     "documentSha256", "generatedTimestamp", "preflight",
@@ -408,11 +434,13 @@ function verificationRun(): FinalizationEvidenceRun {
     relatedReports: {
       "transport-security-evidence.json": transport,
       "mail-operations-evidence.json": mail,
+      "payment-operations-evidence.json": payment,
       "legal-approval-binding.json": legal,
     },
     relatedSha256: {
       "transport-security-evidence.json": "3".repeat(64),
       "mail-operations-evidence.json": "4".repeat(64),
+      "payment-operations-evidence.json": "6".repeat(64),
       "legal-approval-binding.json": "5".repeat(64),
     },
   };
@@ -427,6 +455,7 @@ function closeoutRun(
     "production-deployment-verification.json": "2".repeat(64),
     "transport-security-evidence.json": "3".repeat(64),
     "mail-operations-evidence.json": "4".repeat(64),
+    "payment-operations-evidence.json": "6".repeat(64),
     "legal-approval-binding.json": "5".repeat(64),
   };
   const artifacts = {
@@ -434,13 +463,15 @@ function closeoutRun(
     deploymentVerificationSha256: relatedSha256["production-deployment-verification.json"],
     transportSecuritySha256: relatedSha256["transport-security-evidence.json"],
     mailOperationsSha256: relatedSha256["mail-operations-evidence.json"],
+    paymentOperationsSha256: relatedSha256["payment-operations-evidence.json"],
     legalApprovalBindingSha256: relatedSha256["legal-approval-binding.json"],
   };
   const checks = [
     "acceptance", "acceptanceEvidence", "stagingEvidenceBundle", "acceptanceManifest",
     "acceptanceImageReference", "deploymentVerification", "rollbackDecision", "deploymentSamples",
     "deploymentLatency", "deploymentHealth", "candidateIdentity", "webDeployment", "webCandidateIdentity",
-    "transportSecurity", "mailOperations", "legalApprovalBinding", "timelineOrder", "timelineDelay", "timelineFuture",
+    "transportSecurity", "mailOperations", "paymentOperations", "legalApprovalBinding", "timelineOrder",
+    "timelineDelay", "timelineFuture",
   ].map((name) => ({ name, status: "pass", code: "OK" }));
   const acceptedAt = "2026-08-31T00:00:00.000Z";
   const timeline = {
@@ -501,7 +532,7 @@ function validInput(): ReleaseFinalizationCoordinatorInput {
     releaseId: "release-2026.08.31",
     imageReference,
     registryHost: "ghcr.io",
-    productionSecretNames: [...REQUIRED_PRODUCTION_SECRETS],
+    productionSecretNames: [...REQUIRED_PRODUCTION_VERIFICATION_SECRETS],
     deploymentConfirmation: PRODUCTION_DEPLOYMENT_CONFIRMATION,
     maximumVerificationDelayHours: 24,
     acceptance: acceptanceRun(),
@@ -533,7 +564,7 @@ describe("ReleaseFinalizationCoordinatorService", () => {
     });
     expect(report.stage).toBe("blocked");
     expect(report.checks.filter(({ code }) => code === "RELEASE_FINALIZATION_PRODUCTION_SECRET_MISSING"))
-      .toHaveLength(9);
+      .toHaveLength(10);
     expect(report.checks).toContainEqual({
       name: "deploymentConfirmation", status: "fail", code: "RELEASE_FINALIZATION_DEPLOYMENT_CONFIRMATION_REQUIRED",
     });
@@ -663,9 +694,32 @@ describe("ReleaseFinalizationCoordinatorService", () => {
     });
   });
 
-  it("rejects deployment verification without complete transport, mail, and legal evidence", () => {
+  it("rejects deployment verification without complete transport, mail, payment, and legal evidence", () => {
     const verification = verificationRun();
     delete verification.relatedReports?.["legal-approval-binding.json"];
+    const report = new ReleaseFinalizationCoordinatorService().plan({ ...validInput(), verification });
+
+    expect(report.stage).toBe("blocked");
+    expect(report.checks).toContainEqual({
+      name: "evidence:verificationIntegrity", status: "fail", code: "RELEASE_FINALIZATION_VERIFICATION_INVALID",
+    });
+  });
+
+  it("rejects deployment verification without payment operations evidence", () => {
+    const verification = verificationRun();
+    delete verification.relatedReports?.["payment-operations-evidence.json"];
+    const report = new ReleaseFinalizationCoordinatorService().plan({ ...validInput(), verification });
+
+    expect(report.stage).toBe("blocked");
+    expect(report.checks).toContainEqual({
+      name: "evidence:verificationIntegrity", status: "fail", code: "RELEASE_FINALIZATION_VERIFICATION_INVALID",
+    });
+  });
+
+  it("rejects payment evidence that exposes raw provider identifiers", () => {
+    const verification = verificationRun();
+    const payment = verification.relatedReports?.["payment-operations-evidence.json"] as Record<string, unknown>;
+    payment.subscriptionId = "raw-subscription-id";
     const report = new ReleaseFinalizationCoordinatorService().plan({ ...validInput(), verification });
 
     expect(report.stage).toBe("blocked");

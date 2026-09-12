@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "release-YYYY.MM.DD",
+  "commitSha": "40-character-candidate-commit-sha",
+  "capturedAt": "2026-09-12T12:00:00.000Z",
+  "mode": "live",
+  "paymentKey": "actual-Toss-paymentKey",
+  "orderId": "actual-subscription-orderId",
+  "amount": 1000,
+  "approvalResponse": {},
+  "repeatedApprovalResponse": {},
+  "webhookResponse": {},
+  "refundResponse": {},
+  "providerPayment": {}
+}

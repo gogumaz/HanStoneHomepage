@@ -24,6 +24,11 @@ describe("production deployment verification workflow contract", () => {
     expect(workflow).toContain("MAIL_EVIDENCE_RELEASE_ID: ${{ inputs.release_id }}");
     expect(workflow).toContain("PRODUCTION_MAIL_BOUNCE_RESPONSE_BASE64");
     expect(workflow).toContain("server/mail-operations-evidence.json");
+    expect(workflow).toContain("PRODUCTION_PAYMENT_OPERATIONS_BASE64");
+    expect(workflow).toContain("PAYMENT_EVIDENCE_CAPTURE_REPORT");
+    expect(workflow).toContain("node dist/payment-operations-evidence.js");
+    expect(workflow).toContain("server/payment-operations-evidence.json");
+    expect(workflow).toContain("steps.payment_operations.outcome != 'success'");
     expect(workflow).toContain("PRODUCTION_LEGAL_APPROVAL_EVIDENCE_BASE64");
     expect(workflow).toContain("node dist/legal-approval-binding.js");
     expect(workflow).toContain("LEGAL_BINDING_RELEASE_ID: ${{ inputs.release_id }}");

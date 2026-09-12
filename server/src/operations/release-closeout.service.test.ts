@@ -52,6 +52,7 @@ function validInput(): ReleaseCloseoutInput {
     deploymentVerificationSha256: "2".repeat(64),
     transportSecuritySha256: "7".repeat(64),
     mailOperationsSha256: "8".repeat(64),
+    paymentOperationsSha256: "a".repeat(64),
     legalApprovalBindingSha256: "9".repeat(64),
     maximumVerificationDelayHours: 24,
     acceptance: {
@@ -103,6 +104,21 @@ function validInput(): ReleaseCloseoutInput {
         "preflightFreshness", "bounceWebhook", "providerEventCorrelation", "bounceAuditLog",
       ].map((name) => ({ name, status: "pass", code: "OK" })),
       artifacts: { preflightSha256: "f".repeat(64) },
+    },
+    paymentOperations: {
+      ok: true,
+      schemaVersion: 1,
+      releaseId: "release-2026.08.25",
+      commitSha,
+      paymentKeySha256: "a".repeat(64),
+      orderIdSha256: "b".repeat(64),
+      subscriptionIdSha256: "c".repeat(64),
+      artifacts: { preflightSha256: "f".repeat(64), captureSha256: "d".repeat(64) },
+      checks: [
+        "preflight", "candidateCommit", "preflightPaymentConfig", "captureSchema", "productionMode",
+        "captureTimestamp", "paymentIdentity", "approval", "idempotentApproval", "webhook", "refund",
+        "providerCancellation",
+      ].map((name) => ({ name, status: "pass", code: "OK" })),
     },
     legalApprovalBinding: {
       ok: true,
@@ -254,6 +270,28 @@ describe("ReleaseCloseoutService", () => {
     const changedReport = service.run(changed);
 
     expect(changedReport.ok).toBe(true);
+    expect(changedReport.closeoutSha256).not.toBe(original.closeoutSha256);
+  });
+
+  it("rejects payment evidence that exposes a raw payment key", () => {
+    const input = validInput();
+    (input.paymentOperations as Record<string, unknown>).paymentKey = "raw-private-payment-key";
+    const report = new ReleaseCloseoutService(() => new Date("2026-08-25T00:11:00.000Z")).run(input);
+
+    expect(report.checks).toContainEqual({
+      name: "paymentOperations", status: "fail", code: "PAYMENT_OPERATIONS_EVIDENCE_INVALID",
+    });
+  });
+
+  it("cryptographically binds payment operations evidence to the closeout", () => {
+    const service = new ReleaseCloseoutService(() => new Date("2026-08-25T00:11:00.000Z"));
+    const original = service.run(validInput());
+    const changed = validInput();
+    changed.paymentOperationsSha256 = "b".repeat(64);
+    const changedReport = service.run(changed);
+
+    expect(changedReport.ok).toBe(true);
+    expect(changedReport.artifacts.paymentOperationsSha256).toBe("b".repeat(64));
     expect(changedReport.closeoutSha256).not.toBe(original.closeoutSha256);
   });
 

@@ -4,7 +4,7 @@ import type { ReleaseEvidenceName } from "./release-acceptance.service.js";
 
 export type ReleaseJsonArtifactName = ReleaseEvidenceName | "acceptance" | "deploymentVerification" | "closeout" |
   "mailBounceWebhook" | "stagingBundle" | "transportSecurity" | "mailOperations" | "legalApproval" |
-  "legalApprovalBinding";
+  "legalApprovalBinding" | "paymentOperationsCapture" | "paymentOperations";
 
 const MAX_REPORT_BYTES = 1024 * 1024;
 

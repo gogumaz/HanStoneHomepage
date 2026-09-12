@@ -78,3 +78,19 @@ POST /api/v1/orders/checkout
 - 결제 성공·실패·취소·부분 환불·중복 승인·금액 변조 테스트
 - 관리자 대사 화면에서 토스 원본 재조회와 전액 환불 확인
 - 개인정보처리방침에 결제 처리자와 보유 항목 고지
+
+### 운영 결제 증빙 게이트
+
+운영 후보를 배포한 뒤 최소 금액의 구독을 실제로 승인하고, 같은 승인 요청 재전송, `PAYMENT_STATUS_CHANGED` 웹훅 재전송, 관리자 전액 환불을 순서대로 실행합니다. 마지막에는 토스 `GET /v1/payments/{paymentKey}` 조회 결과가 `status=CANCELED`, `balanceAmount=0`이고 성공한 `cancels[].cancelAmount` 합계가 최초 금액과 같은지 확인합니다.
+
+각 API의 원본 JSON을 [결제 운영 증빙 입력 예시](../deploy/payment-operations-capture.example.json)의 대응 필드에 넣습니다. `releaseId`와 `commitSha`는 인수 후보와 같아야 하고 `capturedAt`은 모든 작업이 끝난 시각이어야 합니다. 이 원본에는 결제키가 있으므로 Git이나 일반 artifact에 저장하지 않고 접근 통제된 임시 디렉터리에서만 작성합니다.
+
+```powershell
+$env:PAYMENT_EVIDENCE_PREFLIGHT_REPORT = "production-preflight.json"
+$env:PAYMENT_EVIDENCE_CAPTURE_REPORT = "C:\secure\payment-operations-capture.json"
+$env:PAYMENT_EVIDENCE_RELEASE_ID = "release-YYYY.MM.DD"
+npm --prefix server run verify:payment-operations |
+  Out-File -LiteralPath "payment-operations-evidence.json" -Encoding utf8
+```
+
+성공 결과는 승인·중복 방지·웹훅·환불·토스 원본 취소의 12개 판정을 포함합니다. `paymentKey`, `orderId`, 구독 ID는 원문 대신 SHA-256만 남습니다. 운영 검증 워크플로를 실행하기 직전에 원본 JSON을 base64로 인코딩해 `production` 환경의 `PRODUCTION_PAYMENT_OPERATIONS_BASE64` Secret에 등록하고, 워크플로 종료 후 해당 Secret을 삭제하거나 다음 릴리스 값으로 교체합니다. 워크플로는 원본을 권한 `0600`으로 복원하고 검증 직후 삭제하며 비식별 결과만 90일 artifact에 포함합니다.

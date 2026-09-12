@@ -146,6 +146,14 @@ jobs:
           jq -e \
             --arg commitSha "$CANDIDATE_COMMIT_SHA" \
             --arg preflightSha256 "$(jq -er '.artifacts.preflightSha256' evidence/deployment/mail-operations-evidence.json)" \
+            '.schemaVersion == 1 and .ok == true and .commitSha == $commitSha and
+             .artifacts.preflightSha256 == $preflightSha256 and (.checks | length) == 12 and
+             (has("paymentKey") | not) and (has("orderId") | not) and (has("subscriptionId") | not) and
+             all(.checks[]; .status == "pass" and .code == "OK")' \
+            evidence/deployment/payment-operations-evidence.json > /dev/null
+          jq -e \
+            --arg commitSha "$CANDIDATE_COMMIT_SHA" \
+            --arg preflightSha256 "$(jq -er '.artifacts.preflightSha256' evidence/deployment/mail-operations-evidence.json)" \
             '.schemaVersion == 2 and .ok == true and .commitSha == $commitSha and
              .artifacts.preflightSha256 == $preflightSha256 and (.checks | length) == 7 and
              all(.checks[]; .status == "pass" and .code == "OK")' \
@@ -162,6 +170,7 @@ jobs:
             -e RELEASE_CLOSEOUT_DEPLOYMENT_REPORT=/evidence/deployment/production-deployment-verification.json \
             -e RELEASE_CLOSEOUT_TRANSPORT_SECURITY_REPORT=/evidence/deployment/transport-security-evidence.json \
             -e RELEASE_CLOSEOUT_MAIL_OPERATIONS_REPORT=/evidence/deployment/mail-operations-evidence.json \
+            -e RELEASE_CLOSEOUT_PAYMENT_OPERATIONS_REPORT=/evidence/deployment/payment-operations-evidence.json \
             -e RELEASE_CLOSEOUT_LEGAL_APPROVAL_BINDING_REPORT=/evidence/deployment/legal-approval-binding.json \
             -e RELEASE_CLOSEOUT_MAX_DELAY_HOURS="$MAXIMUM_VERIFICATION_DELAY_HOURS" \
             "$IMAGE_REFERENCE" node dist/release-closeout.js \
@@ -178,6 +187,7 @@ jobs:
             evidence/deployment/production-deployment-verification.json
             evidence/deployment/transport-security-evidence.json
             evidence/deployment/mail-operations-evidence.json
+            evidence/deployment/payment-operations-evidence.json
             evidence/deployment/legal-approval-binding.json
           if-no-files-found: error
           retention-days: 90

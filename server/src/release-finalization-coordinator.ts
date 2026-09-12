@@ -272,7 +272,12 @@ async function main(): Promise<void> {
       verificationSuccess ? `production-deployment-verification-${verificationSuccess.databaseId}` : null,
       "production-deployment-verification.json",
       temporaryRoot,
-      ["transport-security-evidence.json", "mail-operations-evidence.json", "legal-approval-binding.json"],
+      [
+        "transport-security-evidence.json",
+        "mail-operations-evidence.json",
+        "payment-operations-evidence.json",
+        "legal-approval-binding.json",
+      ],
     );
     const closeout = await evidenceRun(
       repository,
@@ -285,6 +290,7 @@ async function main(): Promise<void> {
         "production-deployment-verification.json",
         "transport-security-evidence.json",
         "mail-operations-evidence.json",
+        "payment-operations-evidence.json",
         "legal-approval-binding.json",
       ],
     );
