@@ -89,11 +89,14 @@ export class ProductionPreflightService {
         if (!config.accountMailEncryptionKeyBase64) {
           throw new ConfigurationError("ACCOUNT_MAIL_QUEUE_KEY_REQUIRED");
         }
-        if (!config.mailDkimSelector) {
-          throw new ConfigurationError("MAIL_DKIM_SELECTOR_REQUIRED");
+        if (config.mailDkimSelectors.length === 0) {
+          throw new ConfigurationError("MAIL_DKIM_SELECTORS_REQUIRED");
         }
-        if (!config.mailBounceWebhookSecret) {
-          throw new ConfigurationError("MAIL_BOUNCE_WEBHOOK_SECRET_REQUIRED");
+        if (!config.mailSpfDomain) {
+          throw new ConfigurationError("MAIL_SPF_DOMAIN_REQUIRED");
+        }
+        if (!config.resendWebhookSecret) {
+          throw new ConfigurationError("RESEND_WEBHOOK_SECRET_REQUIRED");
         }
         if (!config.operationsMetricsToken) {
           throw new ConfigurationError("OPERATIONS_METRICS_TOKEN_REQUIRED");
@@ -235,7 +238,7 @@ export class ProductionPreflightService {
       }),
       this.check("objectStorage", async () => {
         await this.storage.verifyVideoStorageAccess();
-        return "put=get=delete=ok; anonymousRead=denied";
+        return "versioning=enabled; put=get=delete=ok; anonymousRead=denied";
       }),
       this.check("cdn", async () => {
         const provider = await this.delivery.verifyCdnConnection();

@@ -1,6 +1,58 @@
 # 채택 권장안과 남은 검토 사항
 
-기준일: 2026-08-21
+기준일: 2026-09-12
+
+## 0. 운영 전환 현황과 우선순위
+
+2026-09-11 실제 운영 환경을 기준으로 확인한 상태입니다. 아래 순서의 선행 조건이
+충족되기 전에는 후보 인수·운영 배포 검증·closeout 워크플로를 임의로 실행하지 않습니다.
+
+| 우선순위 | 항목 | 확인 결과 | 다음 완료 조건 |
+|---|---|---|---|
+| 1 | 카카오 로그인 | `KOE004`의 원인이던 TEST 앱 로그인 비활성화를 해소했고, TEST 앱의 닉네임·이메일 필수 동의도 활성화함. 운영 서버의 REST API 키와 클라이언트 시크릿을 정식 운영 앱 값으로 함께 전환했으며, 운영 앱의 로그인 ON·필수 동의·정확한 콜백 URI·클라이언트 시크릿 활성 상태를 확인함. 운영 URL은 정식 운영 앱과 `https://handol-edu.com/api/v1/auth/oauth/kakao/callback`으로 정상 전환되고, 비로그인 흐름이 `accounts.kakao.com` HTTP 200에 도달하며 `KOE004`가 재발하지 않음 | 실제 카카오 계정으로 동의→콜백→서비스 세션 발급→로그아웃→재로그인까지 브라우저 검증하고 TEST 앱 의존 제거를 최종 확인 |
+| 2 | 운영 API·웹 배포 | 운영 서버 소스를 `e25dd90694f14afdfd94f67ae63d0980747d2855`로 fast-forward하고 새 API 이미지를 빌드·재기동함. 이전 API 이미지는 `rollback-906ade5` 태그로 보존했으며 Docker health, 외부 liveness, DB readiness가 모두 정상임. SHA-256과 공식 설치기 검사를 통과한 같은 커밋의 정적 호스팅 번들을 원자적으로 배포했고, `current`는 `e25dd906…`, `previous`는 `15f5743…`로 보존됨. Nginx 검사·reload, 외부 웹 매니페스트, 핵심 페이지 HTTP 200, 배포 `config.js`와 검증 산출물 일치를 확인함. 2026-09-12 외부 재점검에서도 홈페이지·liveness·DB readiness가 모두 HTTP 200이고 TLS 1.3·HSTS가 정상임 | 완료. 다음 운영 변경 전 현재 API 이미지 digest와 정적 `current`/`previous` 커밋을 배포 기록에 함께 남기고 동일 절차로 롤백 가능성 유지 |
+| 3 | 릴리스 준비 감사 | 2026-09-11 읽기 전용 재감사에서 후보 게시·깨끗한 작업 트리·필수 워크플로 8개·`production` 환경·단독 운영자·리뷰·`main` 배포 정책은 모두 통과함. 실패는 저장소 Secret 6개(`RELEASE_READINESS_TOKEN`, 스테이징 2개, 롤백 리허설 3개)와 production Secret 9개(프리플라이트 환경, 운영·복구 DB, 운영 API·웹·메트릭, 메일 반송 증빙 2개, 법무 승인 증빙) 누락뿐임 | 최소 권한 `RELEASE_READINESS_TOKEN`과 실제 스테이징·격리 복구·메일 반송·법무 승인 자료를 준비해 검증 도구로 Secret 15개를 등록한 뒤 공식 감사 워크플로를 재실행해 통과 |
+| 4 | 스테이징·인수 증빙 | 최신 CI run `34413191522`는 성공했고 웹·브라우저·SBOM artifact가 존재함. 실제 스테이징 부하·워커 soak·후보 인수 실행은 없음 | 스테이징 URL·메트릭 토큰·불변 이미지 digest·격리 복구 DB를 준비하고 부하→soak→후보 인수 순으로 성공 artifact 생성 |
+| 5 | 결제 운영 전환 | 프런트 설정은 토스 테스트 모드이며 실제 결제 운영키·웹훅은 미등록 | 토스 운영 클라이언트 키·Secret Key·웹훅 Secret을 비밀 저장소에 등록하고 소액 승인·취소·웹훅 검증 |
+| 6 | 메일·DNS·TLS | 운영 SMTP 공급자를 Resend로 확정하고 Compose 기본값을 `smtp.resend.com:587` STARTTLS·사용자명 `resend`로 고정함. 거래 메일 발신 도메인은 `notify.handol-edu.com`을 사용함. Resend MAIL FROM SPF 도메인 분리, 여러 DKIM CNAME 검증과 Svix 서명 기반 `email.bounced` 전용 엔드포인트까지 구현됨. 기존 루트 도메인의 DMARC는 `p=none`이고 Resend 발급 DNS·API 키·웹훅 Secret은 아직 미등록 | Resend에서 `notify.handol-edu.com`을 생성하고 대시보드가 발급한 `send.notify.handol-edu.com` SPF·MX와 DKIM CNAME을 DNS에 그대로 등록. `MAIL_SPF_DOMAIN`과 `MAIL_DKIM_SELECTORS`에 실제 값을 입력하고 발신 도메인의 DMARC를 `quarantine` 또는 `reject`로 강화. 제한된 운영 API 키와 `RESEND_WEBHOOK_SECRET`을 비밀 저장소에 등록하고 `https://handol-edu.com/api/v1/mail/webhooks/resend`의 `email.bounced` 구독, SMTP TLS·인증·영구 반송 시험 통과 |
+| 7 | 법무·사업자 정보 | 상호·대표자·사업자번호·통신판매업·고객센터·정책 승인값이 확정되지 않음 | 실제 값을 입력하고 이용약관·개인정보·환불·보호자 동의문 법률 검토와 승인 기록 완료 |
+| 8 | 최종 릴리스 종료 | 운영 배포 검증과 closeout 실행 이력 없음 | 성공한 후보 인수→실제 배포→운영 검증→closeout을 동일 릴리스 ID·후보 SHA·이미지 digest로 연결해 90일 보관 |
+
+2026-09-12 운영 컨테이너에서 실행한 프리플라이트에서 확인된 실패 항목에는
+`OBJECT_STORAGE_NOT_CONFIGURED`, `MALWARE_SCANNER_NOT_CONFIGURED`,
+`MAIL_DOMAIN_AUTH_NOT_CONFIGURED`가 있습니다. 전체 9개 판정의 재수집은 서버 SSH 인증 후
+진행하며, 확인되지 않은 항목을 통과로 간주하지 않습니다.
+
+객체 저장소 프리플라이트는 이제 환경변수의 버전 관리 선언만 신뢰하지 않고 S3 호환
+`GetBucketVersioning` 응답이 실제 `Enabled`인지 확인합니다. 이어서 비공개 임시 객체의
+쓰기·읽기·삭제와 익명 접근 차단을 검사하며, 버전 관리가 중지됐거나 상태 조회 권한이
+없으면 실패합니다. 저장소 구현 검증은 완료됐지만 실서버의
+`OBJECT_STORAGE_NOT_CONFIGURED` 해소에는 실제 HTTPS endpoint·region·bucket·최소 권한
+자격정보와 버전 관리 활성화가 필요합니다. 런타임 역할 또는 키에는 객체 작업 권한 외에
+버킷의 `GetBucketVersioning` 조회 권한도 부여해야 합니다.
+
+같은 날 저장소의 운영 Compose에는 사설망 전용 ClamAV 서비스, 서명 DB 영속 볼륨,
+4GB 메모리 상한, 2GB 영상 검사용 2200MB 제한, 헬스체크 기반 API·영상 워커 시작 순서를
+반영했습니다. 호스트 준비 점검도 API·ClamAV 이미지의 불변 digest, Compose 유효성,
+ClamAV 헬스와 호스트 3310 포트 미노출을 검사합니다. 이는 저장소 구현 완료 상태이며,
+실서버의 `MALWARE_SCANNER_NOT_CONFIGURED` 해소는 커스텀 ClamAV 이미지를 레지스트리에
+게시하고 실제 `CLAMAV_IMAGE=repository@sha256:...`를 등록한 뒤 재배포·프리플라이트해야
+완료로 판정합니다.
+
+메일 도메인 프리플라이트는 SPF의 마지막 `all`이 `~all` 또는 `-all`인지, DMARC 정책이
+중복 없이 `quarantine` 또는 `reject`인지, 레거시 `pct`가 있으면 `100`인지까지 검사하도록
+강화했습니다. 2026-09-12 재조회한 `handol-edu.com` SPF는
+`v=spf1 ip4:115.71.237.165 ~all`로 이 기준을 통과하지만 DMARC는
+`v=DMARC1; p=none;`이어서 실패합니다. `notify.handol-edu.com`과
+`_dmarc.notify.handol-edu.com`은 현재 와일드카드 영향으로 `handol-edu.com`을 가리키는
+CNAME으로 응답하며 Resend 전용 SPF·DMARC가 아닙니다. 확인한 `mail2026`·`default`·`selector1`
+DKIM 선택자에는 TXT 공개키가 없었고 `mail.handol-edu.com`의 25·465·587 포트도 외부에서
+연결되지 않았습니다. Resend가 발급한 `send.notify.handol-edu.com` MX·SPF와 세 DKIM CNAME,
+명시적인 `_dmarc.notify.handol-edu.com` 정책을 등록해 와일드카드보다 우선하게 하고
+`MAIL_SPF_DOMAIN=send.notify.handol-edu.com`과 모든 DKIM 선택자를 입력한 뒤 재검증해야 합니다.
+
+운영 Secret의 값은 이 문서나 Git 이력에 기록하지 않고 GitHub Environment Secret 및
+서버의 권한 제한 환경 파일로만 전달합니다.
 
 ## 1. 채택한 기본안
 

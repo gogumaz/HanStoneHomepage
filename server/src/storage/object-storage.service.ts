@@ -8,6 +8,7 @@ import {
   DeleteObjectsCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  GetBucketVersioningCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -946,6 +947,23 @@ export class ObjectStorageService {
       throw new ApiError(
         "OBJECT_STORAGE_NOT_CONFIGURED",
         "영상 저장소 연결이 필요합니다.",
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    try {
+      const versioning = await this.client.send(new GetBucketVersioningCommand({ Bucket: this.bucket }));
+      if (versioning.Status !== "Enabled") {
+        throw new ApiError(
+          "OBJECT_STORAGE_VERSIONING_NOT_ENABLED",
+          "객체 저장소 버전 관리가 활성화되어 있지 않습니다.",
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(
+        "OBJECT_STORAGE_VERSIONING_CHECK_FAILED",
+        "객체 저장소 버전 관리 상태를 확인하지 못했습니다.",
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }

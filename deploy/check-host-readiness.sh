@@ -67,6 +67,27 @@ require_value() {
   fi
 }
 
+read_env_value() {
+  local key="$1"
+  local file="$2"
+  awk -v key="$key" '
+    index($0, key "=") == 1 { value = substr($0, length(key) + 2) }
+    END { print value }
+  ' "$file"
+}
+
+check_immutable_image_reference() {
+  local variable_name="$1"
+  local file="$2"
+  local value
+  value="$(read_env_value "$variable_name" "$file")"
+  if [[ "$value" =~ ^[^[:space:]@]+@sha256:[a-f0-9]{64}$ ]]; then
+    pass "${variable_name} uses an immutable sha256 digest reference"
+  else
+    fail "${variable_name} must be repository@sha256:<64 lowercase hex characters>"
+  fi
+}
+
 while (($# > 0)); do
   case "$1" in
     --mode)
@@ -363,8 +384,40 @@ if [[ "$MODE" == "full" ]]; then
     else
       fail "Production environment file permissions must be root:root 600 (found ${ENV_OWNER:-unknown}:${ENV_MODE:-unknown})"
     fi
+    check_immutable_image_reference API_IMAGE /etc/hanstone/production.env
+    check_immutable_image_reference CLAMAV_IMAGE /etc/hanstone/production.env
   else
     fail '/etc/hanstone/production.env is missing'
+  fi
+
+  if ((${#DOCKER_PREFIX[@]} > 0)) \
+    && [[ -f /opt/hanstone/deploy/compose.production.yaml ]] \
+    && [[ -f /etc/hanstone/production.env ]]; then
+    if "${DOCKER_PREFIX[@]}" compose \
+      --env-file /etc/hanstone/production.env \
+      -f /opt/hanstone/deploy/compose.production.yaml \
+      config --quiet >/dev/null 2>&1; then
+      pass 'Production Compose configuration is valid'
+    else
+      fail 'Production Compose configuration is invalid'
+    fi
+
+    CLAMAV_CONTAINER_ID="$("${DOCKER_PREFIX[@]}" compose \
+      --env-file /etc/hanstone/production.env \
+      -f /opt/hanstone/deploy/compose.production.yaml \
+      ps -q clamav 2>/dev/null || true)"
+    if [[ -n "$CLAMAV_CONTAINER_ID" ]]; then
+      CLAMAV_HEALTH="$("${DOCKER_PREFIX[@]}" inspect \
+        --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' \
+        "$CLAMAV_CONTAINER_ID" 2>/dev/null || true)"
+      if [[ "$CLAMAV_HEALTH" == "healthy" ]]; then
+        pass 'ClamAV container health check passed'
+      else
+        fail "ClamAV container is not healthy (${CLAMAV_HEALTH:-unavailable})"
+      fi
+    else
+      fail 'ClamAV container is not running'
+    fi
   fi
 
   LISTENERS="$(ss -ltnH 2>/dev/null | awk '{print $4}' || true)"
@@ -374,6 +427,11 @@ if [[ "$MODE" == "full" ]]; then
     fail 'API port 3000 is publicly bound; use 127.0.0.1:3000 only'
   else
     fail 'API port 3000 is not listening'
+  fi
+  if grep -Eq '(^|:)3310$' <<<"$LISTENERS"; then
+    fail 'ClamAV port 3310 is published on the host; keep it inside the Compose network'
+  else
+    pass 'ClamAV port 3310 is not published on the host'
   fi
 
   for endpoint in live ready; do

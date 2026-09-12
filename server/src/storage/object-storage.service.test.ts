@@ -397,6 +397,7 @@ describe("ObjectStorageService", () => {
     const storage = new ObjectStorageService();
     const probe = Uint8Array.from([98, 97, 100, 117, 107, 45, 112, 114, 101, 102, 108, 105, 103, 104, 116]);
     const send = vi.fn()
+      .mockResolvedValueOnce({ Status: "Enabled" })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ Body: { transformToByteArray: async () => probe } })
       .mockResolvedValueOnce({});
@@ -405,13 +406,14 @@ describe("ObjectStorageService", () => {
 
     await expect(storage.verifyVideoStorageAccess()).resolves.toBeUndefined();
 
-    expect(send).toHaveBeenCalledTimes(3);
+    expect(send).toHaveBeenCalledTimes(4);
     expect(send.mock.calls.map(([command]) => command.constructor.name)).toEqual([
+      "GetBucketVersioningCommand",
       "PutObjectCommand",
       "GetObjectCommand",
       "DeleteObjectCommand",
     ]);
-    const keys = send.mock.calls.map(([command]) => command.input.Key);
+    const keys = send.mock.calls.slice(1).map(([command]) => command.input.Key);
     expect(new Set(keys).size).toBe(1);
     expect(keys[0]).toMatch(/^lesson-videos\/preflight\/[0-9a-f-]+\.mp4$/);
     expect(fetchMock).toHaveBeenCalledWith(
@@ -428,6 +430,7 @@ describe("ObjectStorageService", () => {
     process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY = "test-secret-key";
     const storage = new ObjectStorageService();
     const send = vi.fn()
+      .mockResolvedValueOnce({ Status: "Enabled" })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ Body: { transformToByteArray: async () => Uint8Array.from([0]) } })
       .mockResolvedValueOnce({});
@@ -438,6 +441,7 @@ describe("ObjectStorageService", () => {
       code: "OBJECT_STORAGE_PREFLIGHT_FAILED",
     } satisfies Partial<ApiError>);
     expect(send.mock.calls.map(([command]) => command.constructor.name)).toEqual([
+      "GetBucketVersioningCommand",
       "PutObjectCommand",
       "GetObjectCommand",
       "DeleteObjectCommand",
@@ -453,6 +457,7 @@ describe("ObjectStorageService", () => {
     const storage = new ObjectStorageService();
     const probe = Uint8Array.from([98, 97, 100, 117, 107]);
     const send = vi.fn()
+      .mockResolvedValueOnce({ Status: "Enabled" })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ Body: { transformToByteArray: async () => probe } })
       .mockResolvedValueOnce({});
@@ -463,11 +468,41 @@ describe("ObjectStorageService", () => {
       code: "OBJECT_STORAGE_PREFLIGHT_FAILED",
     } satisfies Partial<ApiError>);
     expect(send.mock.calls.map(([command]) => command.constructor.name)).toEqual([
+      "GetBucketVersioningCommand",
       "PutObjectCommand",
       "GetObjectCommand",
       "DeleteObjectCommand",
     ]);
     fetchMock.mockRestore();
+  });
+
+  it("fails before creating a probe when bucket versioning is not enabled", async () => {
+    process.env.OBJECT_STORAGE_BUCKET = "private-media";
+    process.env.OBJECT_STORAGE_ACCESS_KEY_ID = "test-access-key";
+    process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY = "test-secret-key";
+    const storage = new ObjectStorageService();
+    const send = vi.fn().mockResolvedValueOnce({ Status: "Suspended" });
+    Object.assign(storage as object, { client: { send } });
+
+    await expect(storage.verifyVideoStorageAccess()).rejects.toMatchObject({
+      code: "OBJECT_STORAGE_VERSIONING_NOT_ENABLED",
+    } satisfies Partial<ApiError>);
+    expect(send).toHaveBeenCalledOnce();
+    expect(send.mock.calls[0]?.[0]?.constructor.name).toBe("GetBucketVersioningCommand");
+  });
+
+  it("fails closed when bucket versioning status cannot be read", async () => {
+    process.env.OBJECT_STORAGE_BUCKET = "private-media";
+    process.env.OBJECT_STORAGE_ACCESS_KEY_ID = "test-access-key";
+    process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY = "test-secret-key";
+    const storage = new ObjectStorageService();
+    const send = vi.fn().mockRejectedValueOnce(new Error("access denied with private detail"));
+    Object.assign(storage as object, { client: { send } });
+
+    await expect(storage.verifyVideoStorageAccess()).rejects.toMatchObject({
+      code: "OBJECT_STORAGE_VERSIONING_CHECK_FAILED",
+    } satisfies Partial<ApiError>);
+    expect(send).toHaveBeenCalledOnce();
   });
 
   it("verifies a temporary object through a CDN signed URL and always deletes it", async () => {

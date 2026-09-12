@@ -14,8 +14,10 @@ function productionEnv(): NodeJS.ProcessEnv {
     SMTP_USER: "smtp-user",
     SMTP_PASSWORD: "smtp-password",
     MAIL_FROM: "바둑타고 <no-reply@example.com>",
-    MAIL_DKIM_SELECTOR: "mail2026",
+    MAIL_SPF_DOMAIN: "send.example.com",
+    MAIL_DKIM_SELECTORS: "resend1,resend2,resend3",
     MAIL_BOUNCE_WEBHOOK_SECRET: "bounce_webhook_secret_1234567890_abcd",
+    RESEND_WEBHOOK_SECRET: "whsec_dGVzdF9yZXNlbmRfd2ViaG9va19zZWNyZXQ=",
     LEGAL_POLICY_VERSION: "guardian-link-v1",
     LEGAL_POLICY_APPROVED_AT: "2026-08-01T00:00:00.000Z",
     LEGAL_POLICY_APPROVAL_SHA256: "a".repeat(64),
@@ -149,11 +151,31 @@ describe("loadAppConfig account mail settings", () => {
       smtpRequireTls: true,
       smtpUser: "smtp-user",
       smtpFrom: "바둑타고 <no-reply@example.com>",
-      mailDkimSelector: "mail2026",
+      mailSpfDomain: "send.example.com",
+      mailDkimSelectors: ["resend1", "resend2", "resend3"],
+      resendWebhookSecret: "whsec_dGVzdF9yZXNlbmRfd2ViaG9va19zZWNyZXQ=",
       legalPolicyVersion: "guardian-link-v1",
       legalPolicyApprovedAt: "2026-08-01T00:00:00.000Z",
       legalPolicyApprovalSha256: "a".repeat(64),
     });
+  });
+
+  it("parses multiple DKIM selectors and keeps the legacy singular setting as fallback", () => {
+    const base = { DATABASE_URL: "postgresql://test:test@localhost/test" };
+    expect(loadAppConfig({ ...base, MAIL_DKIM_SELECTORS: " First,second,THIRD " }).mailDkimSelectors)
+      .toEqual(["first", "second", "third"]);
+    expect(loadAppConfig({ ...base, MAIL_DKIM_SELECTOR: "legacy" }).mailDkimSelectors)
+      .toEqual(["legacy"]);
+    expect(() => loadAppConfig({ ...base, MAIL_DKIM_SELECTORS: "same,SAME" }))
+      .toThrow(/중복/);
+  });
+
+  it("normalizes and validates the Resend MAIL FROM domain", () => {
+    const base = { DATABASE_URL: "postgresql://test:test@localhost/test" };
+    expect(loadAppConfig({ ...base, MAIL_SPF_DOMAIN: "Send.Notify.Example.com." }).mailSpfDomain)
+      .toBe("send.notify.example.com");
+    expect(() => loadAppConfig({ ...base, MAIL_SPF_DOMAIN: "invalid_domain" }))
+      .toThrow(/MAIL_SPF_DOMAIN/);
   });
 
   it("requires a signed current legal-policy approval in production", () => {

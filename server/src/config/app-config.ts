@@ -23,8 +23,10 @@ export type AppConfig = {
   smtpUser: string | null;
   smtpPassword: string | null;
   smtpFrom: string | null;
-  mailDkimSelector: string | null;
+  mailSpfDomain: string | null;
+  mailDkimSelectors: string[];
   mailBounceWebhookSecret: string | null;
+  resendWebhookSecret: string | null;
   smtpConnectionTimeoutMs: number;
   accountMailEncryptionKeyBase64: string | null;
   accountMailPollIntervalMs: number;
@@ -193,9 +195,35 @@ function optionalMailDkimSelector(value: string | undefined): string | null {
   if (!value?.trim()) return null;
   const candidate = value.trim().toLowerCase();
   if (!/^[a-z0-9][a-z0-9_-]{0,62}$/.test(candidate)) {
-    throw new Error("MAIL_DKIM_SELECTOR는 영문·숫자·_·- 조합의 1~63자 값이어야 합니다.");
+    throw new Error("MAIL_DKIM_SELECTORS의 각 값은 영문·숫자·_·- 조합의 1~63자여야 합니다.");
   }
   return candidate;
+}
+
+function optionalMailSpfDomain(value: string | undefined): string | null {
+  if (!value?.trim()) return null;
+  const candidate = value.trim().toLowerCase().replace(/\.$/u, "");
+  if (
+    candidate.length > 253
+    || !candidate.includes(".")
+    || candidate.split(".").some((label) => (
+      !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(label)
+    ))
+  ) {
+    throw new Error("MAIL_SPF_DOMAIN은 유효한 DNS 도메인이어야 합니다.");
+  }
+  return candidate;
+}
+
+function mailDkimSelectors(env: NodeJS.ProcessEnv): string[] {
+  const raw = env.MAIL_DKIM_SELECTORS?.trim() || env.MAIL_DKIM_SELECTOR?.trim() || "";
+  if (!raw) return [];
+  const selectors = raw.split(",").map((value) => optionalMailDkimSelector(value) ?? "");
+  const unique = [...new Set(selectors)];
+  if (unique.length !== selectors.length || unique.length > 10) {
+    throw new Error("MAIL_DKIM_SELECTORS는 중복 없이 최대 10개까지 설정해야 합니다.");
+  }
+  return unique;
 }
 
 function optionalWebhookSecret(value: string | undefined): string | null {
@@ -203,6 +231,15 @@ function optionalWebhookSecret(value: string | undefined): string | null {
   const candidate = value.trim();
   if (!/^[A-Za-z0-9_-]{32,200}$/.test(candidate)) {
     throw new Error("MAIL_BOUNCE_WEBHOOK_SECRET은 영문·숫자·_·- 조합의 32~200자 값이어야 합니다.");
+  }
+  return candidate;
+}
+
+function optionalResendWebhookSecret(value: string | undefined): string | null {
+  if (!value?.trim()) return null;
+  const candidate = value.trim();
+  if (!/^whsec_[A-Za-z0-9_+/=-]{16,200}$/u.test(candidate)) {
+    throw new Error("RESEND_WEBHOOK_SECRET은 Resend가 발급한 whsec_ 형식이어야 합니다.");
   }
   return candidate;
 }
@@ -230,8 +267,10 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const smtpUser = env.SMTP_USER?.trim() || null;
   const smtpPassword = env.SMTP_PASSWORD?.trim() || null;
   const smtpFrom = env.MAIL_FROM?.trim() || null;
-  const mailDkimSelector = optionalMailDkimSelector(env.MAIL_DKIM_SELECTOR);
+  const mailSpfDomain = optionalMailSpfDomain(env.MAIL_SPF_DOMAIN);
+  const configuredMailDkimSelectors = mailDkimSelectors(env);
   const mailBounceWebhookSecret = optionalWebhookSecret(env.MAIL_BOUNCE_WEBHOOK_SECRET);
+  const resendWebhookSecret = optionalResendWebhookSecret(env.RESEND_WEBHOOK_SECRET);
   const accountMailEncryptionKeyBase64 = optionalEncryptionKey(env.ACCOUNT_MAIL_ENCRYPTION_KEY_BASE64);
   const operationsMetricsToken = optionalMetricsToken(env.OPERATIONS_METRICS_TOKEN);
   if (Boolean(smtpUser) !== Boolean(smtpPassword)) {
@@ -596,8 +635,10 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     smtpUser,
     smtpPassword,
     smtpFrom,
-    mailDkimSelector,
+    mailSpfDomain,
+    mailDkimSelectors: configuredMailDkimSelectors,
     mailBounceWebhookSecret,
+    resendWebhookSecret,
     smtpConnectionTimeoutMs: positiveInteger(
       env.SMTP_CONNECTION_TIMEOUT_MS,
       10_000,

@@ -21,8 +21,10 @@ function productionEnv(): NodeJS.ProcessEnv {
     SMTP_PORT: "587",
     SMTP_REQUIRE_TLS: "true",
     MAIL_FROM: "바둑타고 <no-reply@example.com>",
-    MAIL_DKIM_SELECTOR: "mail2026",
+    MAIL_SPF_DOMAIN: "send.example.com",
+    MAIL_DKIM_SELECTORS: "resend1,resend2,resend3",
     MAIL_BOUNCE_WEBHOOK_SECRET: "bounce_webhook_secret_1234567890_abcd",
+    RESEND_WEBHOOK_SECRET: "whsec_dGVzdF9yZXNlbmRfd2ViaG9va19zZWNyZXQ=",
     OBJECT_STORAGE_BUCKET: "private-media",
     MALWARE_SCANNER_HOST: "clamav.internal",
     TOSS_PAYMENTS_SECRET_KEY: "toss-secret",
@@ -101,7 +103,7 @@ function harness(
     verifyConnection: vi.fn(async () => undefined),
     verifyDomainAuthentication: vi.fn(async () => ({
       domain: "example.com",
-      dkimSelector: "mail2026",
+      dkimSelectors: ["mail2026"],
       dmarcPolicy: "reject" as const,
       domainSha256: "1".repeat(64),
       dkimSelectorSha256: "2".repeat(64),
@@ -164,7 +166,7 @@ describe("ProductionPreflightService", () => {
     expect(report.checks.find((check) => check.name === "smtp")?.detail).toContain("messageSent=false");
     expect(test.storage.verifyVideoStorageAccess).toHaveBeenCalledOnce();
     expect(report.checks.find((check) => check.name === "objectStorage")?.detail)
-      .toBe("put=get=delete=ok; anonymousRead=denied");
+      .toBe("versioning=enabled; put=get=delete=ok; anonymousRead=denied");
     expect(test.delivery.verifyCdnConnection).toHaveBeenCalledOnce();
     expect(test.transcoder.verifyBinaries).toHaveBeenCalledOnce();
     expect(report.checks.find((check) => check.name === "cdn")?.detail).toBe("disabled");
@@ -261,8 +263,9 @@ describe("ProductionPreflightService", () => {
   });
 
   it.each([
-    ["MAIL_DKIM_SELECTOR", "MAIL_DKIM_SELECTOR_REQUIRED"],
-    ["MAIL_BOUNCE_WEBHOOK_SECRET", "MAIL_BOUNCE_WEBHOOK_SECRET_REQUIRED"],
+    ["MAIL_SPF_DOMAIN", "MAIL_SPF_DOMAIN_REQUIRED"],
+    ["MAIL_DKIM_SELECTORS", "MAIL_DKIM_SELECTORS_REQUIRED"],
+    ["RESEND_WEBHOOK_SECRET", "RESEND_WEBHOOK_SECRET_REQUIRED"],
   ])("requires the production mail control %s", async (key, code) => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       code: 0,

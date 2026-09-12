@@ -86,7 +86,7 @@ export class AccountMailService {
   }
 
   async verifyDomainAuthentication(): Promise<MailDomainAuthenticationResult> {
-    if (!this.config.smtpFrom || !this.config.mailDkimSelector) {
+    if (!this.config.smtpFrom || this.config.mailDkimSelectors.length === 0) {
       throw new ApiError(
         "MAIL_DOMAIN_AUTH_NOT_CONFIGURED",
         "메일 발신 도메인과 DKIM 선택자 설정이 필요합니다.",
@@ -95,7 +95,8 @@ export class AccountMailService {
     }
     return verifyMailDomainAuthentication({
       mailFrom: this.config.smtpFrom,
-      dkimSelector: this.config.mailDkimSelector,
+      ...(this.config.mailSpfDomain ? { spfDomain: this.config.mailSpfDomain } : {}),
+      dkimSelectors: this.config.mailDkimSelectors,
     });
   }
 

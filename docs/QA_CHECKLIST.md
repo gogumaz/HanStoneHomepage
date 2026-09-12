@@ -125,7 +125,7 @@
 - [x] 이메일 인증 토큰이 일회용이며 인증 상태가 `/me`에 반영됨
 - [x] SMTP 이메일의 인증·재설정 링크, HTML 이스케이프와 발송 결과 감사로그가 검증됨
 - [ ] SMTP 운영 도메인의 SPF·DKIM·DMARC와 반송 처리가 검증됨
-  - 자동 DNS 프리플라이트와 영구 반송 웹훅은 구현됨. 프리플라이트는 DMARC 정책과 발신 도메인·DKIM 선택자·정규화된 SPF/DKIM/DMARC 레코드 집합의 SHA-256을 기록해 원문 노출 없이 DNS 관측값을 증빙에 고정함. 최초 영구 반송 응답은 감사기록 ID와 공급자 `eventId`의 SHA-256을 반환하고 감사로그에도 원문 대신 해시만 기록함. `verify:mail-operations`가 DNS 해시, 실제 공급자 시험 이벤트 해시 일치, 운영 프리플라이트·웹훅 응답의 원본 SHA-256을 결합하되 event ID 원문은 제거한 비식별 JSON 증빙을 생성함. 승인형 운영 배포 검증이 이를 자동 생성해 90일 보관하고 closeout이 후보·프리플라이트 시각·9개 판정·원본 SHA-256을 최종 해시에 고정함. 실제 `MAIL_FROM`·DKIM 선택자·SMTP 공급자 설정 후 운영 프리플라이트와 공급자 반송 시험 통과 증적이 필요함.
+  - Resend 전용 자동 DNS 프리플라이트와 영구 반송 웹훅은 구현됨. 프리플라이트는 `MAIL_SPF_DOMAIN`에 지정한 Resend MAIL FROM 호스트의 SPF와 여러 DKIM CNAME의 최종 공개키를 모두 확인하고, 발신 주소 도메인의 DMARC 정책과 도메인·선택자 목록·정규화된 SPF/DKIM/DMARC 레코드 집합의 SHA-256을 기록해 원문 노출 없이 DNS 관측값을 증빙에 고정함. `/api/v1/mail/webhooks/resend`는 원문 본문과 Svix 헤더 서명을 검증하고 `email.bounced`의 영구 반송만 Message-ID로 연결함. 최초 영구 반송 응답은 감사기록 ID와 `svix-id`의 SHA-256을 반환하고 감사로그에도 원문 대신 해시만 기록함. `verify:mail-operations`가 DNS 해시, 실제 공급자 시험 이벤트 해시 일치, 운영 프리플라이트·웹훅 응답의 원본 SHA-256을 결합하되 이벤트 ID 원문은 제거한 비식별 JSON 증빙을 생성함. 승인형 운영 배포 검증이 이를 자동 생성해 90일 보관하고 closeout이 후보·프리플라이트 시각·9개 판정·원본 SHA-256을 최종 해시에 고정함. 실제 `MAIL_FROM`·`MAIL_SPF_DOMAIN`·`MAIL_DKIM_SELECTORS`·Resend API 키·`RESEND_WEBHOOK_SECRET`을 설정한 후 운영 프리플라이트와 공급자 반송 시험 통과 증적이 필요함.
 - [x] 비밀번호 또는 연결된 OAuth ID 재인증 후 계정 탈퇴와 개인정보 익명화가 동작함
 - [x] 탈퇴 시 모든 세션·로그인 수단·학습 진도가 제거되고 같은 이메일로 재가입할 수 있음
 - [x] 소셜 전용 계정 탈퇴 시 현재 계정과 다른 제공사 사용자 ID를 거부함

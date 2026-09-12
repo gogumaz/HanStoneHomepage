@@ -50,20 +50,20 @@ HTML·`config.js`는 항상 재검증하며 `/api/`는 `127.0.0.1:3000`으로만
 각 환경의 DB, OAuth Secret, 토스페이먼츠 Secret Key와 객체 저장소 자격증명은 서로 공유하지 않습니다.
 Secret은 저장소나 프런트 빌드에 넣지 않고 배포 플랫폼의 비밀 관리 기능으로 주입합니다.
 필수 배포 변수의 이름은 `production.env.example`, 결제 세부 변수의 이름은
-`../server/.env.example`의 토스페이먼츠 설정을 기준으로 등록합니다. AWS 역할 기반 자격증명을 사용하면 객체 저장소 Access Key 두 항목은 비워 두고 런타임 역할에 대상 접두사의 `GetObject`·`PutObject`·`DeleteObject` 권한을 부여합니다. 버킷 공개 접근은 차단하고 프런트 운영 도메인의 업로드 `POST`와 HLS 세그먼트 `GET`·`HEAD`를 허용하는 CORS 규칙을 설정합니다. CloudFront에는 비공개 S3 origin과 OAC, `lesson-videos/*`·`lesson-hls/*` behavior, 신뢰 키 그룹, HTTPS 도메인·인증서를 설정하고 키 ID와 base64 PEM 개인키를 배포 Secret으로 주입합니다.
+`../server/.env.example`의 토스페이먼츠 설정을 기준으로 등록합니다. AWS 역할 기반 자격증명을 사용하면 객체 저장소 Access Key 두 항목은 비워 두고 런타임 역할에 대상 접두사의 `GetObject`·`PutObject`·`DeleteObject` 권한과 버킷 자체의 `GetBucketVersioning` 권한을 부여합니다. 버킷 공개 접근은 차단하고 프런트 운영 도메인의 업로드 `POST`와 HLS 세그먼트 `GET`·`HEAD`를 허용하는 CORS 규칙을 설정합니다. CloudFront에는 비공개 S3 origin과 OAC, `lesson-videos/*`·`lesson-hls/*` behavior, 신뢰 키 그룹, HTTPS 도메인·인증서를 설정하고 키 ID와 base64 PEM 개인키를 배포 Secret으로 주입합니다.
 
 정적 웹 배포물은 CI의 `web-release-{commitSha}` artifact를 사용합니다. 포함된 `web-deployment-manifest.json`은 모든 파일의 SHA-256·크기·Content-Type·Cache-Control을 후보 커밋에 결합합니다. `assets/` 아래의 Vite 해시 자산만 `public,max-age=31536000,immutable`로 배포하고 HTML·`config.js`·기타 진입 파일은 `public,max-age=0,must-revalidate`로 배포합니다. CDN 업로드 도구는 매니페스트의 해시를 대조한 뒤 헤더를 그대로 적용해야 하며, 이전 HTML이 새 해시 자산을 참조하지 않도록 진입 파일은 자산 업로드 후 마지막에 교체합니다.
 
 `npm run verify:web-artifacts`는 소스맵·TypeScript·환경 파일을 차단하고 `config.js`의 공개 런타임 스키마를 검사합니다. API 주소는 상대 경로·HTTPS·로컬 HTTP만 허용하며 OAuth 제공사와 토스페이먼츠 모드/공개 클라이언트 키의 조합을 검증합니다. `*_gsk_` Secret Key, 개인키 또는 secret·password·token 계열 필드는 웹 산출물에 포함할 수 없습니다.
 
-계정 보안 토큰의 기본 유효기간은 비밀번호 재설정 30분, 이메일 인증 24시간입니다. 운영 응답에는 개발용 토큰이 포함되지 않으며 SMTP로 `PUBLIC_APP_URL`의 계정 링크를 발송합니다. 운영 배포에는 `SMTP_HOST`, `MAIL_FROM`, `PUBLIC_APP_URL`, `MAIL_DKIM_SELECTOR`, `MAIL_BOUNCE_WEBHOOK_SECRET`이 필수입니다. 587 포트는 STARTTLS를 강제하고 465 포트는 implicit TLS 설정을 사용합니다. 영속 큐가 자동 재시도하며 발송·영구 반송 상태를 감사로그에 기록합니다. SMTP 공급자 반송 알림은 인증된 `POST /api/v1/mail/webhooks/bounce` 계약으로 연결하고, 배포 프리플라이트에서 SPF·DKIM·DMARC와 SMTP 연결이 모두 통과해야 합니다.
+계정 보안 토큰의 기본 유효기간은 비밀번호 재설정 30분, 이메일 인증 24시간입니다. 운영 응답에는 개발용 토큰이 포함되지 않으며 SMTP로 `PUBLIC_APP_URL`의 계정 링크를 발송합니다. 운영 SMTP 공급자는 Resend로 확정했습니다. `smtp.resend.com:587`, STARTTLS, 사용자명 `resend`, 비밀번호로 제한된 운영 API 키를 사용하고 `notify.handol-edu.com`을 거래 메일 전용 발신 서브도메인으로 등록합니다. 운영 배포에는 `MAIL_FROM`, `PUBLIC_APP_URL`, Resend의 MAIL FROM SPF 호스트인 `MAIL_SPF_DOMAIN=send.notify.handol-edu.com`, 발급된 모든 DKIM 선택자를 쉼표로 연결한 `MAIL_DKIM_SELECTORS`, 웹훅 서명 Secret인 `RESEND_WEBHOOK_SECRET`이 필요합니다. 영속 큐가 자동 재시도하며 발송·영구 반송 상태를 감사로그에 기록합니다. Resend 콘솔에는 `https://handol-edu.com/api/v1/mail/webhooks/resend`를 등록하고 `email.bounced` 이벤트를 구독합니다. 전용 엔드포인트는 원문 요청 본문과 `svix-id`·`svix-timestamp`·`svix-signature`를 검증한 뒤 영구 반송만 반영하며, 기존 `POST /api/v1/mail/webhooks/bounce` Bearer 엔드포인트는 정규화 게이트웨이 호환용입니다. 배포 프리플라이트에서 `MAIL_SPF_DOMAIN`의 SPF·모든 DKIM CNAME의 최종 공개키·발신 주소 도메인의 DMARC와 SMTP 연결이 모두 통과해야 합니다. SPF는 정확히 한 레코드와 마지막 `~all` 또는 `-all`, DMARC는 `quarantine`·`reject`와 100% 적용(레거시 `pct`가 있으면 `100`)을 요구합니다.
 
-운영 메일 인수 시에는 공급자 콘솔에서 실제 영구 반송 시험을 한 번 실행하고 최초 웹훅 응답 JSON을 보관합니다. 요청에는 공급자가 발급한 안정적인 `eventId`가 필요하며 서버는 원문 대신 SHA-256만 응답과 감사로그에 기록합니다. 응답의 `data.action`은 `bounced`이고 `data.auditLogId`가 있어야 합니다. 같은 이벤트의 재전송은 멱등하게 `unchanged`가 되므로 최초 응답을 사용합니다. 다음 도구는 24시간 이내 운영 프리플라이트의 SMTP DNS·TLS·인증 성공, DMARC 정책, 발신 도메인·DKIM 선택자·정규화된 SPF/DKIM/DMARC 레코드 집합의 SHA-256, 후보 SHA, 입력한 공급자 이벤트 ID와 웹훅 응답의 이벤트 해시 일치, 최초 반송 감사기록 ID와 두 원본 파일의 SHA-256을 결합합니다. DNS 레코드 원문, 공급자 이벤트 ID 원문, 메시지 ID·수신자·SMTP 자격증명은 결과에 포함하지 않습니다.
+운영 메일 인수 시에는 Resend 콘솔에서 실제 영구 반송 시험을 한 번 실행하고 최초 웹훅 응답 JSON을 보관합니다. Resend의 `svix-id`를 공급자 이벤트 ID로 사용하며 서버는 원문 대신 SHA-256만 응답과 감사로그에 기록합니다. 응답의 `data.action`은 `bounced`이고 `data.auditLogId`가 있어야 합니다. Resend는 웹훅을 최소 한 번 전달할 수 있으므로 같은 이벤트의 재전송은 멱등하게 `unchanged`가 되며, 증빙에는 최초 응답을 사용합니다. 다음 도구는 24시간 이내 운영 프리플라이트의 SMTP DNS·TLS·인증 성공, DMARC 정책, 발신 도메인·전체 DKIM 선택자·정규화된 SPF/DKIM/DMARC 레코드 집합의 SHA-256, 후보 SHA, 입력한 `svix-id`와 웹훅 응답의 이벤트 해시 일치, 최초 반송 감사기록 ID와 두 원본 파일의 SHA-256을 결합합니다. DNS 레코드 원문, `svix-id` 원문, 메시지 ID·수신자·SMTP 자격증명은 결과에 포함하지 않습니다.
 
 ```powershell
 $env:MAIL_EVIDENCE_PREFLIGHT_REPORT = "production-preflight.json"
 $env:MAIL_EVIDENCE_BOUNCE_RESPONSE = "mail-bounce-webhook-response.json"
-$env:MAIL_EVIDENCE_PROVIDER_EVENT_ID = "공급자_시험_이벤트_ID"
+$env:MAIL_EVIDENCE_PROVIDER_EVENT_ID = "Resend_시험_요청의_svix-id"
 $env:MAIL_EVIDENCE_MAX_AGE_HOURS = "24"
 npm --prefix server run build
 npm --prefix server run verify:mail-operations |
@@ -125,7 +125,7 @@ Compose 템플릿에서는 다음과 같이 프리플라이트를 일회성 컨�
 docker compose --env-file deploy/production.env -f deploy/compose.production.yaml run --rm api node dist/production-preflight.js
 ```
 
-프리플라이트는 최신 DB 스키마, 객체 저장소의 임시 객체 쓰기·읽기·삭제와 무서명 원본 URL 접근 차단, 설정된 CloudFront 서명 URL의 실제 바이트 조회, FFmpeg·FFprobe 실행 가능 여부, ClamAV 정상 스트림 검사, SMTP DNS·TCP·TLS·인증, 토스페이먼츠 Secret Key 설정과 필수 OAuth 설정을 점검합니다. 익명 요청으로 임시 영상 객체가 조회되면 비공개 버킷 정책 위반으로 배포를 실패시킵니다. 메일·결제 변경은 발생시키지 않으며 결과 JSON에는 Secret과 CDN 서명 URL을 기록하지 않습니다. 임시 저장소 키는 `lesson-videos/preflight/` 또는 `lesson-hls/preflight/` 아래에 만들고 성공·실패와 관계없이 삭제를 시도합니다. 운영에서 CDN을 필수화하려면 `PREFLIGHT_REQUIRE_CDN=true`로 두고, 일부 OAuth 공급자를 의도적으로 제외하려면 `PREFLIGHT_REQUIRED_OAUTH_PROVIDERS`를 실제 제공 목록으로 조정합니다.
+프리플라이트는 최신 DB 스키마, 객체 저장소 버전 관리의 실제 `Enabled` 상태, 임시 객체 쓰기·읽기·삭제와 무서명 원본 URL 접근 차단, 설정된 CloudFront 서명 URL의 실제 바이트 조회, FFmpeg·FFprobe 실행 가능 여부, ClamAV 정상 스트림 검사, SMTP DNS·TCP·TLS·인증, 토스페이먼츠 Secret Key 설정과 필수 OAuth 설정을 점검합니다. 버전 관리가 없거나 중지됐거나 상태 조회 권한이 없으면 배포를 실패시킵니다. 익명 요청으로 임시 영상 객체가 조회되어도 비공개 버킷 정책 위반으로 실패합니다. 메일·결제 변경은 발생시키지 않으며 결과 JSON에는 Secret과 CDN 서명 URL을 기록하지 않습니다. 임시 저장소 키는 `lesson-videos/preflight/` 또는 `lesson-hls/preflight/` 아래에 만들고 성공·실패와 관계없이 삭제를 시도합니다. 운영에서 CDN을 필수화하려면 `PREFLIGHT_REQUIRE_CDN=true`로 두고, 일부 OAuth 공급자를 의도적으로 제외하려면 `PREFLIGHT_REQUIRED_OAUTH_PROVIDERS`를 실제 제공 목록으로 조정합니다.
 
 복구 정책 점검은 PostgreSQL PITR 활성화, 30일 이상 백업 보존, 객체 저장소 버전 관리, RPO 15분·RTO 4시간 이하, 최근 100일 이내 복구훈련 완료 선언을 배포 게이트로 검사합니다. `DATABASE_PITR_ENABLED`와 `OBJECT_STORAGE_VERSIONING_ENABLED`는 클라우드 설정을 자동 변경하거나 공급자 API로 검증하는 값이 아니므로 운영자가 실제 콘솔 설정과 복구 결과를 확인한 뒤에만 `true`로 등록해야 합니다.
 
@@ -300,7 +300,7 @@ GitHub Actions의 `Release candidate acceptance` 수동 워크플로는 `product
 - `PRODUCTION_DATABASE_URL`: 복구 대상이 운영 DB와 다른지 비교할 때만 사용하는 운영 DB 주소입니다.
 - `RECOVERY_DATABASE_URL`: 실제 운영 DB와 분리되고 이름에 `recovery`, `restore`, `drill`, `staging`, `test` 또는 `sandbox` 표식이 있는 복원 DB 주소입니다.
 - `PRODUCTION_MAIL_BOUNCE_RESPONSE_BASE64`: 공급자 영구 반송 시험의 최초 `bounced` 웹훅 응답 JSON을 base64로 인코딩한 값입니다.
-- `PRODUCTION_MAIL_PROVIDER_EVENT_ID`: 같은 반송 시험에 사용한 안정적인 공급자 event ID입니다. 등록 도구는 응답의 `eventIdSha256`과 일치하는지 검사하며 보고서에는 원문을 남기지 않습니다.
+- `PRODUCTION_MAIL_PROVIDER_EVENT_ID`: 같은 Resend 반송 시험 요청의 `svix-id`입니다. 등록 도구는 응답의 `eventIdSha256`과 일치하는지 검사하며 보고서에는 원문을 남기지 않습니다.
 - `PRODUCTION_LEGAL_APPROVAL_EVIDENCE_BASE64`: 서명 원본으로 `prepare:legal-approval`을 실행해 만든 비식별 `legal-policy-approval.json`의 base64 값입니다. 등록 도구는 운영 환경의 정책 버전·승인일·문서 SHA-256과 일치하는지 검사합니다.
 - `CONTAINER_REGISTRY_USERNAME`, `CONTAINER_REGISTRY_PASSWORD`: 외부 또는 별도 권한이 필요한 비공개 레지스트리에만 등록합니다. 생략하면 GitHub 실행 주체와 작업 토큰을 사용합니다.
 
@@ -447,7 +447,9 @@ npm --prefix server run coordinate:rollback-rehearsal -- --apply --confirm AUTHO
 
 ## 악성 파일 검사
 
-소형 학습자료는 운영 API가, MP4 영상은 독립 `video-scan-worker`가 `MALWARE_SCANNER_HOST`의 ClamAV `clamd`에 TCP `INSTREAM`으로 격리 파일을 전송합니다. 3310 포트는 인증·암호화를 제공하지 않으므로 공개 인터넷에 노출하지 않고 API·워커와 같은 사설망에서만 허용합니다. 공식 ClamAV 컨테이너는 서명 데이터 볼륨을 영속화하고 최소 3GB, 권장 4GB 이상의 메모리를 배정합니다.
+소형 학습자료는 운영 API가, MP4 영상은 독립 `video-scan-worker`가 `MALWARE_SCANNER_HOST`의 ClamAV `clamd`에 TCP `INSTREAM`으로 격리 파일을 전송합니다. 운영 Compose의 기본값은 내부 서비스 이름 `clamav`이며 3310 포트를 호스트에 게시하지 않습니다. 이 포트는 인증·암호화를 제공하지 않으므로 공개 인터넷에 노출하지 않고 API·워커와 같은 사설망에서만 허용합니다. 공식 ClamAV 컨테이너는 서명 데이터 볼륨을 영속화하고 최소 3GB, 기본 4GB의 메모리를 배정합니다.
+
+운영에서는 `deploy/clamav/Dockerfile`을 전용 레지스트리에 빌드·게시하고 레지스트리가 반환한 불변 digest를 `CLAMAV_IMAGE=repository@sha256:<64자리>`로 등록합니다. 태그만 넣지 않습니다. API와 영상 검사 워커는 ClamAV 이미지에 포함된 `clamd` 헬스체크가 통과할 때까지 시작을 기다립니다. 최초 기동은 서명 DB 초기화 때문에 수 분이 걸릴 수 있으며 `CLAMD_STARTUP_TIMEOUT` 동안 기다립니다. `clamav-signatures` 볼륨은 컨테이너 교체 시에도 유지하고 정기 업데이트는 `FRESHCLAM_CHECKS`로 제어합니다.
 
 ClamAV `StreamMaxLength`, `MaxFileSize`, `MaxScanSize`는 `VIDEO_UPLOAD_MAX_BYTES` 이상이어야 합니다. 로컬 `deploy/clamav/Dockerfile`은 2GB 업로드 상한에 맞춰 2200MB로 설정합니다. 운영 ClamAV도 같은 기준의 `clamd.conf`를 배포해야 합니다. 영상 워커는 기본 5초 간격으로 작업을 가져오고 1분·5분·30분 간격으로 최대 3회 재시도합니다. `VIDEO_SCAN_POLL_INTERVAL_MS`, `VIDEO_SCAN_MAX_ATTEMPTS`, `VIDEO_SCAN_LOCK_TIMEOUT_MS`로 조정하며 검사 통과 전에는 새 영상이 재생 자산에 연결되지 않습니다.
 

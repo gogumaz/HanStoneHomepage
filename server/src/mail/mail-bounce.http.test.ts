@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { Test } from "@nestjs/testing";
+import { Webhook } from "svix";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiExceptionFilter } from "../common/api-exception.filter.js";
 import { ApiResponseInterceptor } from "../common/api-response.interceptor.js";
 import { RequestIdMiddleware } from "../common/request-id.middleware.js";
+import { configureRequestBodyParsers } from "../common/request-body-limit.js";
 import { DatabaseModule } from "../database/database.module.js";
 import { PrismaService } from "../database/prisma.service.js";
 import { AccountMailStatus, InquiryNotificationStatus } from "../generated/prisma/enums.js";
@@ -12,6 +15,7 @@ import { listenForHttpTest } from "../test-utils/listen-test-app.js";
 import { MailModule } from "./mail.module.js";
 
 const secret = "bounce_webhook_secret_1234567890_abcd";
+const resendSecret = `whsec_${Buffer.from("resend-webhook-test-secret-32-bytes").toString("base64")}`;
 const accountJob = {
   id: "account-mail-1",
   messageId: "<account-mail@example.com>",
@@ -61,14 +65,16 @@ describe("mail permanent bounce webhook", () => {
     process.env.NODE_ENV = "test";
     process.env.DATABASE_URL = "postgresql://test:test@127.0.0.1:5432/test";
     process.env.MAIL_BOUNCE_WEBHOOK_SECRET = secret;
+    process.env.RESEND_WEBHOOK_SECRET = resendSecret;
     const moduleRef = await Test.createTestingModule({ imports: [DatabaseModule, MailModule] })
       .overrideProvider(PrismaService)
       .useValue(prisma)
       .compile();
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false });
     app.setGlobalPrefix("api/v1");
     const requestId = new RequestIdMiddleware();
     app.use(requestId.use.bind(requestId));
+    configureRequestBodyParsers(app as NestExpressApplication, 1024 * 1024);
     app.useGlobalFilters(new ApiExceptionFilter());
     app.useGlobalInterceptors(new ApiResponseInterceptor());
     baseUrl = await listenForHttpTest(app);
@@ -91,6 +97,25 @@ describe("mail permanent bounce webhook", () => {
       body: JSON.stringify({ event: "permanent_bounce", eventId: providerEventId, messageId, privateReason: "do not store" }),
     },
   );
+  const sendResend = (
+    payload: unknown,
+    options: { eventId?: string; signature?: string } = {},
+  ) => {
+    const raw = JSON.stringify(payload);
+    const resendEventId = options.eventId ?? "msg_resend_event_001";
+    const timestamp = new Date();
+    const signature = options.signature ?? new Webhook(resendSecret).sign(resendEventId, timestamp, raw);
+    return fetch(`${baseUrl}/api/v1/mail/webhooks/resend`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "svix-id": resendEventId,
+        "svix-timestamp": String(Math.floor(timestamp.getTime() / 1000)),
+        "svix-signature": signature,
+      },
+      body: raw,
+    });
+  };
 
   it("rejects an unauthenticated webhook before looking up delivery data", async () => {
     const response = await send(accountJob.messageId, "Bearer wrong-secret-with-enough-length-000");
@@ -136,6 +161,70 @@ describe("mail permanent bounce webhook", () => {
     const body = await response.json() as { error: { code: string } };
     expect(response.status).toBe(400);
     expect(body.error.code).toBe("MAIL_BOUNCE_INVALID");
+    expect(prisma.accountMailJob.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("verifies a Resend signature and correlates a permanent bounce by Message-ID", async () => {
+    const response = await sendResend({
+      type: "email.bounced",
+      created_at: new Date().toISOString(),
+      data: {
+        email_id: "56761188-7520-42d8-8898-ff6fc54ce618",
+        message_id: accountJob.messageId,
+        from: "바둑타고 <no-reply@notify.handol-edu.com>",
+        to: ["private-recipient@example.com"],
+        subject: "private subject",
+        bounce: { type: "Permanent", message: "private provider detail" },
+      },
+    });
+    const body = await response.json() as { data: { action: string; eventIdSha256: string } };
+
+    expect(response.status).toBe(200);
+    expect(body.data.action).toBe("bounced");
+    expect(body.data.eventIdSha256).toBe(
+      createHash("sha256").update("msg_resend_event_001").digest("hex"),
+    );
+    expect(JSON.stringify(auditCreate.mock.calls)).not.toContain("private-recipient");
+    expect(JSON.stringify(auditCreate.mock.calls)).not.toContain("private provider detail");
+  });
+
+  it("rejects a forged Resend webhook before querying mail jobs", async () => {
+    const response = await sendResend(
+      { type: "email.bounced", data: { message_id: accountJob.messageId, bounce: { type: "Permanent" } } },
+      { signature: "v1,Zm9yZ2Vk" },
+    );
+    const body = await response.json() as { error: { code: string } };
+
+    expect(response.status).toBe(401);
+    expect(body.error.code).toBe("MAIL_BOUNCE_UNAUTHORIZED");
+    expect(prisma.accountMailJob.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("acknowledges other signed Resend events without reading delivery data", async () => {
+    const response = await sendResend({
+      type: "email.delivered",
+      data: { message_id: accountJob.messageId, to: ["private-recipient@example.com"] },
+    });
+    const body = await response.json() as { data: { accepted: boolean; action: string } };
+
+    expect(response.status).toBe(200);
+    expect(body.data).toMatchObject({ accepted: true, action: "ignored" });
+    expect(prisma.accountMailJob.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("acknowledges transient Resend bounces without marking mail permanently bounced", async () => {
+    const response = await sendResend({
+      type: "email.bounced",
+      data: {
+        message_id: accountJob.messageId,
+        bounce: { type: "Transient", message: "temporary provider detail" },
+      },
+    });
+    const body = await response.json() as { data: { accepted: boolean; action: string } };
+
+    expect(response.status).toBe(200);
+    expect(body.data).toMatchObject({ accepted: true, action: "ignored" });
+    expect(accountJob.status).toBe(AccountMailStatus.SENT);
     expect(prisma.accountMailJob.findFirst).not.toHaveBeenCalled();
   });
 });
