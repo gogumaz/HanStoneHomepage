@@ -43,6 +43,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: staging-evidence
+  cancel-in-progress: false
+
 jobs:
   worker-soak:
     runs-on: ubuntu-latest
