@@ -131,14 +131,14 @@ jobs:
           jq -e \
             --arg commitSha "$CANDIDATE_COMMIT_SHA" \
             --arg verifiedAt "$(jq -er '.completedAt' evidence/deployment/production-deployment-verification.json)" \
-            '.schemaVersion == 2 and .ok == true and .commitSha == $commitSha and
+            '.schemaVersion == 3 and .ok == true and .commitSha == $commitSha and
              .deploymentVerifiedAt == $verifiedAt and (.checks | length) == 18 and
              all(.checks[]; .status == "pass" and .code == "OK")' \
             evidence/deployment/transport-security-evidence.json > /dev/null
           jq -e \
             --arg commitSha "$CANDIDATE_COMMIT_SHA" \
             --arg preflightAt "$(jq -er '.preflightCheckedAt' evidence/deployment/transport-security-evidence.json)" \
-            '.schemaVersion == 1 and .ok == true and .commitSha == $commitSha and
+            '.schemaVersion == 2 and .ok == true and .commitSha == $commitSha and
              .preflightCheckedAt == $preflightAt and (.checks | length) == 9 and
              (has("providerEventId") | not) and
              all(.checks[]; .status == "pass" and .code == "OK")' \
@@ -146,7 +146,7 @@ jobs:
           jq -e \
             --arg commitSha "$CANDIDATE_COMMIT_SHA" \
             --arg preflightSha256 "$(jq -er '.artifacts.preflightSha256' evidence/deployment/mail-operations-evidence.json)" \
-            '.schemaVersion == 1 and .ok == true and .commitSha == $commitSha and
+            '.schemaVersion == 2 and .ok == true and .commitSha == $commitSha and
              .artifacts.preflightSha256 == $preflightSha256 and (.checks | length) == 7 and
              all(.checks[]; .status == "pass" and .code == "OK")' \
             evidence/deployment/legal-approval-binding.json > /dev/null

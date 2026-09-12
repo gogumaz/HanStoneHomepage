@@ -30,12 +30,29 @@ describe("release closeout workflow contract", () => {
     expect(workflow).toContain(".web.expected.manifestSha256 == $webManifestSha256");
     expect(workflow).toContain("evidence/deployment/transport-security-evidence.json");
     expect(workflow).toContain("RELEASE_CLOSEOUT_TRANSPORT_SECURITY_REPORT");
-    expect(workflow).toContain(".schemaVersion == 2");
     expect(workflow).toContain("evidence/deployment/mail-operations-evidence.json");
     expect(workflow).toContain("RELEASE_CLOSEOUT_MAIL_OPERATIONS_REPORT");
     expect(workflow).toContain('(has("providerEventId") | not)');
     expect(workflow).toContain("evidence/deployment/legal-approval-binding.json");
     expect(workflow).toContain("RELEASE_CLOSEOUT_LEGAL_APPROVAL_BINDING_REPORT");
+  });
+
+  it("accepts exactly the schema versions emitted by every evidence generator", async () => {
+    const workflow = await readFile(workflowPath, "utf8");
+    const identityStart = workflow.indexOf("name: Verify downloaded candidate identity");
+    const identityEnd = workflow.indexOf("name: Generate final closeout record");
+    const identityBlock = workflow.slice(identityStart, identityEnd);
+    const reportSchema = (reportName: string) => {
+      const reportEnd = identityBlock.indexOf(`evidence/deployment/${reportName}`);
+      expect(reportEnd).toBeGreaterThan(0);
+      const expressionStart = identityBlock.lastIndexOf("'.schemaVersion ==", reportEnd);
+      return identityBlock.slice(expressionStart, reportEnd);
+    };
+
+    expect(reportSchema("transport-security-evidence.json")).toContain(".schemaVersion == 3");
+    expect(reportSchema("mail-operations-evidence.json")).toContain(".schemaVersion == 2");
+    expect(reportSchema("legal-approval-binding.json")).toContain(".schemaVersion == 2");
+    expect(identityBlock).not.toContain(".schemaVersion == 1");
   });
 
   it("runs closeout in the accepted image and uploads only the final input records", async () => {
