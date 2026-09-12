@@ -61,7 +61,7 @@ describe("ReleaseReadinessService", () => {
       status: "fail",
       code: "WORKING_TREE_NOT_CLEAN",
     });
-    expect(report.checks.filter(({ code }) => code === "REQUIRED_WORKFLOW_NOT_ACTIVE")).toHaveLength(7);
+    expect(report.checks.filter(({ code }) => code === "REQUIRED_WORKFLOW_NOT_ACTIVE")).toHaveLength(8);
     expect(report.checks.filter(({ code }) => code === "PRODUCTION_SECRET_MISSING")).toHaveLength(9);
     expect(report.checks.filter(({ code }) => code === "REPOSITORY_SECRET_MISSING")).toHaveLength(6);
     expect(report.checks).toContainEqual({

@@ -1,0 +1,107 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 5
+    rebase-strategy: auto
+    groups:
+      web-production:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      web-development:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: deps(web)
+
+  - package-ecosystem: npm
+    directory: "/server"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:10"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 5
+    rebase-strategy: auto
+    groups:
+      api-production:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      api-development:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: deps(api)
+
+  - package-ecosystem: npm
+    directory: "/server/src/components"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:20"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 3
+    rebase-strategy: auto
+    groups:
+      integration-components:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: deps(components)
+
+  - package-ecosystem: docker
+    directory: "/server"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:30"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 3
+    rebase-strategy: auto
+    commit-message:
+      prefix: deps(container)
+
+  - package-ecosystem: docker
+    directory: "/deploy/clamav"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:40"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 3
+    rebase-strategy: auto
+    commit-message:
+      prefix: deps(clamav)
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:50"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 5
+    rebase-strategy: auto
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: deps(actions)

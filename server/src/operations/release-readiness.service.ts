@@ -1,5 +1,6 @@
 export const REQUIRED_RELEASE_WORKFLOWS = [
   "CI",
+  "CodeQL security analysis",
   "Release readiness audit",
   "Staging read-only load test",
   "Staging worker queue soak",
