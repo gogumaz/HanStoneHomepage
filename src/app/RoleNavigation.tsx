@@ -14,6 +14,7 @@ const navigationItems: NavigationItem[] = [
   { label: '바둑미션', to: '/missions' },
   { label: '나의 여행지도', to: '/dashboard', roles: ['student'] },
   { label: '보호자 연결·리포트', to: '/guardian', roles: ['student', 'guardian'] },
+  { label: '지도자 교실', to: '/teacher', roles: ['instructor'] },
   { label: '지도자 수업도우미', to: '/board.html?type=classHelper', roles: ['instructor', 'operator', 'admin'] },
   { label: '기관 라이선스·좌석·환불', to: '/organization/admin', roles: ['organization_admin'] },
   { label: '알림함', to: '/notifications', authenticated: true },

@@ -905,6 +905,67 @@ test("React 계정 화면이 세션 없음 상태에서 로그인 폼을 표시�
   await expect(page.getByRole("heading", { name: "계정과 보안" })).toBeVisible();
 });
 
+test("지도자가 담당 학급을 전환하고 활성 학생 명단만 확인한다", async ({ page }) => {
+  const classOneId = "11111111-1111-4111-8111-111111111111";
+  const classTwoId = "22222222-2222-4222-8222-222222222222";
+  await page.route("**/api/v1/me", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ data: { user: {
+      id: "instructor-e2e", email: "teacher@example.com", emailVerified: true,
+      displayName: "김지도", roles: ["instructor"],
+    } } }),
+  }));
+  await page.route("**/api/v1/teacher/classes", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ data: { items: [
+      {
+        id: classOneId, name: "햇살반", academicYear: 2026,
+        organization: { id: "organization-e2e", name: "한빛초등학교" },
+        assignment: { startsAt: "2026-03-02T00:00:00.000Z", endsAt: null },
+      },
+      {
+        id: classTwoId, name: "별빛반", academicYear: 2025,
+        organization: { id: "organization-e2e", name: "한빛초등학교" },
+        assignment: { startsAt: "2025-03-03T00:00:00.000Z", endsAt: "2027-02-28T00:00:00.000Z" },
+      },
+    ] } }),
+  }));
+  await page.route("**/api/v1/teacher/classes/*/students", (route) => {
+    const isSunshine = route.request().url().includes(classOneId);
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: {
+        class: {
+          id: isSunshine ? classOneId : classTwoId,
+          organizationId: "organization-e2e",
+          name: isSunshine ? "햇살반" : "별빛반",
+          academicYear: isSunshine ? 2026 : 2025,
+        },
+        items: [{
+          id: isSunshine ? "student-one" : "student-two",
+          displayName: isSunshine ? "강하늘" : "윤바다",
+          enrolledAt: isSunshine ? "2026-03-02T00:00:00.000Z" : "2025-03-03T00:00:00.000Z",
+        }],
+      } }),
+    });
+  });
+
+  await page.goto("/teacher");
+
+  await expect(page.getByRole("heading", { name: "김지도님의 지도자 교실" })).toBeVisible();
+  await expect(page.getByText("강하늘")).toBeVisible();
+  await expect(page.getByText("teacher@example.com")).not.toBeVisible();
+  await expect(page.getByRole("button", { name: /햇살반/ })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /별빛반/ }).click();
+  await expect(page.getByRole("heading", { name: "별빛반 학생 명단" })).toBeVisible();
+  await expect(page.getByText("윤바다")).toBeVisible();
+  await expect(page.getByText("강하늘")).not.toBeVisible();
+  await expect(page.getByRole("link", { name: "수업도우미 열기" })).toHaveAttribute("href", "/board.html?type=classHelper");
+});
+
 test("보호자 연결 화면을 직접 열고 연결된 학생의 빈 상태를 확인한다", async ({ page }) => {
   await page.route("**/api/v1/me", async (route) => {
     await route.fulfill({

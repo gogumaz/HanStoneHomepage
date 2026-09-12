@@ -47,6 +47,9 @@ const QrPage = lazy(async () => ({ default: (await import('../features/qr/QrPage
 const OrganizationAdminPage = lazy(async () => ({
   default: (await import('../features/organization/OrganizationAdminPage')).OrganizationAdminPage,
 }));
+const TeacherClassroomPage = lazy(async () => ({
+  default: (await import('../features/organization/TeacherClassroomPage')).TeacherClassroomPage,
+}));
 const PrivacyPage = lazy(async () => ({
   default: (await import('../features/legal/PrivacyPage')).PrivacyPage,
 }));
@@ -147,6 +150,7 @@ export function App() {
           <Route path="/admin/community-reports" element={<AdminCommunityReportsPage />} />
           <Route path="/admin/operations" element={<AdminOperationsPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/teacher" element={<TeacherClassroomPage />} />
           <Route path="/organization/admin" element={<OrganizationAdminPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="*" element={<StackStatus />} />

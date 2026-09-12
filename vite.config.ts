@@ -69,14 +69,14 @@ export default defineConfig({
       configureServer(server) {
         server.middlewares.use((request, _response, next) => {
           const path = request.url?.split('?', 1)[0] ?? '';
-          if (['/account', '/guardian', '/lessons', '/subscriptions', '/dashboard', '/missions', '/notifications'].includes(path) || path.startsWith('/lessons/') || path.startsWith('/admin/')) request.url = '/app.html';
+          if (['/account', '/guardian', '/lessons', '/subscriptions', '/dashboard', '/missions', '/notifications', '/teacher'].includes(path) || path.startsWith('/lessons/') || path.startsWith('/admin/')) request.url = '/app.html';
           next();
         });
       },
       configurePreviewServer(server) {
         server.middlewares.use((request, _response, next) => {
           const path = request.url?.split('?', 1)[0] ?? '';
-          if (['/account', '/guardian', '/lessons', '/subscriptions', '/dashboard', '/missions', '/notifications'].includes(path) || path.startsWith('/lessons/') || path.startsWith('/admin/')) request.url = '/app.html';
+          if (['/account', '/guardian', '/lessons', '/subscriptions', '/dashboard', '/missions', '/notifications', '/teacher'].includes(path) || path.startsWith('/lessons/') || path.startsWith('/admin/')) request.url = '/app.html';
           next();
         });
       },

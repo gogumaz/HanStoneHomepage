@@ -42,6 +42,7 @@ describe('role navigation policy', () => {
     const labels = labelsFor('instructor');
 
     expect(labels).toContain('지도자 수업도우미');
+    expect(labels).toContain('지도자 교실');
     expect(labels).not.toContain('나의 여행지도');
     expect(labels).not.toContain('강의 CMS');
     expect(labels).not.toContain('기관 라이선스·좌석·환불');
@@ -51,6 +52,7 @@ describe('role navigation policy', () => {
     const labels = labelsFor('organization_admin');
 
     expect(labels).toContain('기관 라이선스·좌석·환불');
+    expect(labels).not.toContain('지도자 교실');
     expect(labels).not.toContain('지도자 수업도우미');
     expect(labels).not.toContain('결제 대사 관리');
   });

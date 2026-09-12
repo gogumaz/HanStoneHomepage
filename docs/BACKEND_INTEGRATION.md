@@ -343,6 +343,8 @@ RewardGrant
 
 `GET /teacher/classes/{classId}/students`는 지도자 인증, 활성 기관 멤버십, 요청 반의 현재 담당 배정을 매 요청마다 다시 검사합니다. 담당 배정이 없거나 반과 멤버십의 기관이 다르면 `CLASS_STUDENTS_FORBIDDEN`(403)을 반환하고 학생 등록 테이블을 조회하지 않습니다. 허용된 경우에도 현재 등록 중인 활성 학생의 최소 식별 정보만 반환하며 응답 캐시를 금지하고 `organization.class_students.viewed` 감사로그를 남깁니다.
 
+React `/teacher`는 위 두 조회 API만 사용합니다. `instructor` 역할이 아니면 학급 API를 호출하지 않으며, 학급을 바꿀 때 해당 학급의 학생 명단을 별도로 조회합니다. 응답의 학생 ID는 React 목록 키로만 사용하고 화면에는 표시명과 등록일만 노출합니다.
+
 `GET /organization-admin/organizations`는 `organization_admin` 역할과 유효기간 내 활성 `OrganizationMembership(role=ADMIN)`을 모두 요구합니다. 일반 지도자는 역할 가드에서 차단되어 기관 멤버십이나 관리 권한을 조회할 수 없습니다. 응답은 기관별 라이선스·좌석 조회/관리와 환불 조회/요청 범위만 제공하며, 실제 결제 취소 실행 API는 기존대로 `operator`·`admin`에게만 허용합니다. React 메뉴와 `/organization/admin` 화면도 같은 역할 경계를 사용합니다.
 
 기관 멤버십이 `ENDED`·`SUSPENDED` 상태이거나 `endsAt`이 지난 경우 기관 반·학생·관리 API는 즉시 차단됩니다. 이 판정은 사용자 계정, 세션, 개인 `AccountSubscription`을 변경하지 않습니다. 동일 세션에서 기관 반 조회가 `403 ORGANIZATION_MEMBERSHIP_REQUIRED`로 거부된 뒤에도 `GET /me`와 `GET /me/subscriptions`는 개인 계정과 활성 구독을 정상 반환하는 HTTP 회귀 테스트로 두 권한 수명의 분리를 검증합니다.

@@ -36,7 +36,7 @@ npm install
 npm run dev
 ```
 
-브라우저에서 Vite가 안내하는 주소로 접속합니다. 기존 정적 홈페이지는 `/index.html`, React 전환 진입점은 `/app.html`, 실제 계정 API 연결 화면은 `/account`, 보호자 연결 화면은 `/guardian`, 공개 강의 탐색은 `/lessons`, 개인 알림함은 `/notifications`입니다. Vite 개발·미리보기 서버는 React 경로와 `/lessons/{lessonId}` 직접 진입을 React 앱으로 되돌립니다. 운영 정적 호스팅에도 같은 rewrite 규칙을 설정해야 합니다. 개발 서버의 `/api` 요청은 `http://127.0.0.1:3000`으로 전달되므로 API 연결 화면을 사용할 때는 API도 함께 실행합니다.
+브라우저에서 Vite가 안내하는 주소로 접속합니다. 기존 정적 홈페이지는 `/index.html`, React 전환 진입점은 `/app.html`, 실제 계정 API 연결 화면은 `/account`, 보호자 연결 화면은 `/guardian`, 지도자 교실은 `/teacher`, 공개 강의 탐색은 `/lessons`, 개인 알림함은 `/notifications`입니다. Vite 개발·미리보기 서버는 React 경로와 `/lessons/{lessonId}` 직접 진입을 React 앱으로 되돌립니다. 운영 정적 호스팅에도 같은 rewrite 규칙을 설정해야 합니다. 개발 서버의 `/api` 요청은 `http://127.0.0.1:3000`으로 전달되므로 API 연결 화면을 사용할 때는 API도 함께 실행합니다.
 
 기존 정적 프로토타입만 확인하려면 다음 명령도 유지합니다.
 
@@ -90,6 +90,8 @@ API 응답은 실행 가능한 문서 자원을 모두 거부하는 CSP와 `nosn
 API의 JSON·URL 인코딩 본문은 `REQUEST_BODY_MAX_BYTES`로 제한하며 기본값은 1MiB, 허용 설정 범위는 1KiB~10MiB입니다. 초과 요청은 컨트롤러 실행 전에 `PAYLOAD_TOO_LARGE`(413)로 거부됩니다. 영상·학습자료 본문을 API 서버로 직접 업로드하지 말고 기존 비공개 객체 저장소 사전 서명 흐름을 사용합니다. 데이터베이스 조회는 Prisma의 구조화된 필터 또는 태그드 `$queryRaw`만 사용하고 `$queryRawUnsafe`, `$executeRawUnsafe`는 정책 테스트에서 금지합니다. PostgreSQL 통합 스모크는 SQL 공격 문자열이 바인딩 값으로만 처리되고 트랜잭션 롤백 뒤 데이터가 남지 않는지 확인합니다.
 
 학생 계정은 `/guardian`에서 보호자 이메일 초대를 만들 수 있습니다. 개발·테스트 환경에서는 화면에 개발용 토큰이 표시됩니다. 보호자는 같은 화면에서 토큰을 확인하고 필수 학습정보 조회 범위에 동의한 뒤 연결합니다. 초대 유효기간은 `GUARDIAN_INVITATION_TTL_HOURS`로 설정하며 기본값은 72시간입니다.
+
+`/teacher`는 인증된 지도자에게 현재 활성 기관 멤버십으로 배정된 학급과 재학 중인 학생 명단을 표시합니다. 화면은 `GET /teacher/classes` 결과에서 학급을 선택한 뒤 `GET /teacher/classes/{classId}/students`를 호출하며, 이메일 등 추가 개인정보는 표시하지 않습니다. 서버는 조회할 때마다 지도자 인증·멤버십·현재 담당 배정을 재검사하고 학생 명단 조회 감사로그를 남깁니다.
 
 `/lessons`는 `GET /eras`와 `GET /eras/{eraId}/lessons`를 사용하여 공개 강의를 표시합니다. `/lessons/{lessonId}`는 공개 강의 상세와 단계 구성을 조회합니다. 재생 권한 판정과 계정별 진도 저장까지 서버 API에 연결되어 있습니다.
 
