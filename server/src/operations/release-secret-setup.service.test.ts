@@ -19,6 +19,7 @@ function preflightEnvironment(): string {
     "SMTP_HOST=smtp.example.com",
     "SMTP_REQUIRE_TLS=true",
     "MAIL_FROM=no-reply@example.com",
+    "TOSS_PAYMENTS_SECRET_KEY=live_gsk_example_1234567890_abcdefghij",
     "LEGAL_POLICY_VERSION=guardian-link-v1",
     "LEGAL_POLICY_APPROVED_AT=2026-08-01T00:00:00.000Z",
     `LEGAL_POLICY_APPROVAL_SHA256=${"b".repeat(64)}`,
@@ -171,6 +172,24 @@ describe("ReleaseSecretSetupService", () => {
     });
     expect(report.checks.filter(({ name, status }) => name.startsWith("preflight:") && status === "fail"))
       .toHaveLength(3);
+  });
+
+  it("rejects a production preflight environment containing a Toss test key", () => {
+    const input = validInput();
+    input.values.PRODUCTION_PREFLIGHT_ENV_FILE_BASE64 = Buffer.from(
+      preflightEnvironment().replace(
+        "live_gsk_example_1234567890_abcdefghij",
+        "test_gsk_example_1234567890_abcdefghij",
+      ),
+    ).toString("base64");
+
+    const report = new ReleaseSecretSetupService().plan(input);
+
+    expect(report.checks).toContainEqual({
+      name: "secret:PRODUCTION_PREFLIGHT_ENV_FILE_BASE64",
+      status: "fail",
+      code: "RELEASE_SECRET_VALUE_INVALID",
+    });
   });
 
   it("rejects an unexpected operator and malformed repository metadata", () => {

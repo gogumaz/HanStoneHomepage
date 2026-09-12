@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { parse } from "dotenv";
 import { SOLO_RELEASE_OPERATOR_LOGIN } from "../common/release-approval-policy.js";
-import { loadAppConfig } from "../config/app-config.js";
+import { isLiveTossPaymentsSecretKey, loadAppConfig } from "../config/app-config.js";
 import {
   validateDeploymentTarget,
   validateNonProductionDeploymentTarget,
@@ -132,6 +132,7 @@ function decodedPreflightEnvironment(value: string | undefined): NodeJS.ProcessE
     if (Object.keys(env).length === 0) return null;
     const productionEnv: NodeJS.ProcessEnv = { ...env, NODE_ENV: "production" };
     loadAppConfig(productionEnv);
+    if (!isLiveTossPaymentsSecretKey(productionEnv.TOSS_PAYMENTS_SECRET_KEY)) return null;
     return productionEnv;
   } catch {
     return null;

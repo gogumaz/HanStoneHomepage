@@ -27,7 +27,7 @@ function productionEnv(): NodeJS.ProcessEnv {
     RESEND_WEBHOOK_SECRET: "whsec_dGVzdF9yZXNlbmRfd2ViaG9va19zZWNyZXQ=",
     OBJECT_STORAGE_BUCKET: "private-media",
     MALWARE_SCANNER_HOST: "clamav.internal",
-    TOSS_PAYMENTS_SECRET_KEY: "toss-secret",
+    TOSS_PAYMENTS_SECRET_KEY: "live_gsk_example_1234567890_abcdefghij",
     NAVER_CLIENT_ID: "naver-id",
     NAVER_CLIENT_SECRET: "naver-secret",
     NAVER_REDIRECT_URI: "https://api.example.com/api/v1/auth/oauth/naver/callback",
@@ -259,6 +259,25 @@ describe("ProductionPreflightService", () => {
     expect(report.checks.find((check) => check.name === "configuration")).toMatchObject({
       status: "fail",
       detail: "OAUTH_PROVIDERS_MISSING",
+    });
+  });
+
+  it.each([
+    "test_gsk_example_1234567890_abcdefghij",
+    "live_sk_example_1234567890_abcdefghij",
+    "live_gsk_short",
+  ])("rejects a non-widget or non-live Toss secret in production: %s", async (secretKey) => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      code: 0,
+      response: { access_token: "token" },
+    }), { status: 200 })));
+    const env = { ...productionEnv(), TOSS_PAYMENTS_SECRET_KEY: secretKey };
+
+    const report = await harness().service.run(env);
+
+    expect(report.checks.find((check) => check.name === "configuration")).toMatchObject({
+      status: "fail",
+      detail: "TOSS_PAYMENTS_LIVE_SECRET_REQUIRED",
     });
   });
 

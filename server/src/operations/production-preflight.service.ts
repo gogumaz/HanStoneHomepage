@@ -1,7 +1,7 @@
 import { loadOAuthComponentOptions } from "../auth/oauth-options.js";
 import { ApiError } from "../common/api-error.js";
 import { PaymentComponentError } from "../components/payments/payment-provider.js";
-import { loadAppConfig } from "../config/app-config.js";
+import { isLiveTossPaymentsSecretKey, loadAppConfig } from "../config/app-config.js";
 import { PrismaService } from "../database/prisma.service.js";
 import { AccountMailService } from "../mail/account-mail.service.js";
 import { MalwareScannerService } from "../storage/malware-scanner.service.js";
@@ -85,6 +85,9 @@ export class ProductionPreflightService {
         if (missingProviders.length > 0) throw new ConfigurationError("OAUTH_PROVIDERS_MISSING");
         if (!config.tossPaymentsSecretKey) {
           throw new ConfigurationError("TOSS_PAYMENTS_NOT_CONFIGURED");
+        }
+        if (!isLiveTossPaymentsSecretKey(config.tossPaymentsSecretKey)) {
+          throw new ConfigurationError("TOSS_PAYMENTS_LIVE_SECRET_REQUIRED");
         }
         if (!config.accountMailEncryptionKeyBase64) {
           throw new ConfigurationError("ACCOUNT_MAIL_QUEUE_KEY_REQUIRED");

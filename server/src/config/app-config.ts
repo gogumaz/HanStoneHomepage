@@ -244,6 +244,11 @@ function optionalResendWebhookSecret(value: string | undefined): string | null {
   return candidate;
 }
 
+export function isLiveTossPaymentsSecretKey(value: string | null | undefined): boolean {
+  const candidate = value?.trim() ?? "";
+  return /^live_gsk_[A-Za-z0-9_-]{20,200}$/u.test(candidate);
+}
+
 export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const nodeEnv = env.NODE_ENV ?? "development";
   if (!allowedEnvironments.has(nodeEnv)) {
@@ -273,6 +278,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const resendWebhookSecret = optionalResendWebhookSecret(env.RESEND_WEBHOOK_SECRET);
   const accountMailEncryptionKeyBase64 = optionalEncryptionKey(env.ACCOUNT_MAIL_ENCRYPTION_KEY_BASE64);
   const operationsMetricsToken = optionalMetricsToken(env.OPERATIONS_METRICS_TOKEN);
+  const tossPaymentsSecretKey = env.TOSS_PAYMENTS_SECRET_KEY?.trim() || null;
   if (Boolean(smtpUser) !== Boolean(smtpPassword)) {
     throw new Error("SMTP_USER와 SMTP_PASSWORD는 함께 설정해야 합니다.");
   }
@@ -677,7 +683,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       72,
       "GUARDIAN_INVITATION_TTL_HOURS",
     ),
-    tossPaymentsSecretKey: env.TOSS_PAYMENTS_SECRET_KEY?.trim() || null,
+    tossPaymentsSecretKey,
     objectStorageEndpoint,
     objectStorageRegion: env.OBJECT_STORAGE_REGION?.trim() || "ap-northeast-2",
     objectStorageBucket,

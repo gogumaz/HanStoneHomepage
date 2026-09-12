@@ -37,6 +37,8 @@ window.APP_CONFIG = Object.freeze({
 TOSS_PAYMENTS_SECRET_KEY=live_gsk_운영_시크릿_키
 ```
 
+운영 프리플라이트와 릴리스 Secret 등록 dry-run은 서버 키가 결제위젯용 `live_gsk_` 형식인지 확인합니다. `test_gsk_` 테스트 키나 API 개별 연동용 `live_sk_` 키가 들어오면 운영 전환을 차단합니다.
+
 ## CBD 결제 모듈
 
 ```ts
