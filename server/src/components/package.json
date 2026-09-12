@@ -31,8 +31,8 @@
   "scripts": {
     "clean": "node scripts/clean.mjs",
     "build": "npm run clean && tsc -p tsconfig.package.json",
-    "verify": "node scripts/verify-package.mjs && npm run verify:types",
-    "verify:types": "tsc --noEmit --strict --skipLibCheck --module NodeNext --moduleResolution NodeNext --target ES2023 --types node scripts/consumer-smoke.ts",
+    "verify": "node scripts/verify-toolchain.mjs && node scripts/verify-package.mjs && npm run verify:types",
+    "verify:types": "tsc --ignoreConfig --noEmit --strict --skipLibCheck --module NodeNext --moduleResolution NodeNext --target ES2023 --types node scripts/consumer-smoke.ts",
     "pack:check": "npm run build && npm run verify && npm pack --dry-run --ignore-scripts",
     "prepack": "npm run build && npm run verify"
   },
@@ -45,6 +45,6 @@
   "devDependencies": {
     "@nestjs/common": "^11.2.1",
     "@types/node": "^26.5.1",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   }
 }
