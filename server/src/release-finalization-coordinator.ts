@@ -9,6 +9,7 @@ import {
   ReleaseFinalizationCoordinatorService,
   type FinalizationEvidenceRun,
 } from "./operations/release-finalization-coordinator.service.js";
+import { PAYMENT_OPERATIONS_RELEASE_VARIABLE_NAME } from "./operations/payment-operations-secret.service.js";
 
 const execFileAsync = promisify(execFile);
 const ghExecutable = process.platform === "win32" ? "gh.exe" : "gh";
@@ -224,6 +225,16 @@ async function main(): Promise<void> {
     ["secret", "list", "--repo", repository, "--env", "production", "--json", "name"],
     "GH_PRODUCTION_SECRET_LIST_FAILED",
   ), "GH_PRODUCTION_SECRET_LIST_JSON_INVALID");
+  const productionVariables = json<Array<{ name?: unknown; value?: unknown }>>(await command(
+    ghExecutable,
+    ["variable", "list", "--repo", repository, "--env", "production", "--json", "name,value"],
+    "GH_PRODUCTION_VARIABLE_LIST_FAILED",
+  ), "GH_PRODUCTION_VARIABLE_LIST_JSON_INVALID");
+  const paymentReleaseMarkers = productionVariables.filter(
+    ({ name }) => name === PAYMENT_OPERATIONS_RELEASE_VARIABLE_NAME,
+  );
+  const paymentOperationsReleaseId = paymentReleaseMarkers.length === 1 &&
+    typeof paymentReleaseMarkers[0]?.value === "string" ? paymentReleaseMarkers[0].value : null;
   const releaseId = process.env.RELEASE_ID?.trim() || null;
   const imageReference = process.env.RELEASE_IMAGE_REFERENCE?.trim() || null;
   const expectedTitles = {
@@ -306,6 +317,7 @@ async function main(): Promise<void> {
       imageReference,
       registryHost: process.env.RELEASE_REGISTRY_HOST?.trim() || "ghcr.io",
       productionSecretNames: productionSecrets.flatMap(({ name }) => typeof name === "string" ? [name] : []),
+      paymentOperationsReleaseId,
       deploymentConfirmation: process.env.PRODUCTION_DEPLOYMENT_CONFIRMED?.trim() || null,
       maximumVerificationDelayHours: Number(maximumDelayRaw),
       acceptance,

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { PAYMENT_OPERATIONS_CHECK_NAMES } from "./payment-operations-evidence.service.js";
 import { RELEASE_EVIDENCE_NAMES } from "./release-acceptance.service.js";
 import {
   successfulDeploymentVerificationEvidenceValid,
@@ -77,12 +78,6 @@ const TRANSPORT_SECURITY_CHECK_NAMES = [
 const MAIL_OPERATIONS_CHECK_NAMES = [
   "preflight", "candidateCommit", "smtpCheck", "smtpDetail", "preflightTimestamp",
   "preflightFreshness", "bounceWebhook", "providerEventCorrelation", "bounceAuditLog",
-] as const;
-
-const PAYMENT_OPERATIONS_CHECK_NAMES = [
-  "preflight", "candidateCommit", "preflightPaymentConfig", "captureSchema", "productionMode",
-  "captureTimestamp", "paymentIdentity", "approval", "idempotentApproval", "webhook", "refund",
-  "providerCancellation",
 ] as const;
 
 const LEGAL_APPROVAL_BINDING_CHECK_NAMES = [

@@ -25,6 +25,10 @@ describe("production deployment verification workflow contract", () => {
     expect(workflow).toContain("PRODUCTION_MAIL_BOUNCE_RESPONSE_BASE64");
     expect(workflow).toContain("server/mail-operations-evidence.json");
     expect(workflow).toContain("PRODUCTION_PAYMENT_OPERATIONS_BASE64");
+    expect(workflow).toContain("vars.PRODUCTION_PAYMENT_OPERATIONS_RELEASE_ID");
+    expect(workflow).toContain('[[ "$PAYMENT_OPERATIONS_RELEASE_ID" == "$DEPLOY_VERIFY_RELEASE_ID" ]]');
+    expect(workflow).toContain('[[ "$ACCEPTANCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]');
+    expect(workflow).not.toContain('--arg releaseId "${{ inputs.release_id }}"');
     expect(workflow).toContain("PAYMENT_EVIDENCE_CAPTURE_REPORT");
     expect(workflow).toContain("node dist/payment-operations-evidence.js");
     expect(workflow).toContain("server/payment-operations-evidence.json");

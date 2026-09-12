@@ -13,11 +13,16 @@ import {
   successfulDeploymentVerificationEvidenceValid,
 } from "./deployment-verification.service.js";
 import { REQUIRED_PRODUCTION_SECRETS } from "./release-readiness.service.js";
+import {
+  PAYMENT_OPERATIONS_RELEASE_VARIABLE_NAME,
+  PAYMENT_OPERATIONS_SECRET_NAME,
+} from "./payment-operations-secret.service.js";
+import { PAYMENT_OPERATIONS_CHECK_NAMES } from "./payment-operations-evidence.service.js";
 
 export const PRODUCTION_DEPLOYMENT_CONFIRMATION = "DEPLOYED_ACCEPTED_CANDIDATE";
 export const REQUIRED_PRODUCTION_VERIFICATION_SECRETS = [
   ...REQUIRED_PRODUCTION_SECRETS,
-  "PRODUCTION_PAYMENT_OPERATIONS_BASE64",
+  PAYMENT_OPERATIONS_SECRET_NAME,
 ] as const;
 
 export type FinalizationEvidenceRun = {
@@ -43,6 +48,7 @@ export type ReleaseFinalizationCoordinatorInput = {
   imageReference: string | null;
   registryHost: string;
   productionSecretNames: string[];
+  paymentOperationsReleaseId: string | null;
   deploymentConfirmation: string | null;
   maximumVerificationDelayHours: number;
   acceptance: FinalizationEvidenceRun | null;
@@ -116,11 +122,6 @@ const TRANSPORT_CHECKS = [
 const MAIL_CHECKS = [
   "preflight", "candidateCommit", "smtpCheck", "smtpDetail", "preflightTimestamp",
   "preflightFreshness", "bounceWebhook", "providerEventCorrelation", "bounceAuditLog",
-] as const;
-const PAYMENT_CHECKS = [
-  "preflight", "candidateCommit", "preflightPaymentConfig", "captureSchema", "productionMode",
-  "captureTimestamp", "paymentIdentity", "approval", "idempotentApproval", "webhook", "refund",
-  "providerCancellation",
 ] as const;
 const LEGAL_CHECKS = [
   "approvalEvidence", "policyVersion", "candidateCommit", "approvalTimestamp",
@@ -617,7 +618,7 @@ function auxiliaryEvidenceDigestsValid(
   const legalArtifacts = object(legal?.artifacts);
   if (!orderedNamedChecksPassed(transport?.checks, TRANSPORT_CHECKS)
       || !orderedNamedChecksPassed(mail?.checks, MAIL_CHECKS)
-      || !orderedNamedChecksPassed(payment?.checks, PAYMENT_CHECKS)
+      || !orderedNamedChecksPassed(payment?.checks, PAYMENT_OPERATIONS_CHECK_NAMES)
       || !orderedNamedChecksPassed(legal?.checks, LEGAL_CHECKS)
       || transportArtifacts === null || transportActive === null || transportTlsEndpoints === null
       || mailArtifacts === null || mailDnsEvidence === null || paymentArtifacts === null || legalArtifacts === null) return false;
@@ -725,7 +726,7 @@ function verificationValid(
     mail.preflightCheckedAt === transport.preflightCheckedAt && allNamedChecksPassed(mail.checks, MAIL_CHECKS) &&
     !("providerEventId" in (mail ?? {})) &&
     payment?.schemaVersion === 1 && payment?.releaseId === releaseId && payment?.ok === true &&
-    payment.commitSha === commitSha && allNamedChecksPassed(payment.checks, PAYMENT_CHECKS) &&
+    payment.commitSha === commitSha && allNamedChecksPassed(payment.checks, PAYMENT_OPERATIONS_CHECK_NAMES) &&
     typeof payment.paymentKeySha256 === "string" && typeof payment.orderIdSha256 === "string" &&
     typeof payment.subscriptionIdSha256 === "string" && !("paymentKey" in (payment ?? {})) &&
     !("orderId" in (payment ?? {})) && !("subscriptionId" in (payment ?? {})) &&
@@ -908,6 +909,11 @@ export class ReleaseFinalizationCoordinatorService {
           verificationSecrets.has(name),
           "RELEASE_FINALIZATION_PRODUCTION_SECRET_MISSING",
         )),
+        check(
+          `variable:${PAYMENT_OPERATIONS_RELEASE_VARIABLE_NAME}`,
+          input.paymentOperationsReleaseId === input.releaseId,
+          "RELEASE_FINALIZATION_PAYMENT_EVIDENCE_RELEASE_MISMATCH",
+        ),
         check(
           "deploymentConfirmation",
           input.deploymentConfirmation === PRODUCTION_DEPLOYMENT_CONFIRMATION,

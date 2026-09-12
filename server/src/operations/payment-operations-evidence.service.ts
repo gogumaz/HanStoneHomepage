@@ -3,6 +3,12 @@ import { createHash } from "node:crypto";
 type JsonObject = Record<string, unknown>;
 type EvidenceCheck = { name: string; status: "pass" | "fail"; code: string };
 
+export const PAYMENT_OPERATIONS_CHECK_NAMES = [
+  "preflight", "candidateCommit", "preflightPaymentConfig", "captureSchema", "productionMode",
+  "captureTimestamp", "paymentIdentity", "approval", "idempotentApproval", "webhook", "refund",
+  "providerCancellation",
+] as const;
+
 export type PaymentOperationsEvidenceInput = {
   releaseId: string;
   preflight: unknown;

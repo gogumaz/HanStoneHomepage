@@ -57,6 +57,7 @@ jobs:
       DEPLOY_VERIFY_EXPECTED_IMAGE_DIGEST: ${{ inputs.expected_image_digest }}
       DEPLOY_VERIFY_EXPECTED_WEB_MANIFEST_SHA256: ${{ inputs.expected_web_manifest_sha256 }}
       DEPLOY_VERIFY_SAMPLES: ${{ inputs.samples }}
+      ACCEPTANCE_RUN_ID: ${{ inputs.acceptance_run_id }}
       DEPLOY_VERIFY_INTERVAL_MS: "2000"
       DEPLOY_VERIFY_TIMEOUT_MS: "5000"
       DEPLOY_VERIFY_MAX_P95_MS: "1000"
@@ -64,6 +65,7 @@ jobs:
       MAIL_BOUNCE_RESPONSE_BASE64: ${{ secrets.PRODUCTION_MAIL_BOUNCE_RESPONSE_BASE64 }}
       MAIL_PROVIDER_EVENT_ID: ${{ secrets.PRODUCTION_MAIL_PROVIDER_EVENT_ID }}
       PAYMENT_OPERATIONS_BASE64: ${{ secrets.PRODUCTION_PAYMENT_OPERATIONS_BASE64 }}
+      PAYMENT_OPERATIONS_RELEASE_ID: ${{ vars.PRODUCTION_PAYMENT_OPERATIONS_RELEASE_ID }}
       LEGAL_APPROVAL_EVIDENCE_BASE64: ${{ secrets.PRODUCTION_LEGAL_APPROVAL_EVIDENCE_BASE64 }}
     steps:
       - name: Validate immutable deployment identities
@@ -73,11 +75,12 @@ jobs:
           set -euo pipefail
           [[ "$SOLO_RELEASE_ACTOR" == "gogumaz" ]]
           [[ "$SOLO_RELEASE_CONFIRMATION" == "AUTHORIZE_SOLO_PRODUCTION_RELEASE" ]]
-          [[ "${{ inputs.release_id }}" =~ ^[A-Za-z0-9._-]{1,80}$ ]]
+          [[ "$DEPLOY_VERIFY_RELEASE_ID" =~ ^[A-Za-z0-9._-]{1,80}$ ]]
+          [[ "$PAYMENT_OPERATIONS_RELEASE_ID" == "$DEPLOY_VERIFY_RELEASE_ID" ]]
           [[ "$DEPLOY_VERIFY_EXPECTED_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]
           [[ "$DEPLOY_VERIFY_EXPECTED_IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
           [[ "$DEPLOY_VERIFY_EXPECTED_WEB_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
-          [[ "${{ inputs.acceptance_run_id }}" =~ ^[1-9][0-9]*$ ]]
+          [[ "$ACCEPTANCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.expected_commit_sha }}
@@ -101,7 +104,7 @@ jobs:
         run: |
           set -euo pipefail
           jq -e \
-            --arg releaseId "${{ inputs.release_id }}" \
+            --arg releaseId "$DEPLOY_VERIFY_RELEASE_ID" \
             --arg commitSha "$DEPLOY_VERIFY_EXPECTED_COMMIT_SHA" \
             --arg imageDigest "$DEPLOY_VERIFY_EXPECTED_IMAGE_DIGEST" \
             '.ok == true and .releaseId == $releaseId and .commitSha == $commitSha and .imageDigest == $imageDigest' \

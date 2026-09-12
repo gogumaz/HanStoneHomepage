@@ -10,7 +10,8 @@ describe("release finalization workflow correlation contract", () => {
     );
     expect(workflow).toContain("run-name: Production deployment verification · ${{ inputs.release_id }}");
     expect(workflow).toContain("release_id:");
-    expect(workflow).toContain('[[ "${{ inputs.release_id }}" =~ ^[A-Za-z0-9._-]{1,80}$ ]]');
+    expect(workflow).toContain('[[ "$DEPLOY_VERIFY_RELEASE_ID" =~ ^[A-Za-z0-9._-]{1,80}$ ]]');
+    expect(workflow).not.toContain('[[ "${{ inputs.release_id }}"');
     expect(workflow).toContain("retention-days: 90");
   });
 

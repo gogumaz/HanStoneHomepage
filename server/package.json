@@ -31,6 +31,7 @@
     "verify:legal-approval-binding": "node dist/legal-approval-binding.js",
     "verify:mail-operations": "node dist/mail-operations-evidence.js",
     "verify:payment-operations": "node dist/payment-operations-evidence.js",
+    "manage:payment-operations-secret": "node dist/payment-operations-secret.js",
     "verify:transport-security": "node dist/transport-security-evidence.js",
     "configure:release-secrets": "node dist/release-secret-setup.js",
     "coordinate:staging-evidence": "node dist/staging-evidence-coordinator.js",

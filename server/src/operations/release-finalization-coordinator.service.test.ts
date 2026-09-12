@@ -533,6 +533,7 @@ function validInput(): ReleaseFinalizationCoordinatorInput {
     imageReference,
     registryHost: "ghcr.io",
     productionSecretNames: [...REQUIRED_PRODUCTION_VERIFICATION_SECRETS],
+    paymentOperationsReleaseId: "release-2026.08.31",
     deploymentConfirmation: PRODUCTION_DEPLOYMENT_CONFIRMATION,
     maximumVerificationDelayHours: 24,
     acceptance: acceptanceRun(),
@@ -567,6 +568,19 @@ describe("ReleaseFinalizationCoordinatorService", () => {
       .toHaveLength(10);
     expect(report.checks).toContainEqual({
       name: "deploymentConfirmation", status: "fail", code: "RELEASE_FINALIZATION_DEPLOYMENT_CONFIRMATION_REQUIRED",
+    });
+  });
+
+  it("requires the staged payment evidence marker to match the release", () => {
+    const report = new ReleaseFinalizationCoordinatorService().plan({
+      ...validInput(), paymentOperationsReleaseId: "release-other",
+    });
+
+    expect(report.stage).toBe("blocked");
+    expect(report.checks).toContainEqual({
+      name: "variable:PRODUCTION_PAYMENT_OPERATIONS_RELEASE_ID",
+      status: "fail",
+      code: "RELEASE_FINALIZATION_PAYMENT_EVIDENCE_RELEASE_MISMATCH",
     });
   });
 

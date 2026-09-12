@@ -89,8 +89,19 @@ POST /api/v1/orders/checkout
 $env:PAYMENT_EVIDENCE_PREFLIGHT_REPORT = "production-preflight.json"
 $env:PAYMENT_EVIDENCE_CAPTURE_REPORT = "C:\secure\payment-operations-capture.json"
 $env:PAYMENT_EVIDENCE_RELEASE_ID = "release-YYYY.MM.DD"
-npm --prefix server run verify:payment-operations |
-  Out-File -LiteralPath "payment-operations-evidence.json" -Encoding utf8
+npm --prefix server run manage:payment-operations-secret
+npm --prefix server run manage:payment-operations-secret -- `
+  --apply --confirm STAGE_PAYMENT_OPERATIONS_EVIDENCE
 ```
 
-성공 결과는 승인·중복 방지·웹훅·환불·토스 원본 취소의 12개 판정을 포함합니다. `paymentKey`, `orderId`, 구독 ID는 원문 대신 SHA-256만 남습니다. 운영 검증 워크플로를 실행하기 직전에 원본 JSON을 base64로 인코딩해 `production` 환경의 `PRODUCTION_PAYMENT_OPERATIONS_BASE64` Secret에 등록하고, 워크플로 종료 후 해당 Secret을 삭제하거나 다음 릴리스 값으로 교체합니다. 워크플로는 원본을 권한 `0600`으로 복원하고 검증 직후 삭제하며 비식별 결과만 90일 artifact에 포함합니다.
+첫 명령은 변경 없는 dry-run이고 두 번째 명령만 GitHub `production` 환경을 변경합니다. 도구는 캡처가 저장소 밖에 있거나 Git에서 명시적으로 무시된 파일인지 확인하고 12개 운영 판정과 캡처 후보가 로컬·원격 기본 브랜치의 현재 커밋인지 먼저 검증합니다. 모두 통과하면 원본을 base64로 변환해 표준입력으로만 `PRODUCTION_PAYMENT_OPERATIONS_BASE64` Secret에 전달하고, 공개 가능한 `PRODUCTION_PAYMENT_OPERATIONS_RELEASE_ID` 환경 변수에 릴리스 ID를 함께 기록합니다. 기존 Secret이나 마커가 있으면 덮어쓰지 않습니다.
+
+성공 결과에서 `paymentKey`, `orderId`, 구독 ID는 원문 대신 SHA-256만 남습니다. 최종화 도구와 운영 검증 워크플로는 마커가 현재 릴리스와 같은지도 확인합니다. 워크플로는 원본을 권한 `0600`으로 복원하고 검증 직후 삭제하며 비식별 결과만 90일 artifact에 포함합니다. 운영 검증 성공을 확인한 뒤 임시 Secret과 마커를 함께 제거합니다.
+
+```powershell
+npm --prefix server run manage:payment-operations-secret -- --remove
+npm --prefix server run manage:payment-operations-secret -- `
+  --remove --apply --confirm REMOVE_PAYMENT_OPERATIONS_EVIDENCE
+```
+
+제거 dry-run에서 현재 마커가 `PAYMENT_EVIDENCE_RELEASE_ID`와 다르면 중단합니다. 따라서 이전 릴리스의 캡처를 실수로 삭제하거나 새 캡처로 덮어쓰지 않습니다.
