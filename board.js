@@ -246,18 +246,23 @@ function apiUrl(path) {
 }
 
 function loadLocalStore() {
-  try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch { return {}; }
+  try {
+    const value = JSON.parse(localStorage.getItem(storageKey) || '{}');
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  } catch { return {}; }
 }
 
 function saveLocalRecord(type, record) {
-  const store = loadLocalStore();
-  store[type] = [record, ...(store[type] || [])];
-  localStorage.setItem(storageKey, JSON.stringify(store));
+  const store = new Map(Object.entries(loadLocalStore()));
+  const current = store.get(type);
+  store.set(type, [record, ...(Array.isArray(current) ? current : [])]);
+  localStorage.setItem(storageKey, JSON.stringify(Object.fromEntries(store)));
 }
 
 function localRecords(type) {
-  const store = loadLocalStore();
-  return [...(store[type] || []), ...(SEED_RECORDS[type] || [])];
+  const store = new Map(Object.entries(loadLocalStore()));
+  const current = store.get(type);
+  return [...(Array.isArray(current) ? current : []), ...(SEED_RECORDS[type] || [])];
 }
 
 async function resolveCurrentUser() {

@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable, Logger, Optional } from "@nestjs/common";
 import { loadAppConfig, type AppConfig } from "../config/app-config.js";
 import { ApiError } from "../common/api-error.js";
+import { isEmailAddress } from "../common/email-address.js";
 import { PrismaService } from "../database/prisma.service.js";
 import {
   AccountMailKind,
@@ -95,7 +96,7 @@ function validateSignup(body: unknown): SignupInput {
   const role = PUBLIC_ROLES.get(roleName);
   const ageBand = PUBLIC_AGE_BANDS.get(readString(data.ageBand).toLowerCase());
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+  if (!isEmailAddress(email)) {
     throw new ApiError("INVALID_EMAIL", "올바른 이메일 주소를 입력해 주세요.", HttpStatus.BAD_REQUEST);
   }
   if (password.length < 10 || password.length > 128) {
@@ -140,7 +141,7 @@ function validateEmail(body: unknown): string {
   const email = body && typeof body === "object"
     ? readString((body as Record<string, unknown>).email).toLowerCase()
     : "";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+  if (!isEmailAddress(email)) {
     throw new ApiError("INVALID_EMAIL", "올바른 이메일 주소를 입력해 주세요.", HttpStatus.BAD_REQUEST);
   }
   return email;

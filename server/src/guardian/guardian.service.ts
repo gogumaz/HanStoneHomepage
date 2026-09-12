@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import { ApiError } from "../common/api-error.js";
+import { isEmailAddress } from "../common/email-address.js";
 import { loadAppConfig, type AppConfig } from "../config/app-config.js";
 import { PrismaService } from "../database/prisma.service.js";
 import {
@@ -26,7 +27,7 @@ function readEmail(body: unknown): string {
   const email = body && typeof body === "object" && "email" in body && typeof body.email === "string"
     ? body.email.trim().toLowerCase()
     : "";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+  if (!isEmailAddress(email)) {
     throw new ApiError("INVALID_GUARDIAN_EMAIL", "초대할 보호자의 이메일을 확인해 주세요.", HttpStatus.BAD_REQUEST);
   }
   return email;

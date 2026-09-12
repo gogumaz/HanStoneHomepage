@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 
 const MAX_FILES = 50_000;
@@ -65,13 +65,6 @@ async function main() {
     || dirname(output) !== root
     || outputRelative !== "web-deployment-manifest.json"
   ) fail("WEB_RELEASE_PATH_INVALID");
-  try {
-    await lstat(output);
-    fail("WEB_RELEASE_OUTPUT_EXISTS");
-  } catch (error) {
-    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
-  }
-
   const paths = await collectFiles(root);
   const relativePaths = new Set(paths.map((path) => normalizedRelative(root, path)));
   if (REQUIRED_ENTRYPOINTS.some((path) => !relativePaths.has(path))) fail("WEB_RELEASE_ENTRYPOINT_MISSING");
@@ -108,7 +101,14 @@ async function main() {
     totals: { files: files.length, bytes: totalBytes },
   };
   await mkdir(dirname(output), { recursive: true });
-  await writeFile(output, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+  try {
+    await writeFile(output, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "EEXIST") {
+      fail("WEB_RELEASE_OUTPUT_EXISTS");
+    }
+    throw error;
+  }
   process.stdout.write(`${JSON.stringify({ ok: true, fileCount: files.length, totalBytes })}\n`);
 }
 

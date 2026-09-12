@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { open, realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { PaymentOperationsEvidenceService } from "./operations/payment-operations-evidence.service.js";
@@ -119,49 +119,58 @@ async function resourceState(repository: string): Promise<{
 
 async function protectedCapture(filePath: string): Promise<ProtectedCapture> {
   let resolvedFile: string;
-  let fileStat;
+  let handle;
   try {
     resolvedFile = await realpath(path.resolve(filePath));
-    fileStat = await stat(resolvedFile);
+    handle = await open(resolvedFile, "r");
   } catch {
     throw cliError("PAYMENT_SECRET_CAPTURE_FILE_UNAVAILABLE");
   }
-  if (!fileStat.isFile() || fileStat.size === 0 || fileStat.size > maxCaptureBytes) {
-    throw cliError("PAYMENT_SECRET_CAPTURE_FILE_INVALID");
-  }
-
-  const repositoryRoot = path.resolve((await command(
-    gitExecutable, ["rev-parse", "--show-toplevel"], "PAYMENT_SECRET_GIT_ROOT_READ_FAILED",
-  )).trim());
-  const relative = path.relative(repositoryRoot, resolvedFile);
-  if (relative !== "" && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
-    try {
-      await execFileAsync(gitExecutable, ["check-ignore", "-q", "--", relative], {
-        cwd: repositoryRoot, windowsHide: true,
-      });
-    } catch {
-      throw cliError("PAYMENT_SECRET_CAPTURE_FILE_NOT_IGNORED");
-    }
-  }
-
-  const contents = await readFile(resolvedFile);
-  if (contents.byteLength === 0 || contents.byteLength > maxCaptureBytes) {
-    throw cliError("PAYMENT_SECRET_CAPTURE_FILE_INVALID");
-  }
-  const text = contents.toString("utf8");
-  if (text.includes("\u0000") || text.includes("\uFFFD")) {
-    contents.fill(0);
-    throw cliError("PAYMENT_SECRET_CAPTURE_FILE_INVALID");
-  }
   try {
-    return {
-      value: JSON.parse(text) as unknown,
-      contents,
-      sha256: createHash("sha256").update(contents).digest("hex"),
-    };
-  } catch {
-    contents.fill(0);
-    throw cliError("PAYMENT_SECRET_CAPTURE_JSON_INVALID");
+    const fileStat = await handle.stat();
+    if (!fileStat.isFile() || fileStat.size === 0 || fileStat.size > maxCaptureBytes) {
+      throw cliError("PAYMENT_SECRET_CAPTURE_FILE_INVALID");
+    }
+
+    const repositoryRoot = path.resolve((await command(
+      gitExecutable, ["rev-parse", "--show-toplevel"], "PAYMENT_SECRET_GIT_ROOT_READ_FAILED",
+    )).trim());
+    const relative = path.relative(repositoryRoot, resolvedFile);
+    if (relative !== "" && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
+      try {
+        await execFileAsync(gitExecutable, ["check-ignore", "-q", "--", relative], {
+          cwd: repositoryRoot, windowsHide: true,
+        });
+      } catch {
+        throw cliError("PAYMENT_SECRET_CAPTURE_FILE_NOT_IGNORED");
+      }
+    }
+
+    const contents = await handle.readFile();
+    const finalStat = await handle.stat();
+    if (contents.byteLength === 0 || contents.byteLength > maxCaptureBytes ||
+        contents.byteLength !== fileStat.size || finalStat.size !== fileStat.size ||
+        finalStat.mtimeMs !== fileStat.mtimeMs) {
+      contents.fill(0);
+      throw cliError("PAYMENT_SECRET_CAPTURE_FILE_INVALID");
+    }
+    const text = contents.toString("utf8");
+    if (text.includes("\u0000") || text.includes("\uFFFD")) {
+      contents.fill(0);
+      throw cliError("PAYMENT_SECRET_CAPTURE_FILE_INVALID");
+    }
+    try {
+      return {
+        value: JSON.parse(text) as unknown,
+        contents,
+        sha256: createHash("sha256").update(contents).digest("hex"),
+      };
+    } catch {
+      contents.fill(0);
+      throw cliError("PAYMENT_SECRET_CAPTURE_JSON_INVALID");
+    }
+  } finally {
+    await handle.close();
   }
 }
 

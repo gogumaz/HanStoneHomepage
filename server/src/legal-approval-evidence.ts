@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { basename } from "node:path";
-import { readFile, stat } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import {
   LegalApprovalEvidenceService,
   MAX_LEGAL_APPROVAL_BYTES,
@@ -20,29 +20,35 @@ function required(name: string): string {
 
 async function main(): Promise<void> {
   const path = required("LEGAL_APPROVAL_FILE");
-  let fileStat;
+  let handle;
   try {
-    fileStat = await stat(path);
+    handle = await open(path, "r");
   } catch {
     throw cliError("LEGAL_APPROVAL_FILE_READ_FAILED");
   }
-  if (!fileStat.isFile()) throw cliError("LEGAL_APPROVAL_FILE_NOT_REGULAR");
-  if (fileStat.size > MAX_LEGAL_APPROVAL_BYTES) throw cliError("LEGAL_APPROVAL_DOCUMENT_TOO_LARGE");
-  let contents: Buffer;
   try {
-    contents = await readFile(path);
-  } catch {
-    throw cliError("LEGAL_APPROVAL_FILE_READ_FAILED");
+    const fileStat = await handle.stat();
+    if (!fileStat.isFile()) throw cliError("LEGAL_APPROVAL_FILE_NOT_REGULAR");
+    if (fileStat.size > MAX_LEGAL_APPROVAL_BYTES) throw cliError("LEGAL_APPROVAL_DOCUMENT_TOO_LARGE");
+    let contents: Buffer;
+    try {
+      contents = await handle.readFile();
+    } catch {
+      throw cliError("LEGAL_APPROVAL_FILE_READ_FAILED");
+    }
+    if (contents.byteLength !== fileStat.size) throw cliError("LEGAL_APPROVAL_FILE_READ_FAILED");
+    const candidateCommitSha = process.env.LEGAL_APPROVAL_CANDIDATE_COMMIT_SHA?.trim();
+    const report = new LegalApprovalEvidenceService().run({
+      fileName: basename(path),
+      contents,
+      approvedAt: required("LEGAL_APPROVAL_APPROVED_AT"),
+      confirmation: required("LEGAL_APPROVAL_CONFIRMATION"),
+      ...(candidateCommitSha ? { candidateCommitSha } : {}),
+    });
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  } finally {
+    await handle.close();
   }
-  const candidateCommitSha = process.env.LEGAL_APPROVAL_CANDIDATE_COMMIT_SHA?.trim();
-  const report = new LegalApprovalEvidenceService().run({
-    fileName: basename(path),
-    contents,
-    approvedAt: required("LEGAL_APPROVAL_APPROVED_AT"),
-    confirmation: required("LEGAL_APPROVAL_CONFIRMATION"),
-    ...(candidateCommitSha ? { candidateCommitSha } : {}),
-  });
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 }
 
 main().catch((error: unknown) => {

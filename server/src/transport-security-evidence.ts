@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { isIP } from "node:net";
 import { connect } from "node:tls";
 import { parse } from "dotenv";
@@ -82,29 +82,46 @@ async function probeTlsEndpoint(value: string, timeoutMs: number): Promise<Trans
 }
 
 async function environmentFile(path: string): Promise<{ environment: NodeJS.ProcessEnv; sha256: string }> {
-  let fileStat;
+  let handle;
   try {
-    fileStat = await stat(path);
+    handle = await open(path, "r");
   } catch {
     throw cliError("TRANSPORT_EVIDENCE_ENVIRONMENT_READ_FAILED");
   }
-  if (!fileStat.isFile()) throw cliError("TRANSPORT_EVIDENCE_ENVIRONMENT_NOT_REGULAR");
-  if (fileStat.size === 0 || fileStat.size > MAX_ENVIRONMENT_BYTES) {
-    throw cliError("TRANSPORT_EVIDENCE_ENVIRONMENT_SIZE_INVALID");
-  }
-  let contents: Buffer;
   try {
-    contents = await readFile(path);
-  } catch {
-    throw cliError("TRANSPORT_EVIDENCE_ENVIRONMENT_READ_FAILED");
+    let fileStat;
+    try {
+      fileStat = await handle.stat();
+    } catch {
+      throw cliError("TRANSPORT_EVIDENCE_ENVIRONMENT_READ_FAILED");
+    }
+    if (!fileStat.isFile()) throw cliError("TRANSPORT_EVIDENCE_ENVIRONMENT_NOT_REGULAR");
+    if (fileStat.size === 0 || fileStat.size > MAX_ENVIRONMENT_BYTES) {
+      throw cliError("TRANSPORT_EVIDENCE_ENVIRONMENT_SIZE_INVALID");
+    }
+    let contents: Buffer;
+    try {
+      contents = await handle.readFile();
+    } catch {
+      throw cliError("TRANSPORT_EVIDENCE_ENVIRONMENT_READ_FAILED");
+    }
+    if (contents.byteLength !== fileStat.size) {
+      contents.fill(0);
+      throw cliError("TRANSPORT_EVIDENCE_ENVIRONMENT_SIZE_INVALID");
+    }
+    const text = contents.toString("utf8");
+    if (text.includes("\u0000") || text.includes("\uFFFD")) {
+      contents.fill(0);
+      throw cliError("TRANSPORT_EVIDENCE_ENVIRONMENT_ENCODING_INVALID");
+    }
+    const environment = parse(text);
+    const sha256 = createHash("sha256").update(contents).digest("hex");
+    contents.fill(0);
+    if (Object.keys(environment).length === 0) throw cliError("TRANSPORT_EVIDENCE_ENVIRONMENT_EMPTY");
+    return { environment, sha256 };
+  } finally {
+    await handle.close();
   }
-  const text = contents.toString("utf8");
-  if (text.includes("\u0000") || text.includes("\uFFFD")) {
-    throw cliError("TRANSPORT_EVIDENCE_ENVIRONMENT_ENCODING_INVALID");
-  }
-  const environment = parse(text);
-  if (Object.keys(environment).length === 0) throw cliError("TRANSPORT_EVIDENCE_ENVIRONMENT_EMPTY");
-  return { environment, sha256: createHash("sha256").update(contents).digest("hex") };
 }
 
 async function main(): Promise<void> {

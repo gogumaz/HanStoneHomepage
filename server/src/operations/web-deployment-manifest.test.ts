@@ -76,4 +76,15 @@ describe("web deployment manifest CLI", () => {
     expect(result.status).toBe(1);
     expect(JSON.parse(result.stderr)).toEqual({ ok: false, errorType: "WEB_RELEASE_ASSET_NOT_FINGERPRINTED" });
   });
+
+  it("refuses to replace an existing manifest atomically", async () => {
+    const paths = await fixture();
+    await writeFile(paths.output, "existing", "utf8");
+
+    const result = createManifest(paths, "c".repeat(40));
+
+    expect(result.status).toBe(1);
+    expect(JSON.parse(result.stderr)).toEqual({ ok: false, errorType: "WEB_RELEASE_OUTPUT_EXISTS" });
+    await expect(readFile(paths.output, "utf8")).resolves.toBe("existing");
+  });
 });

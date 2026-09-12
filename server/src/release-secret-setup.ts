@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { open, realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { SOLO_RELEASE_OPERATOR_LOGIN } from "./common/release-approval-policy.js";
@@ -105,34 +105,47 @@ function parseArguments(argv: string[]): { apply: boolean; confirmation: string 
 async function protectedPreflightFileValue(filePath: string | undefined): Promise<string | undefined> {
   if (!filePath) return undefined;
   let resolvedFile: string;
-  let fileStat;
+  let handle;
   try {
     resolvedFile = await realpath(path.resolve(filePath));
-    fileStat = await stat(resolvedFile);
+    handle = await open(resolvedFile, "r");
   } catch {
     throw cliError("RELEASE_SECRET_PREFLIGHT_FILE_UNAVAILABLE");
   }
-  if (!fileStat.isFile() || fileStat.size === 0 || fileStat.size > 256 * 1024) {
-    throw cliError("RELEASE_SECRET_PREFLIGHT_FILE_INVALID");
-  }
-
-  const repositoryRoot = path.resolve((await command(
-    gitExecutable,
-    ["rev-parse", "--show-toplevel"],
-    "RELEASE_SECRET_GIT_ROOT_READ_FAILED",
-  )).trim());
-  const relative = path.relative(repositoryRoot, resolvedFile);
-  if (relative !== "" && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
-    try {
-      await execFileAsync(gitExecutable, ["check-ignore", "-q", "--", relative], {
-        cwd: repositoryRoot,
-        windowsHide: true,
-      });
-    } catch {
-      throw cliError("RELEASE_SECRET_PREFLIGHT_FILE_NOT_IGNORED");
+  let contents: Buffer | null = null;
+  try {
+    const fileStat = await handle.stat();
+    if (!fileStat.isFile() || fileStat.size === 0 || fileStat.size > 256 * 1024) {
+      throw cliError("RELEASE_SECRET_PREFLIGHT_FILE_INVALID");
     }
+
+    const repositoryRoot = path.resolve((await command(
+      gitExecutable,
+      ["rev-parse", "--show-toplevel"],
+      "RELEASE_SECRET_GIT_ROOT_READ_FAILED",
+    )).trim());
+    const relative = path.relative(repositoryRoot, resolvedFile);
+    if (relative !== "" && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
+      try {
+        await execFileAsync(gitExecutable, ["check-ignore", "-q", "--", relative], {
+          cwd: repositoryRoot,
+          windowsHide: true,
+        });
+      } catch {
+        throw cliError("RELEASE_SECRET_PREFLIGHT_FILE_NOT_IGNORED");
+      }
+    }
+    contents = await handle.readFile();
+    const finalStat = await handle.stat();
+    if (contents.byteLength !== fileStat.size || finalStat.size !== fileStat.size ||
+        finalStat.mtimeMs !== fileStat.mtimeMs) {
+      throw cliError("RELEASE_SECRET_PREFLIGHT_FILE_INVALID");
+    }
+    return contents.toString("base64");
+  } finally {
+    contents?.fill(0);
+    await handle.close();
   }
-  return (await readFile(resolvedFile)).toString("base64");
 }
 
 async function main(): Promise<void> {
