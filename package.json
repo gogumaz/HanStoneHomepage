@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "dev:web": "vite --host 127.0.0.1",
@@ -46,7 +49,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "postcss": "^8.5.28",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",

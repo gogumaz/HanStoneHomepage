@@ -20,12 +20,12 @@
 | 빌드·개발 서버 | Vite |
 | 라우팅 | React Router |
 | 서버 상태 | TanStack Query |
-| API | Node.js 24 LTS, NestJS, Prisma, PostgreSQL |
+| API | Node.js 26, NestJS, Prisma, PostgreSQL |
 | 테스트 | Vitest, Testing Library, jsdom, Playwright |
 | 배포 기반 | Docker Compose, GitHub Actions |
 | 기존 개발 서버 | Node.js 기본 `http` 모듈, 하위 호환용 |
 
-Node.js 24 LTS를 개발·운영 기준으로 사용합니다.
+Node.js 26을 개발·CI·컨테이너 기준으로 사용합니다. Node.js 26이 LTS로 전환되기 전 운영 배포는 릴리스 승인 절차를 거쳐야 합니다.
 
 ## 3. 로컬 실행
 

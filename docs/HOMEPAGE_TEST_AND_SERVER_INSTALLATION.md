@@ -24,7 +24,7 @@
 |---|---:|---|
 | Git | 최신 안정 버전 | `git --version` |
 | Node.js | 24 LTS | `node --version` |
-| npm | Node.js 24 동봉 버전 | `npm --version` |
+| npm | Node.js 26 동봉 버전 | `npm --version` |
 | Docker Desktop 또는 Docker Engine | Compose 포함 | `docker --version` |
 | Docker Compose | v2 이상 | `docker compose version` |
 
@@ -446,7 +446,7 @@ docker compose down
 
 ## 11. 최종 완료 체크리스트
 
-- [ ] Node.js 24, npm, Docker와 Compose 버전을 확인함
+- [ ] Node.js 26, npm, Docker와 Compose 버전을 확인함
 - [ ] 루트와 `server` 의존성을 `npm ci`로 설치함
 - [ ] 웹이 `4173`에서 열리고 주요 화면에 잘림·콘솔 오류가 없음
 - [ ] PostgreSQL·Redis가 healthy 상태임

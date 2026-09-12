@@ -4,10 +4,15 @@ import { describe, expect, it } from "vitest";
 
 const codeqlWorkflowPath = resolve(process.cwd(), "../.github/workflows/codeql.yml");
 const dependabotConfigPath = resolve(process.cwd(), "../.github/dependabot.yml");
+const repositoryRoot = resolve(process.cwd(), "..");
+
+function readRepositoryText(path: string): string {
+  return readFileSync(path, "utf8").replace(/\r\n/gu, "\n");
+}
 
 describe("repository security automation", () => {
   it("runs least-privilege CodeQL analysis for JavaScript and TypeScript", () => {
-    const workflow = readFileSync(codeqlWorkflowPath, "utf8");
+    const workflow = readRepositoryText(codeqlWorkflowPath);
 
     expect(workflow).toContain("name: CodeQL security analysis");
     expect(workflow).toContain("push:");
@@ -23,7 +28,7 @@ describe("repository security automation", () => {
   });
 
   it("checks every package, container, and workflow dependency each week", () => {
-    const config = readFileSync(dependabotConfigPath, "utf8");
+    const config = readRepositoryText(dependabotConfigPath);
 
     expect(config).toContain("version: 2");
     expect(config.match(/package-ecosystem: npm/g)).toHaveLength(3);
@@ -39,12 +44,43 @@ describe("repository security automation", () => {
   });
 
   it("builds and verifies the managed ClamAV image in CI", () => {
-    const workflow = readFileSync(resolve(process.cwd(), "../.github/workflows/ci.yml"), "utf8");
+    const workflow = readRepositoryText(resolve(process.cwd(), "../.github/workflows/ci.yml"));
 
     expect(workflow).toContain("clamav-container:");
     expect(workflow).toContain("docker build -t baduk-history-clamav:ci deploy/clamav");
     expect(workflow).toContain('grep -Eq "^StreamMaxLength 2200M$" /etc/clamav/clamd.conf');
     expect(workflow).toContain('grep -Eq "^MaxFileSize 2200M$" /etc/clamav/clamd.conf');
     expect(workflow).toContain('grep -Eq "^MaxScanSize 2200M$" /etc/clamav/clamd.conf');
+  });
+
+  it("keeps CI, package engines, and the production image on Node.js 26", () => {
+    const workflowPaths = [
+      ".github/workflows/ci.yml",
+      ".github/workflows/production-deployment-verification.yml",
+      ".github/workflows/release-readiness.yml",
+      ".github/workflows/rollback-rehearsal.yml",
+      ".github/workflows/staging-read-only-load.yml",
+      ".github/workflows/staging-worker-soak.yml",
+    ];
+
+    for (const workflowPath of workflowPaths) {
+      const workflow = readRepositoryText(resolve(repositoryRoot, workflowPath));
+      expect(workflow).not.toContain("node-version: 24");
+      expect(workflow).toContain("node-version: 26");
+    }
+
+    const webPackage = JSON.parse(readFileSync(resolve(repositoryRoot, "package.json"), "utf8"));
+    const apiPackage = JSON.parse(readFileSync(resolve(repositoryRoot, "server/package.json"), "utf8"));
+    const componentsPackage = JSON.parse(
+      readFileSync(resolve(repositoryRoot, "server/src/components/package.json"), "utf8"),
+    );
+    const dockerfile = readFileSync(resolve(repositoryRoot, "server/Dockerfile"), "utf8");
+    const nvmVersion = readRepositoryText(resolve(repositoryRoot, ".nvmrc")).trim();
+
+    expect(webPackage.engines.node).toBe(">=26");
+    expect(apiPackage.engines.node).toBe(">=26");
+    expect(componentsPackage.engines.node).toBe(">=26");
+    expect(dockerfile).toContain("FROM node:26-bookworm-slim AS base");
+    expect(nvmVersion).toBe("26");
   });
 });

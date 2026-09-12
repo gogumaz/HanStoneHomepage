@@ -59,7 +59,7 @@ DKIM 선택자에는 TXT 공개키가 없었고 `mail.handol-edu.com`의 25·465
 아래 권장안은 개발과 운영의 기본안으로 채택했습니다. 실제 계약값과 사업자 정보는
 준비되는 시점에 입력하되 구현 구조는 아래 기준으로 진행합니다.
 
-- 백엔드: Node.js 24 LTS + NestJS + PostgreSQL + Prisma
+- 백엔드: Node.js 26 + NestJS + PostgreSQL + Prisma
 - 구조: 초기에는 도메인 모듈형 단일 API 서버
 - 게임 진입: 홈페이지 모달 기본, 직접 URL 딥링크 병행
 - 바둑미션 점수: 100점 기본, 오답 -20점, 힌트 단계별 -10점, 최저 0점

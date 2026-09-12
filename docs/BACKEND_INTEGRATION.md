@@ -2,7 +2,7 @@
 
 ## 1. 목적
 
-현재 데모 UI를 실제 회원, 학습 진도, 교재, 상담 서비스와 연결하기 위한 계약 초안입니다. API는 Node.js 24 LTS·NestJS·PostgreSQL·Prisma로 구현하고 엔드포인트와 필드명은 OpenAPI 문서로 관리합니다.
+현재 데모 UI를 실제 회원, 학습 진도, 교재, 상담 서비스와 연결하기 위한 계약 초안입니다. API는 Node.js 26·NestJS·PostgreSQL·Prisma로 구현하고 엔드포인트와 필드명은 OpenAPI 문서로 관리합니다.
 
 ## 2. API 공통 규칙
 

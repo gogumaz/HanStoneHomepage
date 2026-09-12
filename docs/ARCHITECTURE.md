@@ -30,7 +30,7 @@ React 전환을 위해 `package.json`, Vite·TypeScript 설정, `src/`와 `/app.
 
 ## 2. 목표 서비스 구조
 
-MVP에서는 프런트엔드, API 서버, 콘텐츠 저장소를 분리합니다. API는 Node.js 24 LTS,
+MVP에서는 프런트엔드, API 서버, 콘텐츠 저장소를 분리합니다. API는 Node.js 26,
 NestJS, Prisma 기반의 모듈러 모놀리스로 만들고 관리형 PostgreSQL에 연결합니다.
 
 ```text

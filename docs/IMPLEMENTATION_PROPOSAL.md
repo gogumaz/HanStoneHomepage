@@ -34,7 +34,7 @@
 | 영역 | 확정안 |
 |---|---|
 | 프런트엔드 | React, TypeScript, Vite, React Router, TanStack Query |
-| API | Node.js 24 LTS, NestJS |
+| API | Node.js 26, NestJS |
 | 데이터베이스 | 관리형 PostgreSQL |
 | ORM·마이그레이션 | Prisma ORM, Prisma Migrate |
 | 세션 | HttpOnly·Secure·SameSite 쿠키 기반 서버 세션 |
@@ -46,7 +46,7 @@
 | CI/CD | GitHub Actions |
 
 Node.js는 Current보다 LTS 버전을 사용합니다. 2026-08-21 기준
-운영 기준선은 Node.js 24 LTS이며, 지원 종료 전에 다음 LTS로 올리는 정책입니다.
+개발·CI·컨테이너 기준선은 Node.js 26입니다. LTS 전환 전 운영 배포는 릴리스 승인 절차를 거치며, 이후에도 지원 종료 전에 다음 LTS로 올립니다.
 
 ## 2. 목표 구조
 

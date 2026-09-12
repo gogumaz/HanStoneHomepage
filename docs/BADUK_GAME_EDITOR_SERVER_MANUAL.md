@@ -297,7 +297,7 @@ API 기본 주소는 `http://127.0.0.1:3000/api/v1`입니다.
 
 ### 5.1 준비 프로그램
 
-- Node.js 24 LTS
+- Node.js 26
 - npm
 - Git
 - Docker Desktop 또는 Docker Engine과 Compose v2
@@ -585,7 +585,7 @@ docker compose logs --tail 200 redis
 
 ### 서버
 
-- [ ] Node.js 24, Docker, 의존성 설치
+- [ ] Node.js 26, Docker, 의존성 설치
 - [ ] PostgreSQL·Redis 연결
 - [ ] Prisma 마이그레이션 적용
 - [ ] API live·ready 통과

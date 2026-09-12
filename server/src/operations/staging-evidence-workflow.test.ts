@@ -7,9 +7,13 @@ const workflows = [
   resolve(process.cwd(), "../.github/workflows/staging-worker-soak.yml"),
 ];
 
+async function readWorkflow(path: string): Promise<string> {
+  return (await readFile(path, "utf8")).replace(/\r\n/gu, "\n");
+}
+
 describe("staging evidence workflow coordination contract", () => {
   it.each(workflows)("provides a correlation input and keeps read-only permissions: %s", async (workflowPath) => {
-    const workflow = await readFile(workflowPath, "utf8");
+    const workflow = await readWorkflow(workflowPath);
 
     expect(workflow).toContain("evidence_id:");
     expect(workflow).toContain("${{ inputs.evidence_id }}");
@@ -22,7 +26,7 @@ describe("staging evidence workflow coordination contract", () => {
   });
 
   it("bounds the standalone load-test runner lifetime", async () => {
-    const workflow = await readFile(workflows[0]!, "utf8");
+    const workflow = await readWorkflow(workflows[0]!);
 
     expect(workflow).toContain("load-test:\n    runs-on: ubuntu-latest\n    timeout-minutes: 15");
   });
