@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { loadAppConfig } from "./app-config.js";
 
+const resendWebhookTestSecret = `whsec_${Buffer.from("test_resend_webhook_secret").toString("base64")}`;
+
 function productionEnv(): NodeJS.ProcessEnv {
   return {
     NODE_ENV: "production",
@@ -17,7 +19,7 @@ function productionEnv(): NodeJS.ProcessEnv {
     MAIL_SPF_DOMAIN: "send.example.com",
     MAIL_DKIM_SELECTORS: "resend1,resend2,resend3",
     MAIL_BOUNCE_WEBHOOK_SECRET: "bounce_webhook_secret_1234567890_abcd",
-    RESEND_WEBHOOK_SECRET: "whsec_dGVzdF9yZXNlbmRfd2ViaG9va19zZWNyZXQ=",
+    RESEND_WEBHOOK_SECRET: resendWebhookTestSecret,
     LEGAL_POLICY_VERSION: "guardian-link-v1",
     LEGAL_POLICY_APPROVED_AT: "2026-08-01T00:00:00.000Z",
     LEGAL_POLICY_APPROVAL_SHA256: "a".repeat(64),
@@ -153,7 +155,7 @@ describe("loadAppConfig account mail settings", () => {
       smtpFrom: "바둑타고 <no-reply@example.com>",
       mailSpfDomain: "send.example.com",
       mailDkimSelectors: ["resend1", "resend2", "resend3"],
-      resendWebhookSecret: "whsec_dGVzdF9yZXNlbmRfd2ViaG9va19zZWNyZXQ=",
+      resendWebhookSecret: resendWebhookTestSecret,
       legalPolicyVersion: "guardian-link-v1",
       legalPolicyApprovedAt: "2026-08-01T00:00:00.000Z",
       legalPolicyApprovalSha256: "a".repeat(64),

@@ -11,6 +11,8 @@ import {
 } from "./production-preflight.service.js";
 import { HlsTranscoderService } from "../content/hls-transcoder.service.js";
 
+const resendWebhookTestSecret = `whsec_${Buffer.from("test_resend_webhook_secret").toString("base64")}`;
+
 function productionEnv(): NodeJS.ProcessEnv {
   return {
     NODE_ENV: "production",
@@ -24,7 +26,7 @@ function productionEnv(): NodeJS.ProcessEnv {
     MAIL_SPF_DOMAIN: "send.example.com",
     MAIL_DKIM_SELECTORS: "resend1,resend2,resend3",
     MAIL_BOUNCE_WEBHOOK_SECRET: "bounce_webhook_secret_1234567890_abcd",
-    RESEND_WEBHOOK_SECRET: "whsec_dGVzdF9yZXNlbmRfd2ViaG9va19zZWNyZXQ=",
+    RESEND_WEBHOOK_SECRET: resendWebhookTestSecret,
     OBJECT_STORAGE_BUCKET: "private-media",
     MALWARE_SCANNER_HOST: "clamav.internal",
     TOSS_PAYMENTS_SECRET_KEY: "live_gsk_example_1234567890_abcdefghij",
