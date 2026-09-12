@@ -1,4 +1,4 @@
-FROM clamav/clamav:1.4.6-debian13-slim
+FROM clamav/clamav:1.5.4-debian13-slim
 
 # The application accepts videos up to 2 GiB. ClamD rejects INSTREAM data above
 # StreamMaxLength unless the daemon limits are raised to the same operational boundary.

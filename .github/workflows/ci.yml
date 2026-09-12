@@ -120,6 +120,21 @@ jobs:
           docker run --rm --entrypoint node baduk-history-api:ci
           scripts/verify-release-artifacts.mjs --profile api dist
 
+  clamav-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build the managed ClamAV image
+        run: docker build -t baduk-history-clamav:ci deploy/clamav
+      - name: Verify managed scan limits
+        run: |
+          docker run --rm --entrypoint sh baduk-history-clamav:ci -c '
+            grep -Eq "^StreamMaxLength 2200M$" /etc/clamav/clamd.conf &&
+            grep -Eq "^MaxFileSize 2200M$" /etc/clamav/clamd.conf &&
+            grep -Eq "^MaxScanSize 2200M$" /etc/clamav/clamd.conf
+          '
+
   supply-chain:
     runs-on: ubuntu-latest
     env:

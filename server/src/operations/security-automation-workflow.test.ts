@@ -37,4 +37,14 @@ describe("repository security automation", () => {
     expect(config.match(/timezone: Asia\/Seoul/g)).toHaveLength(6);
     expect(config).toContain("rebase-strategy: auto");
   });
+
+  it("builds and verifies the managed ClamAV image in CI", () => {
+    const workflow = readFileSync(resolve(process.cwd(), "../.github/workflows/ci.yml"), "utf8");
+
+    expect(workflow).toContain("clamav-container:");
+    expect(workflow).toContain("docker build -t baduk-history-clamav:ci deploy/clamav");
+    expect(workflow).toContain('grep -Eq "^StreamMaxLength 2200M$" /etc/clamav/clamd.conf');
+    expect(workflow).toContain('grep -Eq "^MaxFileSize 2200M$" /etc/clamav/clamd.conf');
+    expect(workflow).toContain('grep -Eq "^MaxScanSize 2200M$" /etc/clamav/clamd.conf');
+  });
 });
