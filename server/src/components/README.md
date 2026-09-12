@@ -32,7 +32,7 @@ import {
 } from "@baduk-history/integration-components/payments";
 ```
 
-현재 패키지는 Node.js 26 이상, TypeScript 7과 NestJS 11을 기준으로 독립 설치·검증합니다. `@nestjs/common`은 소비 애플리케이션과 Nest 런타임을 공유하는 peer dependency이며, `jose`는 OAuth 구현에 필요한 패키지 직접 의존성입니다. 라이선스와 배포 레지스트리가 결정되기 전에는 사내 파일 패키지 또는 비공개 레지스트리에서 사용합니다.
+현재 패키지는 Node.js 26 이상, TypeScript 7과 NestJS 12를 기준으로 독립 설치·검증합니다. `@nestjs/common`은 소비 애플리케이션과 Nest 런타임을 공유하는 peer dependency이며, `jose`는 OAuth 구현에 필요한 패키지 직접 의존성입니다. 라이선스와 배포 레지스트리가 결정되기 전에는 사내 파일 패키지 또는 비공개 레지스트리에서 사용합니다.
 
 ## OAuth 컴포넌트
 
