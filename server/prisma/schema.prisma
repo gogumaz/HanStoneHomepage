@@ -412,6 +412,7 @@ model User {
   organizationClassEnrollments  OrganizationClassEnrollment[]
   createdOrganizationClassInviteCodes OrganizationClassInviteCode[] @relation("OrganizationClassInviteCodeCreator")
   consumedOrganizationClassInviteCodes OrganizationClassInviteCode[] @relation("OrganizationClassInviteCodeConsumer")
+  updatedOrganizationClassProgressSettings OrganizationClassProgressSetting[] @relation("OrganizationClassProgressSettingUpdatedBy")
 
   @@index([status])
   @@index([minorAccountStatus])
@@ -507,6 +508,7 @@ model OrganizationClass {
   teacherAssignments OrganizationClassTeacherAssignment[]
   enrollments        OrganizationClassEnrollment[]
   inviteCodes        OrganizationClassInviteCode[]
+  progressSetting    OrganizationClassProgressSetting?
 
   @@unique([organizationId, academicYear, name])
   @@index([organizationId, status])
@@ -557,6 +559,20 @@ model OrganizationClassInviteCode {
   @@index([organizationClassId, expiresAt])
   @@index([createdByUserId, createdAt])
   @@index([consumedByStudentId])
+}
+
+model OrganizationClassProgressSetting {
+  organizationClassId String            @id @db.Uuid
+  currentLessonId     String            @db.VarChar(40)
+  updatedByUserId     String?           @db.Uuid
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  organizationClass   OrganizationClass @relation(fields: [organizationClassId], references: [id], onDelete: Cascade)
+  currentLesson       Lesson            @relation(fields: [currentLessonId], references: [id], onDelete: Restrict)
+  updatedBy           User?             @relation("OrganizationClassProgressSettingUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([currentLessonId])
+  @@index([updatedByUserId])
 }
 
 model OAuthAccount {
@@ -703,6 +719,7 @@ model Lesson {
   teachingMaterials TeachingMaterial[]
   classHelpers      ClassHelper[]
   qrCodes           LessonQrCode[]
+  classProgressSettings OrganizationClassProgressSetting[]
 
   @@unique([eraId, order])
   @@index([status, eraId, order])

@@ -44,6 +44,24 @@ export type StudentDashboard = {
       firstAttemptAccuracy: number;
     };
   };
+  classGoals: Array<{
+    class: {
+      id: string;
+      name: string;
+      academicYear: number;
+      organization: { id: string; name: string };
+    };
+    currentLesson: {
+      id: string;
+      order: number;
+      course: string;
+      title: string;
+      durationMinutes: number;
+      era: { id: string; name: string; order: number };
+      accessible: boolean;
+    };
+    updatedAt: string;
+  }>;
   eras: Array<{
     id: string;
     order: number;

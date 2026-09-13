@@ -909,6 +909,7 @@ test("지도자가 담당 학급을 전환하고 활성 학생 명단만 확인�
   const classOneId = "11111111-1111-4111-8111-111111111111";
   const classTwoId = "22222222-2222-4222-8222-222222222222";
   let inviteCodeRequests = 0;
+  let progressLessonId: string | null = null;
   await page.route("**/api/v1/me", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
@@ -968,6 +969,32 @@ test("지도자가 담당 학급을 전환하고 활성 학생 명단만 확인�
       } } }),
     });
   });
+  await page.route("**/api/v1/teacher/classes/*/progress-setting", async (route) => {
+    const lesson = {
+      id: "PRE-01", order: 1, course: "입문 1권", title: "주먹도끼에서 배운 첫 수",
+      durationMinutes: 8, era: { id: "era_prehistoric", name: "선사시대", order: 1 },
+    };
+    if (route.request().method() === "PUT") {
+      progressLessonId = (await route.request().postDataJSON() as { lessonId: string | null }).lessonId;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: { progressSetting: {
+          class: { id: classOneId, name: "햇살반", academicYear: 2026, organization: { id: "organization-e2e", name: "한빛초등학교" } },
+          currentLesson: progressLessonId ? { ...lesson, updatedAt: "2026-09-13T05:00:00.000Z" } : null,
+        } } }),
+      });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { progressSetting: {
+        class: { id: classOneId, name: "햇살반", academicYear: 2026, organization: { id: "organization-e2e", name: "한빛초등학교" } },
+        currentLesson: progressLessonId ? { ...lesson, updatedAt: "2026-09-13T05:00:00.000Z" } : null,
+        availableLessons: [lesson],
+      } } }),
+    });
+  });
 
   await page.goto("/teacher");
 
@@ -978,6 +1005,10 @@ test("지도자가 담당 학급을 전환하고 활성 학생 명단만 확인�
   await page.getByRole("button", { name: "새 등록 코드 만들기" }).click();
   await expect(page.getByText("ABCD-EFGH-JKLM")).toBeVisible();
   expect(inviteCodeRequests).toBe(1);
+  await page.getByLabel("현재 수업 강의").selectOption("PRE-01");
+  await page.getByRole("button", { name: "현재 수업 저장" }).click();
+  await expect(page.getByText("반별 현재 수업 설정을 저장했습니다.")).toBeVisible();
+  expect(progressLessonId).toBe("PRE-01");
   await page.getByRole("button", { name: /별빛반/ }).click();
   await expect(page.getByRole("heading", { name: "별빛반 학생 명단" })).toBeVisible();
   await expect(page.getByText("윤바다")).toBeVisible();
@@ -1109,6 +1140,17 @@ test("학생의 실제 진도로 나의 여행지도와 다음 이어보기 강�
         completedSteps: 1, totalSteps: 4, stepCompletionRate: 25,
         lastActivityAt: "2026-08-22T06:00:00.000Z",
       },
+      classGoals: [{
+        class: {
+          id: "class-e2e", name: "햇살반", academicYear: 2026,
+          organization: { id: "organization-e2e", name: "한빛초등학교" },
+        },
+        currentLesson: {
+          id: "PRE-01", order: 1, course: "입문 1권", title: "주먹도끼에서 배운 첫 수",
+          durationMinutes: 8, era: { id: "era_prehistoric", name: "선사시대", order: 1 }, accessible: true,
+        },
+        updatedAt: "2026-09-13T05:00:00.000Z",
+      }],
       eras: [
         {
           id: "era_prehistoric", order: 1, name: "선사시대", theme: "주변을 살펴라", description: "첫 시대",
@@ -1168,6 +1210,7 @@ test("학생의 실제 진도로 나의 여행지도와 다음 이어보기 강�
   await page.getByRole("button", { name: "학급 등록하기" }).click();
   await expect(page.getByRole("status")).toContainText("햇살반 등록을 완료했습니다.");
   expect(claimedCode).toBe("ABCD-EFGH-JKLM");
+  await expect(page.getByRole("link", { name: "현재 수업 열기" })).toHaveAttribute("href", "/lessons/PRE-01");
   await expect(page.getByText("이어서 여행하기")).toBeVisible();
   await expect(page.getByRole("link", { name: "학습 이어가기" })).toHaveAttribute("href", "/lessons/PRE-01");
   const eraMap = page.getByRole("region", { name: "시대별 여행지도" });

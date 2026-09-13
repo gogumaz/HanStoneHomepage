@@ -45,6 +45,8 @@ describe('TeacherClassroomPage', () => {
 
   it('shows only assigned classes and fetches each selected active roster', async () => {
     const rosterRequests: string[] = [];
+    const progressUpdates: Array<{ lessonId: string | null }> = [];
+    let currentProgressLessonId: string | null = null;
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === '/api/v1/me') return response({ user: {
         id: 'instructor-1', email: 'teacher@example.test', emailVerified: true,
@@ -57,6 +59,30 @@ describe('TeacherClassroomPage', () => {
           code: 'ABCD-EFGH-JKLM',
           expiresAt: '2026-09-16T00:00:00.000Z',
           class: { ...classes[0], assignment: undefined },
+        } });
+      }
+      if (url.endsWith('/progress-setting')) {
+        const availableLessons = [{
+          id: 'PRE-01', order: 1, course: '입문 1권', title: '주먹도끼에서 배운 첫 수',
+          durationMinutes: 8, era: { id: 'era_prehistoric', name: '선사시대', order: 1 },
+        }];
+        if (init?.method === 'PUT') {
+          const payload = JSON.parse(String(init.body)) as { lessonId: string | null };
+          progressUpdates.push(payload);
+          currentProgressLessonId = payload.lessonId;
+          return response({ progressSetting: {
+            class: classes[0],
+            currentLesson: currentProgressLessonId
+              ? { ...availableLessons[0], updatedAt: '2026-09-13T05:00:00.000Z' }
+              : null,
+          } });
+        }
+        return response({ progressSetting: {
+          class: classes.find((item) => url.includes(item.id)) ?? classes[0],
+          currentLesson: currentProgressLessonId
+            ? { ...availableLessons[0], updatedAt: '2026-09-13T05:00:00.000Z' }
+            : null,
+          availableLessons,
         } });
       }
       if (url.endsWith('/students')) {
@@ -85,6 +111,10 @@ describe('TeacherClassroomPage', () => {
     expect(screen.getByRole('button', { name: /햇살반/ })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: '새 등록 코드 만들기' }));
     expect(await screen.findByText('ABCD-EFGH-JKLM')).toBeInTheDocument();
+    fireEvent.change(await screen.findByLabelText('현재 수업 강의'), { target: { value: 'PRE-01' } });
+    fireEvent.click(screen.getByRole('button', { name: '현재 수업 저장' }));
+    expect(await screen.findByText('반별 현재 수업 설정을 저장했습니다.')).toBeInTheDocument();
+    expect(progressUpdates).toEqual([{ lessonId: 'PRE-01' }]);
 
     fireEvent.click(screen.getByRole('button', { name: /별빛반/ }));
     expect(await screen.findByText('윤바다')).toBeInTheDocument();
@@ -127,6 +157,10 @@ describe('TeacherClassroomPage', () => {
     vi.stubGlobal('fetch', fetchMock);
     renderPage();
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('담당 반의 학생만 조회할 수 있습니다. (요청 ID: request-teacher-1)');
+    const alerts = await screen.findAllByRole('alert');
+    expect(alerts).not.toHaveLength(0);
+    expect(alerts.every((alert) => alert.textContent?.includes(
+      '담당 반의 학생만 조회할 수 있습니다. (요청 ID: request-teacher-1)',
+    ))).toBe(true);
   });
 });

@@ -34,6 +34,7 @@ export function DashboardPage() {
   const errors = [meQuery.error, dashboardQuery.error, classEnrollmentMutation.error];
   const error = errors.find((item): item is ApiClientError => item instanceof ApiClientError);
   const dashboard = dashboardQuery.data;
+  const classGoals = dashboard?.classGoals ?? [];
   const weekly = dashboard?.summary.weekly ?? {
     studyDays: 0,
     firstAttemptMissions: 0,
@@ -98,6 +99,31 @@ export function DashboardPage() {
               {' '}({classEnrollmentMutation.data.enrollment.class.organization.name})
             </p>
           ) : null}
+        </section>
+      ) : null}
+
+      {classGoals.length > 0 ? (
+        <section className="dashboard-class-goals" aria-labelledby="dashboard-class-goals-title">
+          <div>
+            <p className="react-stack-eyebrow">CLASS GOAL</p>
+            <h2 id="dashboard-class-goals-title">우리 반 현재 수업</h2>
+          </div>
+          <ul>
+            {classGoals.map((goal) => (
+              <li key={goal.class.id}>
+                <div>
+                  <span>{goal.class.organization.name} · {goal.class.name}</span>
+                  <strong>{goal.currentLesson.era.name} · {goal.currentLesson.title}</strong>
+                  <small>{goal.currentLesson.course} · {goal.currentLesson.durationMinutes}분</small>
+                </div>
+                <Link to={goal.currentLesson.accessible
+                  ? `/lessons/${encodeURIComponent(goal.currentLesson.id)}`
+                  : '/subscriptions'}>
+                  {goal.currentLesson.accessible ? '현재 수업 열기' : '이용권 확인'}
+                </Link>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 

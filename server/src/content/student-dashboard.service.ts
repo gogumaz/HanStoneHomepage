@@ -3,6 +3,7 @@ import type { CurrentUser } from "../auth/auth.types.js";
 import { PrismaService } from "../database/prisma.service.js";
 import {
   LessonStatus,
+  OrganizationClassStatus,
   SubscriptionPaymentStatus,
 } from "../generated/prisma/enums.js";
 import { calculateWeeklyLearningMetrics, koreanWeekWindow } from "../guardian/learning-metrics.js";
@@ -15,7 +16,7 @@ export class StudentDashboardService {
   async getDashboard(student: CurrentUser) {
     const now = new Date();
     const week = koreanWeekWindow(now);
-    const [eras, subscription, stepActivities, missionAttempts] = await Promise.all([
+    const [eras, subscription, stepActivities, missionAttempts, classEnrollments] = await Promise.all([
       this.prisma.era.findMany({
         orderBy: { order: "asc" },
         include: {
@@ -70,6 +71,29 @@ export class StudentDashboardService {
         },
         orderBy: { startedAt: "asc" },
       }),
+      this.prisma.organizationClassEnrollment.findMany({
+        where: {
+          studentId: student.id,
+          startsAt: { lte: now },
+          OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+          organizationClass: { status: OrganizationClassStatus.ACTIVE },
+        },
+        include: {
+          organizationClass: {
+            include: {
+              organization: { select: { id: true, name: true } },
+              progressSetting: {
+                include: {
+                  currentLesson: {
+                    include: { era: { select: { id: true, name: true, order: true } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { startsAt: "desc" },
+      }),
     ]);
     const hasActiveSubscription = Boolean(subscription);
     const lessonItems = eras.flatMap((era) => era.lessons.map((lesson) => {
@@ -114,6 +138,29 @@ export class StudentDashboardService {
       ],
       missionAttempts,
     });
+    const classGoals = classEnrollments.flatMap((enrollment) => {
+      const setting = enrollment.organizationClass.progressSetting;
+      if (!setting || setting.currentLesson.status !== LessonStatus.PUBLISHED) return [];
+      const lesson = setting.currentLesson;
+      return [{
+        class: {
+          id: enrollment.organizationClass.id,
+          name: enrollment.organizationClass.name,
+          academicYear: enrollment.organizationClass.academicYear,
+          organization: enrollment.organizationClass.organization,
+        },
+        currentLesson: {
+          id: lesson.id,
+          order: lesson.order,
+          course: lesson.course,
+          title: lesson.title,
+          durationMinutes: lesson.durationMinutes,
+          era: lesson.era,
+          accessible: lesson.isFreeSample || hasActiveSubscription,
+        },
+        updatedAt: setting.updatedAt,
+      }];
+    });
 
     return {
       student: { id: student.id, displayName: student.displayName },
@@ -126,6 +173,7 @@ export class StudentDashboardService {
         ...summary,
         weekly,
       },
+      classGoals,
       eras: eras.map((era) => {
         const items = lessonItems.filter((item) => item.lesson.era.id === era.id);
         const eraStarted = items.filter((item) => item.progress.status !== "not_started").length;

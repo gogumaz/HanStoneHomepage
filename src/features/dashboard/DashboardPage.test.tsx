@@ -41,6 +41,17 @@ describe('DashboardPage class enrollment', () => {
           completedSteps: 0, totalSteps: 0, stepCompletionRate: 0, lastActivityAt: null,
           weekly: { studyDays: 0, firstAttemptMissions: 0, firstAttemptAccuracy: 0 },
         },
+        classGoals: [{
+          class: {
+            id: 'class-1', name: '햇살반', academicYear: 2026,
+            organization: { id: 'organization-1', name: '한빛초등학교' },
+          },
+          currentLesson: {
+            id: 'PRE-01', order: 1, course: '입문 1권', title: '주먹도끼에서 배운 첫 수',
+            durationMinutes: 8, era: { id: 'era_prehistoric', name: '선사시대', order: 1 }, accessible: true,
+          },
+          updatedAt: '2026-09-13T00:00:00.000Z',
+        }],
         eras: [], recentLessons: [], nextLesson: null,
       });
       if (url === '/api/v1/me/class-invite-codes/claim') {
@@ -66,6 +77,7 @@ describe('DashboardPage class enrollment', () => {
 
     const enrolledClass = await screen.findByText('햇살반');
     expect(enrolledClass.closest('[role="status"]')).toHaveTextContent('햇살반 등록을 완료했습니다. (한빛초등학교)');
+    expect(screen.getByRole('link', { name: '현재 수업 열기' })).toHaveAttribute('href', '/lessons/PRE-01');
     await waitFor(() => expect(input).toHaveValue(''));
   });
 });

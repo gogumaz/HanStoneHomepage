@@ -322,6 +322,7 @@ RewardGrant
 | `POST` | `/teacher/classes/{classId}/invite-codes` | 학생 등록 코드 생성 |
 | `POST` | `/me/class-invite-codes/claim` | 학생이 일회용 등록 코드로 학급 등록 |
 | `GET` | `/teacher/classes/{classId}/students` | 반 학생 조회 |
+| `GET`, `PUT` | `/teacher/classes/{classId}/progress-setting` | 반의 현재 수업 조회·설정·해제 |
 | `POST` | `/teacher/classes/{classId}/assignments` | 과제 배포 |
 | `GET` | `/teacher/assignments/{assignmentId}/results` | 과제 결과 집계 |
 | `GET` | `/teacher/materials` | 수업 자료 검색 |
@@ -346,7 +347,9 @@ RewardGrant
 
 `POST /teacher/classes/{classId}/invite-codes`는 현재 담당 지도자만 호출할 수 있습니다. 코드는 기본 72시간(`ORGANIZATION_CLASS_INVITE_TTL_HOURS`, 최대 168시간) 동안 유효하고 한 번만 사용할 수 있으며, 같은 지도자가 같은 반에 새 코드를 발급하면 이전 미사용 코드는 취소됩니다. 원문은 생성 응답에서 한 번만 반환하고 DB에는 정규화한 코드의 SHA-256 해시만 저장합니다. 학생의 `POST /me/class-invite-codes/claim`은 코드 소비와 학급 등록을 한 트랜잭션으로 처리하며 발급·사용 감사로그에는 원문이나 해시를 남기지 않습니다. 두 쓰기 API에는 역할 가드와 IP 속도 제한을 적용합니다.
 
-React `/teacher`는 조회 API와 등록 코드 발급 API를 사용합니다. `instructor` 역할이 아니면 학급 API를 호출하지 않으며, 학급을 바꿀 때 해당 학급의 학생 명단을 별도로 조회합니다. 응답의 학생 ID는 React 목록 키로만 사용하고 화면에는 표시명과 등록일만 노출합니다. 학생은 `/dashboard`에서 지도자에게 받은 코드를 입력해 본인 학급 등록을 완료합니다.
+`GET`, `PUT /teacher/classes/{classId}/progress-setting`은 같은 담당 반 권한을 다시 검사하고 공개된 강의만 반의 현재 수업으로 지정합니다. `lessonId: null`은 설정만 해제하며 학생 개인의 강의·단계 진도는 삭제하지 않습니다. 설정 변경은 지도자와 선택 강의 ID를 감사로그에 남깁니다. 이 설정은 수업 목표 안내이며 구독·무료 샘플 접근 판정을 우회하지 않습니다. 활성 반 등록 학생의 `GET /me/dashboard`에는 접근 가능 여부와 함께 `classGoals`로 표시됩니다.
+
+React `/teacher`는 조회 API, 등록 코드 발급 API와 반별 현재 수업 설정 API를 사용합니다. `instructor` 역할이 아니면 학급 API를 호출하지 않으며, 학급을 바꿀 때 해당 학급의 학생 명단과 설정을 별도로 조회합니다. 응답의 학생 ID는 React 목록 키로만 사용하고 화면에는 표시명과 등록일만 노출합니다. 학생은 `/dashboard`에서 지도자에게 받은 코드를 입력해 본인 학급 등록을 완료하고 우리 반 현재 수업을 확인합니다.
 
 `GET /organization-admin/organizations`는 `organization_admin` 역할과 유효기간 내 활성 `OrganizationMembership(role=ADMIN)`을 모두 요구합니다. 일반 지도자는 역할 가드에서 차단되어 기관 멤버십이나 관리 권한을 조회할 수 없습니다. 응답은 기관별 라이선스·좌석 조회/관리와 환불 조회/요청 범위만 제공하며, 실제 결제 취소 실행 API는 기존대로 `operator`·`admin`에게만 허용합니다. React 메뉴와 `/organization/admin` 화면도 같은 역할 경계를 사용합니다.
 

@@ -2111,6 +2111,69 @@ select {
   letter-spacing: .08em;
 }
 
+.teacher-progress-setting {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 22px;
+  padding: 16px;
+  border: 1px solid #decaa5;
+  border-radius: 14px;
+  background: #fff9ed;
+}
+
+.teacher-progress-setting h3,
+.teacher-progress-setting p {
+  margin: 0;
+}
+
+.teacher-progress-setting > div > p {
+  margin-top: 5px;
+  color: #685f50;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.teacher-progress-setting form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 10px;
+}
+
+.teacher-progress-setting label {
+  grid-column: 1 / -1;
+  font-weight: 800;
+}
+
+.teacher-progress-setting select {
+  min-width: 0;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid #bda87f;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.teacher-progress-setting button {
+  min-height: 44px;
+  padding: 10px 15px;
+  border: 0;
+  border-radius: 10px;
+  color: #fff;
+  background: #8a4932;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.teacher-progress-setting button:disabled {
+  cursor: default;
+  opacity: .6;
+}
+
+.teacher-progress-success {
+  color: #23563c;
+  font-weight: 800;
+}
+
 .teacher-student-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2169,6 +2232,10 @@ select {
   }
 
   .teacher-invite-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .teacher-progress-setting form {
     grid-template-columns: 1fr;
   }
 }
@@ -2468,6 +2535,57 @@ select {
   background: #fff;
 }
 
+.dashboard-class-goals {
+  margin-top: 22px;
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid #d7c6a8;
+  border-radius: 20px;
+  background: #fff9ed;
+}
+
+.dashboard-class-goals h2 {
+  margin: 5px 0 16px;
+}
+
+.dashboard-class-goals ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboard-class-goals li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px;
+  border: 1px solid #e1d2b8;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.dashboard-class-goals li > div {
+  display: grid;
+  gap: 3px;
+}
+
+.dashboard-class-goals span,
+.dashboard-class-goals small {
+  color: #685f50;
+}
+
+.dashboard-class-goals a {
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border-radius: 10px;
+  color: #fff;
+  background: #8a4932;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .dashboard-hero,
 .dashboard-next,
 .dashboard-progress,
@@ -2692,6 +2810,15 @@ select {
 @media (max-width: 520px) {
   .dashboard-class-enrollment form {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-class-goals li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dashboard-class-goals a {
+    text-align: center;
   }
 
   .dashboard-summary,

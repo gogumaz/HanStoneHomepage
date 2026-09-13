@@ -219,6 +219,9 @@ function createPrismaMock() {
     accountSubscription: {
       findFirst: vi.fn(async () => null),
     },
+    organizationClassEnrollment: {
+      findMany: vi.fn(async () => []),
+    },
     lesson: {
       findMany: vi.fn(async ({ where }: RecordValue) => lessons
         .filter((lesson) => lesson.status === where.status)

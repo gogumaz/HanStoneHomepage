@@ -66,6 +66,35 @@ export type ClassEnrollmentResult = {
   };
 };
 
+export type ClassProgressLesson = {
+  id: string;
+  order: number;
+  course: string;
+  title: string;
+  durationMinutes: number;
+  era: { id: string; name: string; order: number };
+};
+
+export type TeacherClassProgressSetting = {
+  progressSetting: {
+    class: {
+      id: string;
+      name: string;
+      academicYear: number;
+      organization: { id: string; name: string };
+    };
+    currentLesson: (ClassProgressLesson & { updatedAt: string }) | null;
+    availableLessons: ClassProgressLesson[];
+  };
+};
+
+export type TeacherClassProgressSettingUpdate = {
+  progressSetting: {
+    class: TeacherClassProgressSetting['progressSetting']['class'];
+    currentLesson: (ClassProgressLesson & { updatedAt: string }) | null;
+  };
+};
+
 export function getOrganizationAdminContext(): Promise<OrganizationAdminContext> {
   return apiRequest('/organization-admin/organizations');
 }
@@ -86,5 +115,19 @@ export function claimClassInviteCode(code: string): Promise<ClassEnrollmentResul
   return apiRequest('/me/class-invite-codes/claim', {
     method: 'POST',
     body: JSON.stringify({ code }),
+  });
+}
+
+export function getTeacherClassProgressSetting(classId: string): Promise<TeacherClassProgressSetting> {
+  return apiRequest(`/teacher/classes/${encodeURIComponent(classId)}/progress-setting`);
+}
+
+export function updateTeacherClassProgressSetting(
+  classId: string,
+  lessonId: string | null,
+): Promise<TeacherClassProgressSettingUpdate> {
+  return apiRequest(`/teacher/classes/${encodeURIComponent(classId)}/progress-setting`, {
+    method: 'PUT',
+    body: JSON.stringify({ lessonId }),
   });
 }

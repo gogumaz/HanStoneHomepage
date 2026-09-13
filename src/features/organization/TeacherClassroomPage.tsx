@@ -1,9 +1,15 @@
 import { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ApiClientError } from '../../lib/api-client';
 import { getCurrentUser } from '../auth/api';
-import { createTeacherClassInviteCode, listTeacherClasses, listTeacherClassStudents } from './api';
+import {
+  createTeacherClassInviteCode,
+  getTeacherClassProgressSetting,
+  listTeacherClasses,
+  listTeacherClassStudents,
+  updateTeacherClassProgressSetting,
+} from './api';
 
 function formatDate(value: string | null): string {
   if (!value) return '종료일 없음';
@@ -17,6 +23,8 @@ function errorMessage(error: unknown, fallback: string): string {
 
 export function TeacherClassroomPage() {
   const [requestedClassId, setRequestedClassId] = useState<string | null>(null);
+  const [progressDrafts, setProgressDrafts] = useState<Record<string, string>>({});
+  const queryClient = useQueryClient();
   const meQuery = useQuery({ queryKey: ['current-user'], queryFn: getCurrentUser, retry: false });
   const isInstructor = meQuery.data?.roles.includes('instructor') ?? false;
   const classesQuery = useQuery({
@@ -36,7 +44,27 @@ export function TeacherClassroomPage() {
     retry: false,
   });
   const inviteMutation = useMutation({ mutationFn: createTeacherClassInviteCode });
+  const progressQuery = useQuery({
+    queryKey: ['teacher-class-progress-setting', meQuery.data?.id, selectedClassId],
+    queryFn: () => getTeacherClassProgressSetting(selectedClassId ?? ''),
+    enabled: Boolean(isInstructor && selectedClassId),
+    retry: false,
+  });
+  const progressMutation = useMutation({
+    mutationFn: ({ classId, lessonId }: { classId: string; lessonId: string | null }) => (
+      updateTeacherClassProgressSetting(classId, lessonId)
+    ),
+    onSuccess: async (_result, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: ['teacher-class-progress-setting', meQuery.data?.id, variables.classId],
+      });
+    },
+  });
   const selectedClass = classes.find((item) => item.id === selectedClassId) ?? null;
+  const savedProgressLessonId = progressQuery.data?.progressSetting.currentLesson?.id ?? '';
+  const progressDraft = selectedClassId
+    ? progressDrafts[selectedClassId] ?? savedProgressLessonId
+    : '';
 
   if (meQuery.isLoading) {
     return <main className="react-stack-page"><p role="status">지도자 권한을 확인하고 있습니다…</p></main>;
@@ -100,6 +128,7 @@ export function TeacherClassroomPage() {
                   aria-pressed={selectedClassId === item.id}
                   onClick={() => {
                     inviteMutation.reset();
+                    progressMutation.reset();
                     setRequestedClassId(item.id);
                   }}
                 >
@@ -146,6 +175,60 @@ export function TeacherClassroomPage() {
               {inviteMutation.isError ? (
                 <p className="auth-error" role="alert">
                   {errorMessage(inviteMutation.error, '학생 등록 코드를 만들지 못했습니다.')}
+                </p>
+              ) : null}
+            </section>
+            <section className="teacher-progress-setting" aria-labelledby="teacher-progress-setting-title">
+              <div>
+                <h3 id="teacher-progress-setting-title">반별 현재 수업</h3>
+                <p>학생 대시보드에 우리 반이 함께 학습할 강의를 안내합니다. 강의 이용권은 기존 구독 정책을 그대로 따릅니다.</p>
+              </div>
+              {progressQuery.isLoading ? <p role="status">현재 수업 설정을 불러오고 있습니다…</p> : null}
+              {progressQuery.isError ? (
+                <p className="auth-error" role="alert">
+                  {errorMessage(progressQuery.error, '현재 수업 설정을 불러오지 못했습니다.')}
+                </p>
+              ) : null}
+              {progressQuery.data ? (
+                <form onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!selectedClassId) return;
+                  progressMutation.reset();
+                  progressMutation.mutate({ classId: selectedClassId, lessonId: progressDraft || null });
+                }}>
+                  <label htmlFor="teacher-progress-lesson">현재 수업 강의</label>
+                  <select
+                    id="teacher-progress-lesson"
+                    value={progressDraft}
+                    onChange={(event) => {
+                      if (!selectedClassId) return;
+                      setProgressDrafts((current) => ({
+                        ...current,
+                        [selectedClassId]: event.target.value,
+                      }));
+                    }}
+                  >
+                    <option value="">현재 수업 지정 안 함</option>
+                    {progressQuery.data.progressSetting.availableLessons.map((lesson) => (
+                      <option key={lesson.id} value={lesson.id}>
+                        {lesson.era.name} · {lesson.course} · {lesson.title}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="submit"
+                    disabled={progressMutation.isPending || progressDraft === savedProgressLessonId}
+                  >
+                    {progressMutation.isPending ? '저장 중…' : '현재 수업 저장'}
+                  </button>
+                </form>
+              ) : null}
+              {progressMutation.isSuccess ? (
+                <p className="teacher-progress-success" role="status">반별 현재 수업 설정을 저장했습니다.</p>
+              ) : null}
+              {progressMutation.isError ? (
+                <p className="auth-error" role="alert">
+                  {errorMessage(progressMutation.error, '현재 수업 설정을 저장하지 못했습니다.')}
                 </p>
               ) : null}
             </section>

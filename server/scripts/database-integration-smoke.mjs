@@ -7,7 +7,7 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const REQUIRED_MIGRATION = "20260913000200_organization_class_invite_codes";
+const REQUIRED_MIGRATION = "20260913000300_organization_class_progress_setting";
 const { Client } = pg;
 const client = new Client({ connectionString: databaseUrl });
 let transactionStarted = false;
@@ -130,6 +130,12 @@ try {
     await client.query("RELEASE SAVEPOINT organization_class_invite_uniqueness_check");
   }
   if (!singleOpenInviteEnforced) throw new Error("ORGANIZATION_CLASS_INVITE_SINGLE_OPEN_CODE_NOT_ENFORCED");
+  await client.query(
+    `INSERT INTO "OrganizationClassProgressSetting"
+       ("organizationClassId", "currentLessonId", "updatedByUserId", "updatedAt")
+     VALUES ($1, $2, $3, CURRENT_TIMESTAMP)`,
+    [organizationClassId, lesson.rows[0].id, userId],
+  );
   await client.query(
     `INSERT INTO "AccountMailJob" ("id", "tokenId", "kind", "encryptedToken", "updatedAt")
      VALUES ($1, $2, 'EMAIL_VERIFICATION', $3, CURRENT_TIMESTAMP)`,
@@ -335,11 +341,12 @@ try {
        EXISTS (SELECT 1 FROM "AccountToken" WHERE "id" = $18 AND "userId" = $2) AS "accountToken",
        EXISTS (SELECT 1 FROM "AccountMailJob" WHERE "id" = $19 AND "tokenId" = $18 AND "status" = 'PENDING') AS "accountMailJob",
        EXISTS (SELECT 1 FROM "CommunityAttachment" WHERE "id" = $20 AND "editorialContentId" = $10 AND "postId" IS NULL AND "ownerUserId" = $2 AND "status" = 'READY') AS "noticeAttachment",
-       EXISTS (SELECT 1 FROM "OrganizationClassInviteCode" WHERE "id" = $21 AND "organizationClassId" = $22 AND "createdByUserId" = $2 AND "codeHash" = repeat('a', 64) AND "consumedAt" IS NULL) AS "organizationClassInviteCode"`,
+       EXISTS (SELECT 1 FROM "OrganizationClassInviteCode" WHERE "id" = $21 AND "organizationClassId" = $22 AND "createdByUserId" = $2 AND "codeHash" = repeat('a', 64) AND "consumedAt" IS NULL) AS "organizationClassInviteCode",
+       EXISTS (SELECT 1 FROM "OrganizationClassProgressSetting" WHERE "organizationClassId" = $22 AND "currentLessonId" = $15 AND "updatedByUserId" = $2) AS "organizationClassProgressSetting"`,
     [oauthAttemptId, userId, mission.rows[0].id, missionAttemptId, consultationId, inquiryId, inquiryNotificationId, userNotificationId, inquiryAttachmentId, editorialContentId, communityPostId, communityReportId, communityAttachmentId, teachingMaterialId, lesson.rows[0].id, teachingMaterialAssetId, classHelperId, accountTokenId, accountMailJobId, noticeAttachmentId, organizationClassInviteCodeId, organizationClassId],
   );
   const result = verified.rows[0];
-  if (!result.oauth || !result.favorite || !result.reward || !result.consultation || !result.inquiry || !result.notification || !result.userNotification || !result.inquiryAttachment || !result.editorialContent || !result.communityPost || !result.communityReport || !result.communityAttachment || !result.noticeAttachment || !result.teachingMaterial || !result.teachingMaterialAsset || !result.classHelper || !result.classHelperAssets || !result.accountToken || !result.accountMailJob || !result.organizationClassInviteCode) {
+  if (!result.oauth || !result.favorite || !result.reward || !result.consultation || !result.inquiry || !result.notification || !result.userNotification || !result.inquiryAttachment || !result.editorialContent || !result.communityPost || !result.communityReport || !result.communityAttachment || !result.noticeAttachment || !result.teachingMaterial || !result.teachingMaterialAsset || !result.classHelper || !result.classHelperAssets || !result.accountToken || !result.accountMailJob || !result.organizationClassInviteCode || !result.organizationClassProgressSetting) {
     throw new Error("DATABASE_RELATION_VERIFICATION_FAILED");
   }
   const revisions = await client.query(
@@ -363,7 +370,7 @@ try {
   process.stdout.write(`${JSON.stringify({
     ok: true,
     migration: REQUIRED_MIGRATION,
-    checks: ["sql-parameterization", "oauth-link", "mission-attempt", "mission-favorite", "reward-grant", "consultation-consent", "private-inquiry", "inquiry-notification-outbox", "user-notification", "inquiry-attachment", "editorial-content", "community-post", "community-report", "community-attachment", "notice-attachment", "attachment-single-parent", "teaching-material", "teaching-material-asset", "teaching-material-revision", "class-helper", "class-helper-assets", "class-helper-revision", "organization-class-invite-code", "organization-class-invite-single-open-code"],
+    checks: ["sql-parameterization", "oauth-link", "mission-attempt", "mission-favorite", "reward-grant", "consultation-consent", "private-inquiry", "inquiry-notification-outbox", "user-notification", "inquiry-attachment", "editorial-content", "community-post", "community-report", "community-attachment", "notice-attachment", "attachment-single-parent", "teaching-material", "teaching-material-asset", "teaching-material-revision", "class-helper", "class-helper-assets", "class-helper-revision", "organization-class-invite-code", "organization-class-invite-single-open-code", "organization-class-progress-setting"],
     mutation: "rolled-back",
   })}\n`);
 } catch (error) {

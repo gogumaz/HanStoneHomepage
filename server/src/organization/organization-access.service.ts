@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import type { CurrentUser } from "../auth/auth.types.js";
 import { ApiError } from "../common/api-error.js";
+import { readInputObject } from "../common/input-validation.js";
 import { loadAppConfig, type AppConfig } from "../config/app-config.js";
 import { PrismaService } from "../database/prisma.service.js";
 import {
@@ -339,6 +340,132 @@ export class OrganizationAccessService {
     };
   }
 
+  async getClassProgressSetting(user: CurrentUser, classId: string) {
+    const assignment = await this.requireCurrentClassAssignment(user.id, classId, new Date());
+    const [setting, lessons] = await Promise.all([
+      this.prisma.organizationClassProgressSetting.findUnique({
+        where: { organizationClassId: classId },
+        include: {
+          currentLesson: {
+            include: { era: { select: { id: true, name: true, order: true } } },
+          },
+        },
+      }),
+      this.prisma.lesson.findMany({
+        where: { status: "PUBLISHED" },
+        include: { era: { select: { id: true, name: true, order: true } } },
+        orderBy: [{ era: { order: "asc" } }, { order: "asc" }],
+      }),
+    ]);
+
+    return {
+      progressSetting: {
+        class: this.classView(assignment.organizationClass),
+        currentLesson: setting ? {
+          ...this.progressLessonView(setting.currentLesson),
+          updatedAt: setting.updatedAt,
+        } : null,
+        availableLessons: lessons.map((lesson) => this.progressLessonView(lesson)),
+      },
+    };
+  }
+
+  async updateClassProgressSetting(
+    user: CurrentUser,
+    classId: string,
+    body: unknown,
+    requestId?: string,
+  ) {
+    const now = new Date();
+    const assignment = await this.requireCurrentClassAssignment(user.id, classId, now);
+    const data = readInputObject(
+      body,
+      ["lessonId"],
+      "CLASS_PROGRESS_SETTING_INVALID",
+      "현재 수업으로 지정할 강의를 확인해 주세요.",
+    );
+    const lessonId = data.lessonId;
+    if (lessonId !== null && (
+      typeof lessonId !== "string"
+      || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/u.test(lessonId)
+    )) {
+      throw new ApiError(
+        "CLASS_PROGRESS_SETTING_INVALID",
+        "현재 수업으로 지정할 강의를 확인해 주세요.",
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (lessonId === null) {
+      await this.prisma.$transaction(async (transaction) => {
+        await transaction.organizationClassProgressSetting.deleteMany({
+          where: { organizationClassId: classId },
+        });
+        await transaction.auditLog.create({
+          data: {
+            actorId: user.id,
+            action: "organization.class_progress_setting.cleared",
+            resourceType: "OrganizationClass",
+            resourceId: classId,
+            requestId: requestId ?? null,
+            metadata: {},
+          },
+        });
+      });
+      return {
+        progressSetting: {
+          class: this.classView(assignment.organizationClass),
+          currentLesson: null,
+        },
+      };
+    }
+
+    const lesson = await this.prisma.lesson.findFirst({
+      where: { id: lessonId, status: "PUBLISHED" },
+      include: { era: { select: { id: true, name: true, order: true } } },
+    });
+    if (!lesson) {
+      throw new ApiError(
+        "CLASS_PROGRESS_LESSON_INVALID",
+        "공개된 강의만 현재 수업으로 지정할 수 있습니다.",
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const setting = await this.prisma.$transaction(async (transaction) => {
+      const saved = await transaction.organizationClassProgressSetting.upsert({
+        where: { organizationClassId: classId },
+        create: {
+          organizationClassId: classId,
+          currentLessonId: lesson.id,
+          updatedByUserId: user.id,
+        },
+        update: { currentLessonId: lesson.id, updatedByUserId: user.id },
+      });
+      await transaction.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: "organization.class_progress_setting.updated",
+          resourceType: "OrganizationClass",
+          resourceId: classId,
+          requestId: requestId ?? null,
+          metadata: { currentLessonId: lesson.id },
+        },
+      });
+      return saved;
+    });
+
+    return {
+      progressSetting: {
+        class: this.classView(assignment.organizationClass),
+        currentLesson: {
+          ...this.progressLessonView(lesson),
+          updatedAt: setting.updatedAt,
+        },
+      },
+    };
+  }
+
   private async requireVerifiedInstructor(userId: string): Promise<void> {
     const role = await this.prisma.userRoleAssignment.findUnique({
       where: { userId_role: { userId, role: RoleType.INSTRUCTOR } },
@@ -405,5 +532,37 @@ export class OrganizationAccessService {
       "학생 등록 코드를 확인해 주세요.",
       HttpStatus.NOT_FOUND,
     );
+  }
+
+  private classView(organizationClass: {
+    id: string;
+    name: string;
+    academicYear: number;
+    organization: { id: string; name: string };
+  }) {
+    return {
+      id: organizationClass.id,
+      name: organizationClass.name,
+      academicYear: organizationClass.academicYear,
+      organization: organizationClass.organization,
+    };
+  }
+
+  private progressLessonView(lesson: {
+    id: string;
+    order: number;
+    course: string;
+    title: string;
+    durationMinutes: number;
+    era: { id: string; name: string; order: number };
+  }) {
+    return {
+      id: lesson.id,
+      order: lesson.order,
+      course: lesson.course,
+      title: lesson.title,
+      durationMinutes: lesson.durationMinutes,
+      era: lesson.era,
+    };
   }
 }

@@ -239,6 +239,24 @@ function createPrismaMock(): PrismaService {
         && item.startsAt <= where.startsAt.lte
         && item.endsAt > where.endsAt.gt) ?? null),
     },
+    organizationClassEnrollment: {
+      findMany: vi.fn(async ({ where }: Value) => where.studentId === "student-active" ? [{
+        startsAt: new Date(Date.now() - 60_000),
+        organizationClass: {
+          id: "class-sunshine",
+          name: "햇살반",
+          academicYear: 2026,
+          organization: { id: "organization-one", name: "한빛초등학교" },
+          progressSetting: {
+            updatedAt: new Date(Date.now() - 30_000),
+            currentLesson: {
+              ...lessons[1],
+              era: { id: "era_prehistoric", name: "선사시대", order: 1 },
+            },
+          },
+        },
+      }] : []),
+    },
     subscriptionPlan: {
       findMany: vi.fn(async () => plans.filter((plan) => plan.active).sort((a, b) => a.months - b.months)),
     },
@@ -504,6 +522,10 @@ describe("lesson access and progress HTTP API", () => {
           weekly: { studyDays: number; firstAttemptMissions: number; firstAttemptAccuracy: number };
         };
         eras: Array<{ id: string; status: string; totalLessons: number }>;
+        classGoals: Array<{
+          class: { id: string; name: string };
+          currentLesson: { id: string; accessible: boolean };
+        }>;
         nextLesson: { lesson: { id: string; accessible: boolean }; reason: string };
       };
     };
@@ -518,6 +540,10 @@ describe("lesson access and progress HTTP API", () => {
       expect.objectContaining({ id: "era_prehistoric", status: "in_progress", totalLessons: 3 }),
       expect.objectContaining({ id: "era_goryeo", status: "coming_soon", totalLessons: 0 }),
     ]);
+    expect(body.data.classGoals).toEqual([expect.objectContaining({
+      class: { id: "class-sunshine", name: "햇살반", academicYear: 2026, organization: { id: "organization-one", name: "한빛초등학교" } },
+      currentLesson: expect.objectContaining({ id: "PAID-01", accessible: true }),
+    })]);
     expect(body.data.nextLesson).toMatchObject({
       lesson: { id: "FREE-01", accessible: true },
       reason: "continue",
