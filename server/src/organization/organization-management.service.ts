@@ -182,6 +182,15 @@ export class OrganizationManagementService {
     if (existing.id === admin.id && (role !== OrganizationMembershipRole.ADMIN || status !== OrganizationMembershipStatus.ACTIVE)) {
       this.conflict("현재 로그인한 기관 관리자 멤버십은 비활성화하거나 역할을 변경할 수 없습니다.");
     }
+    if (status === OrganizationMembershipStatus.ACTIVE) {
+      const requiredAccountRole = role === OrganizationMembershipRole.ADMIN ? RoleType.ORGANIZATION_ADMIN : RoleType.INSTRUCTOR;
+      const accountRole = await this.prisma.userRoleAssignment.findUnique({
+        where: { userId_role: { userId: existing.userId, role: requiredAccountRole } },
+        select: { verificationStatus: true },
+      });
+      if (!accountRole || (role === OrganizationMembershipRole.INSTRUCTOR
+        && accountRole.verificationStatus !== RoleVerificationStatus.VERIFIED)) this.notFound();
+    }
     const now = new Date();
     const membership = await this.prisma.$transaction(async (transaction) => {
       const saved = await transaction.organizationMembership.update({
@@ -318,7 +327,11 @@ export class OrganizationManagementService {
         status: OrganizationMembershipStatus.ACTIVE,
         startsAt: { lte: now },
         OR: [{ endsAt: null }, { endsAt: { gt: now } }],
-        user: { roles: { some: { role: RoleType.INSTRUCTOR, verificationStatus: RoleVerificationStatus.VERIFIED } } },
+        user: {
+          status: AccountStatus.ACTIVE,
+          deletedAt: null,
+          roles: { some: { role: RoleType.INSTRUCTOR, verificationStatus: RoleVerificationStatus.VERIFIED } },
+        },
       },
       include: { user: { select: { id: true, displayName: true } } },
     });
