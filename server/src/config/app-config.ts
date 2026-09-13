@@ -41,6 +41,7 @@ export type AppConfig = {
   inquiryNotificationMaxAttempts: number;
   inquiryNotificationLockTimeoutMs: number;
   guardianInvitationTtlHours: number;
+  organizationClassInviteTtlHours: number;
   tossPaymentsSecretKey: string | null;
   objectStorageEndpoint: string | null;
   objectStorageRegion: string;
@@ -548,6 +549,14 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (emailVerificationTtlHours > 168) {
     throw new Error("EMAIL_VERIFICATION_TTL_HOURS는 168시간 이하여야 합니다.");
   }
+  const organizationClassInviteTtlHours = positiveInteger(
+    env.ORGANIZATION_CLASS_INVITE_TTL_HOURS,
+    72,
+    "ORGANIZATION_CLASS_INVITE_TTL_HOURS",
+  );
+  if (organizationClassInviteTtlHours > 168) {
+    throw new Error("ORGANIZATION_CLASS_INVITE_TTL_HOURS는 168시간 이하여야 합니다.");
+  }
   const requestBodyMaxBytes = positiveInteger(
     env.REQUEST_BODY_MAX_BYTES,
     1_048_576,
@@ -683,6 +692,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       72,
       "GUARDIAN_INVITATION_TTL_HOURS",
     ),
+    organizationClassInviteTtlHours,
     tossPaymentsSecretKey,
     objectStorageEndpoint,
     objectStorageRegion: env.OBJECT_STORAGE_REGION?.trim() || "ap-northeast-2",

@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ApiClientError } from '../../lib/api-client';
 import { getCurrentUser } from '../auth/api';
-import { listTeacherClasses, listTeacherClassStudents } from './api';
+import { createTeacherClassInviteCode, listTeacherClasses, listTeacherClassStudents } from './api';
 
 function formatDate(value: string | null): string {
   if (!value) return '종료일 없음';
@@ -35,6 +35,7 @@ export function TeacherClassroomPage() {
     enabled: Boolean(isInstructor && selectedClassId),
     retry: false,
   });
+  const inviteMutation = useMutation({ mutationFn: createTeacherClassInviteCode });
   const selectedClass = classes.find((item) => item.id === selectedClassId) ?? null;
 
   if (meQuery.isLoading) {
@@ -97,7 +98,10 @@ export function TeacherClassroomPage() {
                   key={item.id}
                   type="button"
                   aria-pressed={selectedClassId === item.id}
-                  onClick={() => setRequestedClassId(item.id)}
+                  onClick={() => {
+                    inviteMutation.reset();
+                    setRequestedClassId(item.id);
+                  }}
                 >
                   <span>{item.organization.name}</span>
                   <strong>{item.name}</strong>
@@ -120,6 +124,31 @@ export function TeacherClassroomPage() {
                 {selectedClass.organization.name} · {selectedClass.academicYear}학년도 · 배정 종료 {formatDate(selectedClass.assignment.endsAt)}
               </p>
             ) : null}
+            <section className="teacher-invite-panel" aria-labelledby="teacher-invite-title">
+              <div>
+                <h3 id="teacher-invite-title">학생 등록 코드</h3>
+                <p>코드는 표시된 만료 시각까지 한 번만 사용할 수 있습니다. 새 코드를 만들면 이 지도자가 앞서 발급한 미사용 코드는 취소됩니다.</p>
+              </div>
+              <button
+                type="button"
+                disabled={!selectedClassId || inviteMutation.isPending}
+                onClick={() => selectedClassId && inviteMutation.mutate(selectedClassId)}
+              >
+                {inviteMutation.isPending ? '발급 중…' : '새 등록 코드 만들기'}
+              </button>
+              {inviteMutation.data?.inviteCode.class.id === selectedClassId ? (
+                <div className="teacher-invite-result" role="status">
+                  <span>학생에게 전달할 일회용 코드</span>
+                  <code>{inviteMutation.data.inviteCode.code}</code>
+                  <small>{new Date(inviteMutation.data.inviteCode.expiresAt).toLocaleString('ko-KR')}까지 유효</small>
+                </div>
+              ) : null}
+              {inviteMutation.isError ? (
+                <p className="auth-error" role="alert">
+                  {errorMessage(inviteMutation.error, '학생 등록 코드를 만들지 못했습니다.')}
+                </p>
+              ) : null}
+            </section>
             {studentsQuery.isLoading ? <p role="status">학생 명단을 불러오고 있습니다…</p> : null}
             {studentsQuery.isError ? (
               <p className="auth-error" role="alert">

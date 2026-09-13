@@ -108,6 +108,19 @@ describe("loadAppConfig account mail settings", () => {
       .toThrow(/REQUEST_BODY_MAX_BYTES/);
   });
 
+  it("defaults and bounds the organization class invite lifetime", () => {
+    const base = { DATABASE_URL: "postgresql://test:test@localhost/test" };
+    expect(loadAppConfig(base).organizationClassInviteTtlHours).toBe(72);
+    expect(loadAppConfig({
+      ...base,
+      ORGANIZATION_CLASS_INVITE_TTL_HOURS: "168",
+    }).organizationClassInviteTtlHours).toBe(168);
+    expect(() => loadAppConfig({
+      ...base,
+      ORGANIZATION_CLASS_INVITE_TTL_HOURS: "169",
+    })).toThrow(/ORGANIZATION_CLASS_INVITE_TTL_HOURS/);
+  });
+
   it("validates the optional distributed rate-limit store configuration", () => {
     const base = { DATABASE_URL: "postgresql://test:test@localhost/test" };
     expect(loadAppConfig(base)).toMatchObject({

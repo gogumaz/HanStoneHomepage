@@ -3,11 +3,11 @@ import { AuthModule } from "../auth/auth.module.js";
 import { DatabaseModule } from "../database/database.module.js";
 import { OrganizationAccessService } from "./organization-access.service.js";
 import { OrganizationAdminController } from "./organization-admin.controller.js";
-import { OrganizationController } from "./organization.controller.js";
+import { OrganizationController, OrganizationEnrollmentController } from "./organization.controller.js";
 
 @Module({
   imports: [AuthModule, DatabaseModule],
-  controllers: [OrganizationController, OrganizationAdminController],
+  controllers: [OrganizationController, OrganizationEnrollmentController, OrganizationAdminController],
   providers: [OrganizationAccessService],
   exports: [OrganizationAccessService],
 })

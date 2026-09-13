@@ -2046,6 +2046,71 @@ select {
   margin: 12px 0 20px;
 }
 
+.teacher-invite-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 18px;
+  align-items: center;
+  margin: 0 0 22px;
+  padding: 16px;
+  border: 1px solid #c9d8cc;
+  border-radius: 14px;
+  background: #f3faf5;
+}
+
+.teacher-invite-panel h3,
+.teacher-invite-panel p {
+  margin: 0;
+}
+
+.teacher-invite-panel p {
+  margin-top: 5px;
+  color: #5a685e;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.teacher-invite-panel > button,
+.dashboard-class-enrollment button {
+  min-height: 44px;
+  padding: 10px 15px;
+  border: 0;
+  border-radius: 10px;
+  color: #fff;
+  background: #2f5d45;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.teacher-invite-panel button:disabled,
+.dashboard-class-enrollment button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
+.teacher-invite-result {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 4px;
+  padding: 14px;
+  border: 1px dashed #2f5d45;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.teacher-invite-result span,
+.teacher-invite-result small {
+  color: #5a685e;
+  font-size: 12px;
+}
+
+.teacher-invite-result code {
+  color: #7f2b24;
+  font-size: clamp(20px, 4vw, 28px);
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
 .teacher-student-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2100,6 +2165,10 @@ select {
 
   .teacher-workspace,
   .teacher-student-list {
+    grid-template-columns: 1fr;
+  }
+
+  .teacher-invite-panel {
     grid-template-columns: 1fr;
   }
 }
@@ -2343,6 +2412,62 @@ select {
   max-width: 1120px;
 }
 
+.dashboard-class-enrollment {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, .8fr);
+  gap: 18px 28px;
+  align-items: end;
+  margin-top: 24px;
+  padding: 22px;
+  border: 1px solid #c9d8cc;
+  border-radius: 18px;
+  background: #f3faf5;
+}
+
+.dashboard-class-enrollment h2,
+.dashboard-class-enrollment p {
+  margin: 0;
+}
+
+.dashboard-class-enrollment h2 {
+  margin: 5px 0;
+}
+
+.dashboard-class-enrollment > div > p:last-child {
+  color: #5a685e;
+}
+
+.dashboard-class-enrollment form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 10px;
+}
+
+.dashboard-class-enrollment label {
+  grid-column: 1 / -1;
+  font-weight: 800;
+}
+
+.dashboard-class-enrollment input {
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #aebfb2;
+  border-radius: 10px;
+  background: #fff;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.dashboard-class-enrollment-success {
+  grid-column: 1 / -1;
+  padding: 12px;
+  border-radius: 10px;
+  color: #234c36;
+  background: #fff;
+}
+
 .dashboard-hero,
 .dashboard-next,
 .dashboard-progress,
@@ -2544,6 +2669,10 @@ select {
 }
 
 @media (max-width: 760px) {
+  .dashboard-class-enrollment {
+    grid-template-columns: 1fr;
+  }
+
   .dashboard-summary,
   .dashboard-eras > div {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2561,6 +2690,10 @@ select {
 }
 
 @media (max-width: 520px) {
+  .dashboard-class-enrollment form {
+    grid-template-columns: 1fr;
+  }
+
   .dashboard-summary,
   .dashboard-eras > div {
     grid-template-columns: 1fr;

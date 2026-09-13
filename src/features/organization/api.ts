@@ -40,6 +40,32 @@ export type TeacherClassStudents = {
   }>;
 };
 
+export type ClassInviteCodeResult = {
+  inviteCode: {
+    code: string;
+    expiresAt: string;
+    class: {
+      id: string;
+      name: string;
+      academicYear: number;
+      organization: { id: string; name: string };
+    };
+  };
+};
+
+export type ClassEnrollmentResult = {
+  enrollment: {
+    id: string;
+    enrolledAt: string;
+    class: {
+      id: string;
+      name: string;
+      academicYear: number;
+      organization: { id: string; name: string };
+    };
+  };
+};
+
 export function getOrganizationAdminContext(): Promise<OrganizationAdminContext> {
   return apiRequest('/organization-admin/organizations');
 }
@@ -50,4 +76,15 @@ export function listTeacherClasses(): Promise<TeacherClasses> {
 
 export function listTeacherClassStudents(classId: string): Promise<TeacherClassStudents> {
   return apiRequest(`/teacher/classes/${encodeURIComponent(classId)}/students`);
+}
+
+export function createTeacherClassInviteCode(classId: string): Promise<ClassInviteCodeResult> {
+  return apiRequest(`/teacher/classes/${encodeURIComponent(classId)}/invite-codes`, { method: 'POST' });
+}
+
+export function claimClassInviteCode(code: string): Promise<ClassEnrollmentResult> {
+  return apiRequest('/me/class-invite-codes/claim', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  });
 }

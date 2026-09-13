@@ -908,6 +908,7 @@ test("React 계정 화면이 세션 없음 상태에서 로그인 폼을 표시�
 test("지도자가 담당 학급을 전환하고 활성 학생 명단만 확인한다", async ({ page }) => {
   const classOneId = "11111111-1111-4111-8111-111111111111";
   const classTwoId = "22222222-2222-4222-8222-222222222222";
+  let inviteCodeRequests = 0;
   await page.route("**/api/v1/me", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
@@ -952,6 +953,21 @@ test("지도자가 담당 학급을 전환하고 활성 학생 명단만 확인�
       } }),
     });
   });
+  await page.route(`**/api/v1/teacher/classes/${classOneId}/invite-codes`, (route) => {
+    inviteCodeRequests += 1;
+    return route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { inviteCode: {
+        code: "ABCD-EFGH-JKLM",
+        expiresAt: "2026-09-16T00:00:00.000Z",
+        class: {
+          id: classOneId, name: "햇살반", academicYear: 2026,
+          organization: { id: "organization-e2e", name: "한빛초등학교" },
+        },
+      } } }),
+    });
+  });
 
   await page.goto("/teacher");
 
@@ -959,6 +975,9 @@ test("지도자가 담당 학급을 전환하고 활성 학생 명단만 확인�
   await expect(page.getByText("강하늘")).toBeVisible();
   await expect(page.getByText("teacher@example.com")).not.toBeVisible();
   await expect(page.getByRole("button", { name: /햇살반/ })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "새 등록 코드 만들기" }).click();
+  await expect(page.getByText("ABCD-EFGH-JKLM")).toBeVisible();
+  expect(inviteCodeRequests).toBe(1);
   await page.getByRole("button", { name: /별빛반/ }).click();
   await expect(page.getByRole("heading", { name: "별빛반 학생 명단" })).toBeVisible();
   await expect(page.getByText("윤바다")).toBeVisible();
@@ -1070,6 +1089,7 @@ test("보호자가 연결된 학생의 강의·단계 진도를 확인하고 연
 });
 
 test("학생의 실제 진도로 나의 여행지도와 다음 이어보기 강의를 표시한다", async ({ page }) => {
+  let claimedCode: string | null = null;
   await page.route("**/api/v1/me", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
@@ -1124,11 +1144,30 @@ test("학생의 실제 진도로 나의 여행지도와 다음 이어보기 강�
       },
     } }),
   }));
+  await page.route("**/api/v1/me/class-invite-codes/claim", async (route) => {
+    claimedCode = (await route.request().postDataJSON() as { code: string }).code;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { enrollment: {
+        id: "enrollment-e2e",
+        enrolledAt: "2026-09-13T00:00:00.000Z",
+        class: {
+          id: "class-e2e", name: "햇살반", academicYear: 2026,
+          organization: { id: "organization-e2e", name: "한빛초등학교" },
+        },
+      } } }),
+    });
+  });
 
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "나의 여행지도" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "한별님의 한국사 여행" })).toBeVisible();
   await expect(page.getByText("무료 강의 이용 중")).toBeVisible();
+  await page.getByLabel("학생 등록 코드").fill("abcd-efgh-jklm");
+  await page.getByRole("button", { name: "학급 등록하기" }).click();
+  await expect(page.getByRole("status")).toContainText("햇살반 등록을 완료했습니다.");
+  expect(claimedCode).toBe("ABCD-EFGH-JKLM");
   await expect(page.getByText("이어서 여행하기")).toBeVisible();
   await expect(page.getByRole("link", { name: "학습 이어가기" })).toHaveAttribute("href", "/lessons/PRE-01");
   const eraMap = page.getByRole("region", { name: "시대별 여행지도" });

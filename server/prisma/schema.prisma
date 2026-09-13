@@ -410,6 +410,8 @@ model User {
   classHelperRevisions          ClassHelperRevision[]         @relation("ClassHelperRevisionChangedBy")
   organizationMemberships       OrganizationMembership[]
   organizationClassEnrollments  OrganizationClassEnrollment[]
+  createdOrganizationClassInviteCodes OrganizationClassInviteCode[] @relation("OrganizationClassInviteCodeCreator")
+  consumedOrganizationClassInviteCodes OrganizationClassInviteCode[] @relation("OrganizationClassInviteCodeConsumer")
 
   @@index([status])
   @@index([minorAccountStatus])
@@ -504,6 +506,7 @@ model OrganizationClass {
   organization       Organization                         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   teacherAssignments OrganizationClassTeacherAssignment[]
   enrollments        OrganizationClassEnrollment[]
+  inviteCodes        OrganizationClassInviteCode[]
 
   @@unique([organizationId, academicYear, name])
   @@index([organizationId, status])
@@ -535,6 +538,25 @@ model OrganizationClassEnrollment {
 
   @@unique([organizationClassId, studentId])
   @@index([studentId, startsAt, endsAt])
+}
+
+model OrganizationClassInviteCode {
+  id                  String            @id @default(uuid()) @db.Uuid
+  organizationClassId String            @db.Uuid
+  createdByUserId     String            @db.Uuid
+  codeHash            String            @unique @db.VarChar(64)
+  expiresAt           DateTime
+  consumedAt          DateTime?
+  consumedByStudentId String?           @db.Uuid
+  revokedAt           DateTime?
+  createdAt           DateTime          @default(now())
+  organizationClass   OrganizationClass @relation(fields: [organizationClassId], references: [id], onDelete: Cascade)
+  createdBy           User              @relation("OrganizationClassInviteCodeCreator", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  consumedByStudent   User?             @relation("OrganizationClassInviteCodeConsumer", fields: [consumedByStudentId], references: [id], onDelete: Cascade)
+
+  @@index([organizationClassId, expiresAt])
+  @@index([createdByUserId, createdAt])
+  @@index([consumedByStudentId])
 }
 
 model OAuthAccount {

@@ -91,7 +91,7 @@ API의 JSON·URL 인코딩 본문은 `REQUEST_BODY_MAX_BYTES`로 제한하며 �
 
 학생 계정은 `/guardian`에서 보호자 이메일 초대를 만들 수 있습니다. 개발·테스트 환경에서는 화면에 개발용 토큰이 표시됩니다. 보호자는 같은 화면에서 토큰을 확인하고 필수 학습정보 조회 범위에 동의한 뒤 연결합니다. 초대 유효기간은 `GUARDIAN_INVITATION_TTL_HOURS`로 설정하며 기본값은 72시간입니다.
 
-`/teacher`는 인증된 지도자에게 현재 활성 기관 멤버십으로 배정된 학급과 재학 중인 학생 명단을 표시합니다. 화면은 `GET /teacher/classes` 결과에서 학급을 선택한 뒤 `GET /teacher/classes/{classId}/students`를 호출하며, 이메일 등 추가 개인정보는 표시하지 않습니다. 서버는 조회할 때마다 지도자 인증·멤버십·현재 담당 배정을 재검사하고 학생 명단 조회 감사로그를 남깁니다.
+`/teacher`는 인증된 지도자에게 현재 활성 기관 멤버십으로 배정된 학급과 재학 중인 학생 명단을 표시합니다. 화면은 `GET /teacher/classes` 결과에서 학급을 선택한 뒤 `GET /teacher/classes/{classId}/students`를 호출하며, 이메일 등 추가 개인정보는 표시하지 않습니다. 담당 지도자는 해당 화면에서 기본 72시간 유효한 일회용 학생 등록 코드를 발급할 수 있고 학생은 `/dashboard`에서 코드를 입력해 등록합니다. 유효시간은 `ORGANIZATION_CLASS_INVITE_TTL_HOURS`로 설정하며 최대 168시간입니다. 서버는 조회·발급 때마다 지도자 인증·멤버십·현재 담당 배정을 재검사하고 감사로그를 남깁니다.
 
 `/lessons`는 `GET /eras`와 `GET /eras/{eraId}/lessons`를 사용하여 공개 강의를 표시합니다. `/lessons/{lessonId}`는 공개 강의 상세와 단계 구성을 조회합니다. 재생 권한 판정과 계정별 진도 저장까지 서버 API에 연결되어 있습니다.
 

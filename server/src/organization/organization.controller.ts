@@ -1,10 +1,11 @@
-import { Controller, Get, Header, Param, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import { Roles } from "../auth/roles.decorator.js";
 import { RolesGuard } from "../auth/roles.guard.js";
 import { SessionAuthGuard } from "../auth/session-auth.guard.js";
 import type { CurrentUser as CurrentUserValue } from "../auth/auth.types.js";
 import type { ApiRequest } from "../common/http-types.js";
+import { RateLimit, RateLimitGuard } from "../common/rate-limit.guard.js";
 import { OrganizationAccessService } from "./organization-access.service.js";
 
 @Controller("teacher")
@@ -30,5 +31,50 @@ export class OrganizationController {
     @Req() request: ApiRequest,
   ) {
     return this.access.listAssignedClassStudents(user, classId, request.requestId);
+  }
+
+  @Post("classes/:classId/invite-codes")
+  @RateLimit({
+    name: "organization-class-invite-create",
+    limit: 20,
+    windowMs: 60 * 60_000,
+    errorCode: "CLASS_INVITE_CODE_RATE_LIMITED",
+    errorMessage: "학생 등록 코드 발급 횟수를 초과했습니다. 잠시 후 다시 시도해 주세요.",
+  })
+  @UseGuards(SessionAuthGuard, RolesGuard, RateLimitGuard)
+  @Roles("instructor")
+  @Header("Cache-Control", "private, no-store")
+  createClassInviteCode(
+    @Param("classId") classId: string,
+    @CurrentUser() user: CurrentUserValue,
+    @Req() request: ApiRequest,
+  ) {
+    return this.access.createClassInviteCode(user, classId, request.requestId);
+  }
+
+}
+
+@Controller("me/class-invite-codes")
+export class OrganizationEnrollmentController {
+  constructor(private readonly access: OrganizationAccessService) {}
+
+  @Post("claim")
+  @HttpCode(HttpStatus.OK)
+  @RateLimit({
+    name: "organization-class-invite-claim",
+    limit: 10,
+    windowMs: 15 * 60_000,
+    errorCode: "CLASS_INVITE_CODE_RATE_LIMITED",
+    errorMessage: "학생 등록 코드 확인 횟수를 초과했습니다. 잠시 후 다시 시도해 주세요.",
+  })
+  @UseGuards(SessionAuthGuard, RolesGuard, RateLimitGuard)
+  @Roles("student")
+  @Header("Cache-Control", "private, no-store")
+  claimClassInviteCode(
+    @CurrentUser() student: CurrentUserValue,
+    @Body() body: unknown,
+    @Req() request: ApiRequest,
+  ) {
+    return this.access.claimClassInviteCode(student, body, request.requestId);
   }
 }

@@ -45,13 +45,21 @@ describe('TeacherClassroomPage', () => {
 
   it('shows only assigned classes and fetches each selected active roster', async () => {
     const rosterRequests: string[] = [];
-    const fetchMock = vi.fn(async (url: string) => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === '/api/v1/me') return response({ user: {
         id: 'instructor-1', email: 'teacher@example.test', emailVerified: true,
         displayName: '김지도', roles: ['instructor'],
       } });
       if (url === '/api/v1/teacher/classes') return response({ items: classes });
-      if (url.includes('/api/v1/teacher/classes/')) {
+      if (url === `/api/v1/teacher/classes/${classes[0].id}/invite-codes`) {
+        expect(init?.method).toBe('POST');
+        return response({ inviteCode: {
+          code: 'ABCD-EFGH-JKLM',
+          expiresAt: '2026-09-16T00:00:00.000Z',
+          class: { ...classes[0], assignment: undefined },
+        } });
+      }
+      if (url.endsWith('/students')) {
         rosterRequests.push(url);
         const isSunshine = url.includes(classes[0].id);
         return response({
@@ -75,6 +83,8 @@ describe('TeacherClassroomPage', () => {
     expect(await screen.findByText('강하늘')).toBeInTheDocument();
     expect(screen.queryByText('teacher@example.test')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /햇살반/ })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '새 등록 코드 만들기' }));
+    expect(await screen.findByText('ABCD-EFGH-JKLM')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /별빛반/ }));
     expect(await screen.findByText('윤바다')).toBeInTheDocument();

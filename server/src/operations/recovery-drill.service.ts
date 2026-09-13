@@ -1,4 +1,4 @@
-export const REQUIRED_RECOVERY_MIGRATION = "20260913000100_notice_attachments";
+export const REQUIRED_RECOVERY_MIGRATION = "20260913000200_organization_class_invite_codes";
 
 export const REQUIRED_RECOVERY_TABLES = [
   "User",
@@ -18,6 +18,7 @@ export const REQUIRED_RECOVERY_TABLES = [
   "OrganizationClass",
   "OrganizationClassTeacherAssignment",
   "OrganizationClassEnrollment",
+  "OrganizationClassInviteCode",
 ] as const;
 
 type QueryResult<Row> = {

@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import type { CurrentUser } from "../auth/auth.types.js";
 import { ApiError } from "../common/api-error.js";
+import { loadAppConfig, type AppConfig } from "../config/app-config.js";
 import { PrismaService } from "../database/prisma.service.js";
 import {
   AccountStatus,
@@ -10,12 +11,21 @@ import {
   RoleType,
   RoleVerificationStatus,
 } from "../generated/prisma/enums.js";
+import {
+  generateClassInviteCode,
+  hashClassInviteCode,
+  isClassInviteCode,
+} from "./class-invite-code.js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 @Injectable()
 export class OrganizationAccessService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly config: AppConfig;
+
+  constructor(private readonly prisma: PrismaService) {
+    this.config = loadAppConfig();
+  }
 
   async listAdminOrganizations(user: CurrentUser) {
     const now = new Date();
@@ -133,40 +143,8 @@ export class OrganizationAccessService {
   }
 
   async listAssignedClassStudents(user: CurrentUser, classId: string, requestId?: string) {
-    if (!UUID_PATTERN.test(classId)) {
-      throw this.classStudentsForbidden();
-    }
-
     const now = new Date();
-    await this.requireVerifiedInstructor(user.id);
-    const assignments = await this.prisma.organizationClassTeacherAssignment.findMany({
-      where: {
-        organizationClassId: classId,
-        startsAt: { lte: now },
-        OR: [{ endsAt: null }, { endsAt: { gt: now } }],
-        organizationClass: { status: OrganizationClassStatus.ACTIVE },
-        teacherMembership: {
-          userId: user.id,
-          role: OrganizationMembershipRole.INSTRUCTOR,
-          status: OrganizationMembershipStatus.ACTIVE,
-          startsAt: { lte: now },
-          OR: [{ endsAt: null }, { endsAt: { gt: now } }],
-        },
-      },
-      select: {
-        id: true,
-        organizationClass: {
-          select: { id: true, organizationId: true, name: true, academicYear: true },
-        },
-        teacherMembership: { select: { organizationId: true } },
-      },
-    });
-    const assignment = assignments.find((item) => (
-      item.organizationClass.organizationId === item.teacherMembership.organizationId
-    ));
-    if (!assignment) {
-      throw this.classStudentsForbidden();
-    }
+    const assignment = await this.requireCurrentClassAssignment(user.id, classId, now);
 
     const enrollments = await this.prisma.organizationClassEnrollment.findMany({
       where: {
@@ -203,6 +181,164 @@ export class OrganizationAccessService {
     };
   }
 
+  async createClassInviteCode(user: CurrentUser, classId: string, requestId?: string) {
+    const now = new Date();
+    const assignment = await this.requireCurrentClassAssignment(user.id, classId, now);
+    const code = generateClassInviteCode();
+    const expiresAt = new Date(
+      now.getTime() + this.config.organizationClassInviteTtlHours * 60 * 60_000,
+    );
+
+    const created = await this.prisma.$transaction(async (transaction) => {
+      await transaction.organizationClassInviteCode.updateMany({
+        where: {
+          organizationClassId: classId,
+          createdByUserId: user.id,
+          consumedAt: null,
+          revokedAt: null,
+        },
+        data: { revokedAt: now },
+      });
+      const inviteCode = await transaction.organizationClassInviteCode.create({
+        data: {
+          organizationClassId: classId,
+          createdByUserId: user.id,
+          codeHash: hashClassInviteCode(code),
+          expiresAt,
+        },
+      });
+      await transaction.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: "organization.class_invite_code.created",
+          resourceType: "OrganizationClassInviteCode",
+          resourceId: inviteCode.id,
+          requestId: requestId ?? null,
+          metadata: { organizationClassId: classId },
+        },
+      });
+      return inviteCode;
+    });
+
+    return {
+      inviteCode: {
+        code,
+        expiresAt: created.expiresAt,
+        class: {
+          id: assignment.organizationClass.id,
+          name: assignment.organizationClass.name,
+          academicYear: assignment.organizationClass.academicYear,
+          organization: assignment.organizationClass.organization,
+        },
+      },
+    };
+  }
+
+  async claimClassInviteCode(student: CurrentUser, body: unknown, requestId?: string) {
+    const rawCode = body && typeof body === "object" && "code" in body
+      && typeof body.code === "string" ? body.code : "";
+    if (!isClassInviteCode(rawCode)) throw this.classInviteCodeNotFound();
+
+    const inviteCode = await this.prisma.organizationClassInviteCode.findUnique({
+      where: { codeHash: hashClassInviteCode(rawCode) },
+      include: {
+        organizationClass: {
+          include: { organization: { select: { id: true, name: true } } },
+        },
+      },
+    });
+    if (!inviteCode) throw this.classInviteCodeNotFound();
+    const now = new Date();
+    if (inviteCode.expiresAt <= now) {
+      throw new ApiError("CLASS_INVITE_CODE_EXPIRED", "학생 등록 코드가 만료되었습니다.", HttpStatus.GONE);
+    }
+    if (inviteCode.consumedAt || inviteCode.revokedAt) {
+      throw new ApiError(
+        "CLASS_INVITE_CODE_UNAVAILABLE",
+        "이미 사용했거나 새 코드로 교체된 학생 등록 코드입니다.",
+        HttpStatus.CONFLICT,
+      );
+    }
+    if (inviteCode.organizationClass.status !== OrganizationClassStatus.ACTIVE) {
+      throw new ApiError("CLASS_INVITE_CODE_UNAVAILABLE", "현재 사용할 수 없는 학생 등록 코드입니다.", HttpStatus.CONFLICT);
+    }
+
+    const enrollment = await this.prisma.$transaction(async (transaction) => {
+      const existing = await transaction.organizationClassEnrollment.findUnique({
+        where: {
+          organizationClassId_studentId: {
+            organizationClassId: inviteCode.organizationClassId,
+            studentId: student.id,
+          },
+        },
+      });
+      if (existing && existing.startsAt <= now && (!existing.endsAt || existing.endsAt > now)) {
+        throw new ApiError("CLASS_ENROLLMENT_EXISTS", "이미 등록된 학급입니다.", HttpStatus.CONFLICT);
+      }
+
+      const claimed = await transaction.organizationClassInviteCode.updateMany({
+        where: {
+          id: inviteCode.id,
+          consumedAt: null,
+          consumedByStudentId: null,
+          revokedAt: null,
+          expiresAt: { gt: now },
+          organizationClass: { status: OrganizationClassStatus.ACTIVE },
+        },
+        data: { consumedAt: now, consumedByStudentId: student.id },
+      });
+      if (claimed.count !== 1) {
+        throw new ApiError(
+          "CLASS_INVITE_CODE_UNAVAILABLE",
+          "이미 사용했거나 만료된 학생 등록 코드입니다.",
+          HttpStatus.CONFLICT,
+        );
+      }
+
+      const activeEnrollment = await transaction.organizationClassEnrollment.upsert({
+        where: {
+          organizationClassId_studentId: {
+            organizationClassId: inviteCode.organizationClassId,
+            studentId: student.id,
+          },
+        },
+        create: {
+          organizationClassId: inviteCode.organizationClassId,
+          studentId: student.id,
+          startsAt: now,
+        },
+        update: { startsAt: now, endsAt: null },
+      });
+      await transaction.auditLog.create({
+        data: {
+          actorId: student.id,
+          action: "organization.class_invite_code.claimed",
+          resourceType: "OrganizationClassEnrollment",
+          resourceId: activeEnrollment.id,
+          requestId: requestId ?? null,
+          metadata: {
+            organizationClassId: inviteCode.organizationClassId,
+            inviteCodeId: inviteCode.id,
+          },
+        },
+      });
+      return activeEnrollment;
+    });
+
+    return {
+      enrollment: {
+        id: enrollment.id,
+        enrolledAt: enrollment.startsAt,
+        class: {
+          id: inviteCode.organizationClass.id,
+          name: inviteCode.organizationClass.name,
+          academicYear: inviteCode.organizationClass.academicYear,
+          organization: inviteCode.organizationClass.organization,
+        },
+      },
+    };
+  }
+
   private async requireVerifiedInstructor(userId: string): Promise<void> {
     const role = await this.prisma.userRoleAssignment.findUnique({
       where: { userId_role: { userId, role: RoleType.INSTRUCTOR } },
@@ -217,11 +353,57 @@ export class OrganizationAccessService {
     }
   }
 
+  private async requireCurrentClassAssignment(userId: string, classId: string, now: Date) {
+    if (!UUID_PATTERN.test(classId)) throw this.classStudentsForbidden();
+    await this.requireVerifiedInstructor(userId);
+    const assignments = await this.prisma.organizationClassTeacherAssignment.findMany({
+      where: {
+        organizationClassId: classId,
+        startsAt: { lte: now },
+        OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+        organizationClass: { status: OrganizationClassStatus.ACTIVE },
+        teacherMembership: {
+          userId,
+          role: OrganizationMembershipRole.INSTRUCTOR,
+          status: OrganizationMembershipStatus.ACTIVE,
+          startsAt: { lte: now },
+          OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+        },
+      },
+      select: {
+        id: true,
+        organizationClass: {
+          select: {
+            id: true,
+            organizationId: true,
+            name: true,
+            academicYear: true,
+            organization: { select: { id: true, name: true } },
+          },
+        },
+        teacherMembership: { select: { organizationId: true } },
+      },
+    });
+    const assignment = assignments.find((item) => (
+      item.organizationClass.organizationId === item.teacherMembership.organizationId
+    ));
+    if (!assignment) throw this.classStudentsForbidden();
+    return assignment;
+  }
+
   private classStudentsForbidden(): ApiError {
     return new ApiError(
       "CLASS_STUDENTS_FORBIDDEN",
       "담당 반의 학생만 조회할 수 있습니다.",
       HttpStatus.FORBIDDEN,
+    );
+  }
+
+  private classInviteCodeNotFound(): ApiError {
+    return new ApiError(
+      "CLASS_INVITE_CODE_NOT_FOUND",
+      "학생 등록 코드를 확인해 주세요.",
+      HttpStatus.NOT_FOUND,
     );
   }
 }

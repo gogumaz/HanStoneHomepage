@@ -1,8 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
+import { type FormEvent, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { getCurrentUser } from '../auth/api';
 import { ApiClientError } from '../../lib/api-client';
 import { getStudentDashboard } from './api';
+import { claimClassInviteCode } from '../organization/api';
 
 const ERA_STATUS_LABELS = {
   coming_soon: '준비 중',
@@ -16,6 +18,7 @@ function formatDate(value: string | null) {
 }
 
 export function DashboardPage() {
+  const [classInviteCode, setClassInviteCode] = useState('');
   const meQuery = useQuery({ queryKey: ['current-user'], queryFn: getCurrentUser, retry: false });
   const isStudent = meQuery.data?.roles.includes('student') ?? false;
   const dashboardQuery = useQuery({
@@ -24,7 +27,11 @@ export function DashboardPage() {
     enabled: isStudent,
     retry: false,
   });
-  const errors = [meQuery.error, dashboardQuery.error];
+  const classEnrollmentMutation = useMutation({
+    mutationFn: claimClassInviteCode,
+    onSuccess: () => setClassInviteCode(''),
+  });
+  const errors = [meQuery.error, dashboardQuery.error, classEnrollmentMutation.error];
   const error = errors.find((item): item is ApiClientError => item instanceof ApiClientError);
   const dashboard = dashboardQuery.data;
   const weekly = dashboard?.summary.weekly ?? {
@@ -58,6 +65,41 @@ export function DashboardPage() {
         </section>
       ) : null}
       {dashboardQuery.isLoading ? <p role="status">여행지도를 만들고 있습니다.</p> : null}
+
+      {isStudent ? (
+        <section className="dashboard-class-enrollment" aria-labelledby="dashboard-class-enrollment-title">
+          <div>
+            <p className="react-stack-eyebrow">CLASS ENROLLMENT</p>
+            <h2 id="dashboard-class-enrollment-title">학급 등록</h2>
+            <p>지도자에게 받은 일회용 코드를 입력하면 담당 학급에 등록됩니다.</p>
+          </div>
+          <form onSubmit={(event: FormEvent<HTMLFormElement>) => {
+            event.preventDefault();
+            classEnrollmentMutation.reset();
+            classEnrollmentMutation.mutate(classInviteCode);
+          }}>
+            <label htmlFor="class-invite-code">학생 등록 코드</label>
+            <input
+              id="class-invite-code"
+              value={classInviteCode}
+              onChange={(event) => setClassInviteCode(event.target.value.toUpperCase())}
+              placeholder="XXXX-XXXX-XXXX"
+              autoComplete="off"
+              maxLength={32}
+              required
+            />
+            <button type="submit" disabled={classEnrollmentMutation.isPending}>
+              {classEnrollmentMutation.isPending ? '등록 중…' : '학급 등록하기'}
+            </button>
+          </form>
+          {classEnrollmentMutation.data ? (
+            <p className="dashboard-class-enrollment-success" role="status">
+              <strong>{classEnrollmentMutation.data.enrollment.class.name}</strong> 등록을 완료했습니다.
+              {' '}({classEnrollmentMutation.data.enrollment.class.organization.name})
+            </p>
+          ) : null}
+        </section>
+      ) : null}
 
       {dashboard ? (
         <>

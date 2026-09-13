@@ -320,6 +320,7 @@ RewardGrant
 | `GET` | `/teacher/classes` | 담당 반 목록 |
 | `POST` | `/teacher/classes` | 반 생성 |
 | `POST` | `/teacher/classes/{classId}/invite-codes` | 학생 등록 코드 생성 |
+| `POST` | `/me/class-invite-codes/claim` | 학생이 일회용 등록 코드로 학급 등록 |
 | `GET` | `/teacher/classes/{classId}/students` | 반 학생 조회 |
 | `POST` | `/teacher/classes/{classId}/assignments` | 과제 배포 |
 | `GET` | `/teacher/assignments/{assignmentId}/results` | 과제 결과 집계 |
@@ -343,7 +344,9 @@ RewardGrant
 
 `GET /teacher/classes/{classId}/students`는 지도자 인증, 활성 기관 멤버십, 요청 반의 현재 담당 배정을 매 요청마다 다시 검사합니다. 담당 배정이 없거나 반과 멤버십의 기관이 다르면 `CLASS_STUDENTS_FORBIDDEN`(403)을 반환하고 학생 등록 테이블을 조회하지 않습니다. 허용된 경우에도 현재 등록 중인 활성 학생의 최소 식별 정보만 반환하며 응답 캐시를 금지하고 `organization.class_students.viewed` 감사로그를 남깁니다.
 
-React `/teacher`는 위 두 조회 API만 사용합니다. `instructor` 역할이 아니면 학급 API를 호출하지 않으며, 학급을 바꿀 때 해당 학급의 학생 명단을 별도로 조회합니다. 응답의 학생 ID는 React 목록 키로만 사용하고 화면에는 표시명과 등록일만 노출합니다.
+`POST /teacher/classes/{classId}/invite-codes`는 현재 담당 지도자만 호출할 수 있습니다. 코드는 기본 72시간(`ORGANIZATION_CLASS_INVITE_TTL_HOURS`, 최대 168시간) 동안 유효하고 한 번만 사용할 수 있으며, 같은 지도자가 같은 반에 새 코드를 발급하면 이전 미사용 코드는 취소됩니다. 원문은 생성 응답에서 한 번만 반환하고 DB에는 정규화한 코드의 SHA-256 해시만 저장합니다. 학생의 `POST /me/class-invite-codes/claim`은 코드 소비와 학급 등록을 한 트랜잭션으로 처리하며 발급·사용 감사로그에는 원문이나 해시를 남기지 않습니다. 두 쓰기 API에는 역할 가드와 IP 속도 제한을 적용합니다.
+
+React `/teacher`는 조회 API와 등록 코드 발급 API를 사용합니다. `instructor` 역할이 아니면 학급 API를 호출하지 않으며, 학급을 바꿀 때 해당 학급의 학생 명단을 별도로 조회합니다. 응답의 학생 ID는 React 목록 키로만 사용하고 화면에는 표시명과 등록일만 노출합니다. 학생은 `/dashboard`에서 지도자에게 받은 코드를 입력해 본인 학급 등록을 완료합니다.
 
 `GET /organization-admin/organizations`는 `organization_admin` 역할과 유효기간 내 활성 `OrganizationMembership(role=ADMIN)`을 모두 요구합니다. 일반 지도자는 역할 가드에서 차단되어 기관 멤버십이나 관리 권한을 조회할 수 없습니다. 응답은 기관별 라이선스·좌석 조회/관리와 환불 조회/요청 범위만 제공하며, 실제 결제 취소 실행 API는 기존대로 `operator`·`admin`에게만 허용합니다. React 메뉴와 `/organization/admin` 화면도 같은 역할 경계를 사용합니다.
 
