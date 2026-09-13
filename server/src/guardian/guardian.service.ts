@@ -22,6 +22,7 @@ import {
 import { generateInvitationToken, hashInvitationToken } from "./invitation-token.js";
 import { calculateWeeklyLearningMetrics, koreanWeekWindow } from "./learning-metrics.js";
 import { summarizeLessonProgress } from "../common/learning-summary.js";
+import { ClassAssignmentService } from "../organization/class-assignment.service.js";
 
 function readEmail(body: unknown): string {
   const email = body && typeof body === "object" && "email" in body && typeof body.email === "string"
@@ -69,7 +70,10 @@ function maskEmail(email: string): string {
 export class GuardianService {
   private readonly config: AppConfig;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly assignments: ClassAssignmentService,
+  ) {
     this.config = loadAppConfig();
   }
 
@@ -319,7 +323,7 @@ export class GuardianService {
 
     const generatedAt = new Date();
     const week = koreanWeekWindow(generatedAt);
-    const [lessons, stepActivities, missionAttempts] = await Promise.all([
+    const [lessons, stepActivities, missionAttempts, assignments] = await Promise.all([
       this.prisma.lesson.findMany({
         where: { status: LessonStatus.PUBLISHED },
         orderBy: [{ era: { order: "asc" } }, { order: "asc" }],
@@ -360,6 +364,7 @@ export class GuardianService {
         },
         orderBy: { startedAt: "asc" },
       }),
+      this.assignments.getStudentSummary(studentId),
     ]);
     const items = lessons.map((lesson) => {
       const progress = lesson.progress[0] ?? null;
@@ -409,6 +414,7 @@ export class GuardianService {
         ...summary,
         weekly,
       },
+      assignments,
       items,
     };
   }

@@ -20,6 +20,7 @@ const profiles = {
   api: [
     "main.js",
     "account-mail-worker.js",
+    "assignment-reminder-worker.js",
     "inquiry-notification-worker.js",
     "video-scan-worker.js",
     "video-cleanup-worker.js",

@@ -10,9 +10,10 @@ import { LessonAssetService } from "./lesson-asset.service.js";
 import { StorageModule } from "../storage/storage.module.js";
 import { StudentDashboardService } from "./student-dashboard.service.js";
 import { HlsManifestService } from "./hls-manifest.service.js";
+import { OrganizationModule } from "../organization/organization.module.js";
 
 @Module({
-  imports: [AuthModule, StorageModule],
+  imports: [AuthModule, StorageModule, OrganizationModule],
   controllers: [ContentController],
   providers: [
     ContentService,

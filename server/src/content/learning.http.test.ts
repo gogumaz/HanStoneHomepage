@@ -257,10 +257,12 @@ function createPrismaMock(): PrismaService {
         },
       }] : []),
     },
+    organizationClassAssignment: { findMany: vi.fn(async () => []) },
     subscriptionPlan: {
       findMany: vi.fn(async () => plans.filter((plan) => plan.active).sort((a, b) => a.months - b.months)),
     },
     lessonProgress: {
+      findMany: vi.fn(async () => []),
       findUnique: vi.fn(async ({ where, include }: Value) => {
         const key = where.userId_lessonId;
         const progress = key

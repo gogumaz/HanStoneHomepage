@@ -62,6 +62,30 @@ export type StudentDashboard = {
     };
     updatedAt: string;
   }>;
+  assignments: {
+    total: number;
+    completed: number;
+    overdue: number;
+    items: Array<{
+      id: string;
+      title: string;
+      description: string | null;
+      dueAt: string;
+      status: 'published';
+      publishedAt: string | null;
+      reassignedFromId: string | null;
+      class: { id: string; name: string; academicYear: number; organization: { id: string; name: string } };
+      progress: { status: 'not_started' | 'in_progress' | 'completed'; completedItems: number; totalItems: number; completedAt: string | null; isLate: boolean };
+      teacherComment: string | null;
+      commentedAt: string | null;
+      items: Array<{
+        id: string;
+        type: 'lesson' | 'baduk_mission';
+        resource: { id: string; title: string; course?: string; boardSize?: number; era: { id: string; name: string; order: number } | null };
+        progress: { status: 'not_started' | 'in_progress' | 'completed'; completedAt: string | null; score: number | null; wrongMoveCount: number | null; hintUseCount: number | null };
+      }>;
+    }>;
+  };
   eras: Array<{
     id: string;
     order: number;

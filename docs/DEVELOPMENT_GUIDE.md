@@ -93,6 +93,8 @@ API의 JSON·URL 인코딩 본문은 `REQUEST_BODY_MAX_BYTES`로 제한하며 �
 
 `/teacher`는 인증된 지도자에게 현재 활성 기관 멤버십으로 배정된 학급과 재학 중인 학생 명단을 표시합니다. 화면은 `GET /teacher/classes` 결과에서 학급을 선택한 뒤 학생 명단과 반별 현재 수업 설정을 각각 조회하며, 이메일 등 추가 개인정보는 표시하지 않습니다. 담당 지도자는 기본 72시간 유효한 일회용 학생 등록 코드를 발급하고 공개 강의 중 현재 수업을 지정할 수 있습니다. 학생은 `/dashboard`에서 코드로 등록하고 우리 반 현재 수업을 확인합니다. 현재 수업 안내는 구독 접근권한을 변경하지 않으며 설정 해제도 개인 학습기록을 삭제하지 않습니다. 코드 유효시간은 `ORGANIZATION_CLASS_INVITE_TTL_HOURS`로 설정하며 최대 168시간입니다. 서버는 조회·발급·설정 때마다 지도자 인증·멤버십·현재 담당 배정을 재검사하고 감사로그를 남깁니다.
 
+같은 화면의 반별 과제는 공개 강의·바둑미션을 선택해 초안 저장·수정 후 배포합니다. 학생 대시보드와 보호자 리포트는 기존 학습기록을 집계해 상태를 표시하고, 지도자는 결과표·코멘트·재과제·CSV를 사용합니다. 마감 알림은 빌드 후 `npm --prefix server run start:assignment-reminder-worker`로 별도 실행하며 Docker Compose의 `assignment-reminder-worker`도 API와 같은 이미지를 사용합니다.
+
 `/lessons`는 `GET /eras`와 `GET /eras/{eraId}/lessons`를 사용하여 공개 강의를 표시합니다. `/lessons/{lessonId}`는 공개 강의 상세와 단계 구성을 조회합니다. 재생 권한 판정과 계정별 진도 저장까지 서버 API에 연결되어 있습니다.
 
 강의 상세에서는 `GET /lessons/{lessonId}/playback`으로 무료 샘플·활성 구독·운영자 미리보기 권한을 확인합니다. 로그인 사용자는 강의를 시작하고 6개 단계를 완료한 뒤 최종 완료 상태를 서버에 저장할 수 있습니다. 영상 키가 없으면 `asset_pending`, 저장소 설정이 없으면 `signer_pending`, 서명이 완료되면 `ready`, `format`, `delivery`, 짧게 만료되는 URL을 반환합니다. React 플레이어는 MP4를 기본 `<video>`로 재생하고 HLS는 단일 영상 스트림에 필요한 HLS.js light 빌드를 재생 시점에 지연 로딩하며, 브라우저 네이티브 HLS를 대체 경로로 사용합니다. 준비된 HLS 패키지는 `lesson-hls/{lessonId}/{version}/master.m3u8` 규칙으로 저장하고 CMS에서 연결합니다.
@@ -139,7 +141,7 @@ npm --prefix server run preflight:production
 
 문의 답변 이메일은 API 프로세스에서 직접 발송하지 않습니다. 답변과 함께 생성된 DB 아웃박스를 처리하려면 빌드 후 `npm --prefix server run start:inquiry-notification-worker`를 실행합니다. Docker Compose에서는 `inquiry-notification-worker`가 기본 서비스로 실행되며 폴링·재시도·잠금 회수는 `INQUIRY_NOTIFICATION_POLL_INTERVAL_MS`, `INQUIRY_NOTIFICATION_MAX_ATTEMPTS`, `INQUIRY_NOTIFICATION_LOCK_TIMEOUT_MS`로 조정합니다.
 
-빈 PostgreSQL에 마이그레이션을 적용한 뒤 실제 관계·제약조건을 확인하려면 같은 `DATABASE_URL`로 `npm --prefix server run smoke:database`를 실행합니다. 이 검사는 트랜잭션 안에서 OAuth 연결, 미션 시도, 즐겨찾기·보상 지급, 개인정보 동의가 포함된 상담, 비공개 1:1 문의와 답변 알림 아웃박스, 공지 편집 콘텐츠, 공개 수업 팁·신고·검사 완료 첨부를 생성해 조회한 후 항상 롤백하므로 업무 데이터를 남기지 않습니다.
+빈 PostgreSQL에 마이그레이션을 적용한 뒤 실제 관계·제약조건을 확인하려면 같은 `DATABASE_URL`로 `npm --prefix server run smoke:database`를 실행합니다. 이 검사는 트랜잭션 안에서 OAuth 연결, 미션 시도, 즐겨찾기·보상 지급, 기관 좌석·반별 과제, 개인정보 동의가 포함된 상담, 비공개 1:1 문의와 답변 알림 아웃박스, 공지 편집 콘텐츠, 공개 수업 팁·신고·검사 완료 첨부를 생성해 조회한 후 항상 롤백하므로 업무 데이터를 남기지 않습니다.
 
 DB 사전검증은 `_prisma_migrations`에서 최신 필수 마이그레이션의 완료 상태를 확인하고, OAuth 연결·바둑미션·보상·즐겨찾기·상담 동의·비공개 문의·공지와 FAQ·검토형 커뮤니티 글·신고·첨부·교재 상품과 주문의 핵심 스키마를 실제로 조회합니다. 새 마이그레이션을 추가하면 `REQUIRED_PRODUCTION_MIGRATION`도 함께 갱신해야 하며, 이를 누락하면 API 단위 테스트가 실패합니다.
 

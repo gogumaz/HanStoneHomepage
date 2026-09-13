@@ -34,6 +34,8 @@ function databaseFixture(fixture: DrillFixture = {}): RecoveryDrillDatabase {
           subscriptionsValid: valid,
           missionAttemptsValid: valid,
           inquiryNotificationsValid: valid,
+          organizationSeatsValid: valid,
+          classAssignmentsValid: valid,
         }],
       };
     }

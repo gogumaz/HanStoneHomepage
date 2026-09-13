@@ -910,6 +910,8 @@ test("지도자가 담당 학급을 전환하고 활성 학생 명단만 확인�
   const classTwoId = "22222222-2222-4222-8222-222222222222";
   let inviteCodeRequests = 0;
   let progressLessonId: string | null = null;
+  const assignmentId = "33333333-3333-4333-8333-333333333333";
+  let assignment: Record<string, unknown> | null = null;
   await page.route("**/api/v1/me", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
@@ -995,11 +997,47 @@ test("지도자가 담당 학급을 전환하고 활성 학생 명단만 확인�
       } } }),
     });
   });
+  await page.route("**/api/v1/teacher/classes/*/assignment-options", async (route) => {
+    const isSunshine = route.request().url().includes(classOneId);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: {
+        class: { id: isSunshine ? classOneId : classTwoId, name: isSunshine ? "햇살반" : "별빛반", academicYear: 2026, organization: { id: "organization-e2e", name: "한빛초등학교" } },
+        lessons: [{ id: "PRE-01", title: "주먹도끼에서 배운 첫 수", course: "입문 1권", order: 1, era: { id: "era_prehistoric", name: "선사시대", order: 1 } }],
+        missions: [],
+        students: [{ id: isSunshine ? "student-one" : "student-two", displayName: isSunshine ? "강하늘" : "윤바다", enrolledAt: "2026-03-02T00:00:00.000Z" }],
+      } }),
+    });
+  });
+  await page.route("**/api/v1/teacher/classes/*/assignments", async (route) => {
+    if (route.request().method() === "POST") {
+      const input = await route.request().postDataJSON() as Record<string, unknown>;
+      assignment = {
+        id: assignmentId, ...input, status: "draft", revision: 1, publishedAt: null, canceledAt: null,
+        createdAt: "2026-09-13T05:00:00.000Z", reassignedFromId: null,
+        class: { id: classOneId, name: "햇살반", academicYear: 2026, organization: { id: "organization-e2e", name: "한빛초등학교" } },
+        items: [{ id: "item-e2e", type: "lesson", resource: { id: "PRE-01", title: "주먹도끼에서 배운 첫 수", course: "입문 1권", era: { id: "era_prehistoric", name: "선사시대", order: 1 } } }],
+        targets: [{ student: { id: "student-one", displayName: "강하늘" }, assignedAt: "2026-09-13T05:00:00.000Z", teacherComment: null, commentedAt: null }],
+      };
+      return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ data: { assignment } }) });
+    }
+    const items = assignment ? [{ ...(assignment as Record<string, unknown>), itemCount: 1, targetCount: 1, reassignmentCount: 0 }] : [];
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { items } }) });
+  });
+  await page.route(`**/api/v1/teacher/assignments/${assignmentId}`, async (route) => {
+    if (route.request().method() === "PUT") assignment = { ...(assignment ?? {}), ...(await route.request().postDataJSON() as Record<string, unknown>), revision: 2 };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { assignment } }) });
+  });
+  await page.route(`**/api/v1/teacher/assignments/${assignmentId}/publish`, async (route) => {
+    assignment = { ...(assignment ?? {}), status: "published", publishedAt: "2026-09-13T05:10:00.000Z" };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { assignment } }) });
+  });
 
   await page.goto("/teacher");
 
   await expect(page.getByRole("heading", { name: "김지도님의 지도자 교실" })).toBeVisible();
-  await expect(page.getByText("강하늘")).toBeVisible();
+  await expect(page.getByRole("listitem").getByText("강하늘", { exact: true })).toBeVisible();
   await expect(page.getByText("teacher@example.com")).not.toBeVisible();
   await expect(page.getByRole("button", { name: /햇살반/ })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "새 등록 코드 만들기" }).click();
@@ -1009,9 +1047,19 @@ test("지도자가 담당 학급을 전환하고 활성 학생 명단만 확인�
   await page.getByRole("button", { name: "현재 수업 저장" }).click();
   await expect(page.getByText("반별 현재 수업 설정을 저장했습니다.")).toBeVisible();
   expect(progressLessonId).toBe("PRE-01");
+  await page.getByLabel("과제 제목").fill("이번 주 과제");
+  await page.getByLabel(/강의 · 선사시대 · 주먹도끼/).check();
+  await page.getByRole("button", { name: "과제 초안 만들기" }).click();
+  await expect(page.getByText(/과제 초안을 만들었습니다/)).toBeVisible();
+  await page.getByRole("button", { name: "초안 수정" }).click();
+  await page.getByLabel("과제 제목").fill("수정한 이번 주 과제");
+  await page.getByRole("button", { name: "초안 수정 저장" }).click();
+  await expect(page.getByText("과제 초안을 수정했습니다.")).toBeVisible();
+  await page.getByRole("button", { name: "배포" }).click();
+  await expect(page.getByText("과제를 학생에게 배포했습니다.")).toBeVisible();
   await page.getByRole("button", { name: /별빛반/ }).click();
   await expect(page.getByRole("heading", { name: "별빛반 학생 명단" })).toBeVisible();
-  await expect(page.getByText("윤바다")).toBeVisible();
+  await expect(page.getByRole("listitem").getByText("윤바다", { exact: true })).toBeVisible();
   await expect(page.getByText("강하늘")).not.toBeVisible();
   await expect(page.getByRole("link", { name: "수업도우미 열기" })).toHaveAttribute("href", "/board.html?type=classHelper");
 });
@@ -1082,6 +1130,15 @@ test("보호자가 연결된 학생의 강의·단계 진도를 확인하고 연
           completedSteps: 3, totalSteps: 4, stepCompletionRate: 75,
           lastActivityAt: "2026-08-22T05:00:00.000Z",
         },
+        assignments: {
+          total: 1, completed: 0, overdue: 0,
+          items: [{
+            id: "guardian-assignment-e2e", title: "가정 복습 과제", dueAt: "2026-08-30T09:00:00.000Z",
+            class: { id: "class-e2e", name: "햇살반", academicYear: 2026, organization: { id: "organization-e2e", name: "한빛초등학교" } },
+            progress: { status: "in_progress", completedItems: 1, totalItems: 2, completedAt: null, isLate: false },
+            teacherComment: "첫 강의를 잘 복습했습니다.",
+          }],
+        },
         items: [
           {
             lesson: { id: "PRE-01", era: { id: "era-pre", name: "선사시대" }, order: 1, course: "입문 1권", title: "첫 강의", durationMinutes: 8 },
@@ -1110,8 +1167,11 @@ test("보호자가 연결된 학생의 강의·단계 진도를 확인하고 연
   await expect(page.getByRole("heading", { name: "한별 학생의 학습 리포트" })).toBeVisible();
   await expect(page.getByText("3 / 4")).toBeVisible();
   await expect(page.getByRole("progressbar")).toHaveAttribute("value", "75");
-  await expect(page.getByText("첫 강의")).toBeVisible();
+  await expect(page.getByText("첫 강의", { exact: true })).toBeVisible();
   await expect(page.getByText("둘째 강의")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "학급 과제 수행 현황" })).toBeVisible();
+  await expect(page.getByText("가정 복습 과제")).toBeVisible();
+  await expect(page.getByText(/첫 강의를 잘 복습했습니다/)).toBeVisible();
   expect(reportRequests).toBe(1);
 
   await page.getByRole("button", { name: "연결 해제" }).click();
@@ -1151,6 +1211,19 @@ test("학생의 실제 진도로 나의 여행지도와 다음 이어보기 강�
         },
         updatedAt: "2026-09-13T05:00:00.000Z",
       }],
+      assignments: {
+        total: 1,
+        completed: 0,
+        overdue: 0,
+        items: [{
+          id: "assignment-dashboard-e2e", title: "이번 주 과제", description: "강의를 완료하세요.",
+          dueAt: "2026-09-20T09:00:00.000Z", status: "published",
+          class: { id: "class-e2e", name: "햇살반", academicYear: 2026, organization: { id: "organization-e2e", name: "한빛초등학교" } },
+          items: [{ id: "assignment-item-e2e", type: "lesson", resource: { id: "PRE-01", title: "주먹도끼에서 배운 첫 수", course: "입문 1권", era: { id: "era_prehistoric", name: "선사시대", order: 1 } }, progress: { status: "not_started", completedAt: null, score: null, wrongMoveCount: null, hintUseCount: null } }],
+          progress: { status: "not_started", completedItems: 0, totalItems: 1, completedAt: null, isLate: false },
+          teacherComment: null,
+        }],
+      },
       eras: [
         {
           id: "era_prehistoric", order: 1, name: "선사시대", theme: "주변을 살펴라", description: "첫 시대",
@@ -1212,6 +1285,8 @@ test("학생의 실제 진도로 나의 여행지도와 다음 이어보기 강�
   expect(claimedCode).toBe("ABCD-EFGH-JKLM");
   await expect(page.getByRole("link", { name: "현재 수업 열기" })).toHaveAttribute("href", "/lessons/PRE-01");
   await expect(page.getByText("이어서 여행하기")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "우리 반 과제" })).toBeVisible();
+  await expect(page.getByText("이번 주 과제")).toBeVisible();
   await expect(page.getByRole("link", { name: "학습 이어가기" })).toHaveAttribute("href", "/lessons/PRE-01");
   const eraMap = page.getByRole("region", { name: "시대별 여행지도" });
   await expect(eraMap.getByText("선사시대")).toBeVisible();

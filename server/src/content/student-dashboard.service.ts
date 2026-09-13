@@ -8,15 +8,19 @@ import {
 } from "../generated/prisma/enums.js";
 import { calculateWeeklyLearningMetrics, koreanWeekWindow } from "../guardian/learning-metrics.js";
 import { summarizeLessonProgress } from "../common/learning-summary.js";
+import { ClassAssignmentService } from "../organization/class-assignment.service.js";
 
 @Injectable()
 export class StudentDashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly assignments: ClassAssignmentService,
+  ) {}
 
   async getDashboard(student: CurrentUser) {
     const now = new Date();
     const week = koreanWeekWindow(now);
-    const [eras, subscription, stepActivities, missionAttempts, classEnrollments] = await Promise.all([
+    const [eras, subscription, stepActivities, missionAttempts, classEnrollments, assignments] = await Promise.all([
       this.prisma.era.findMany({
         orderBy: { order: "asc" },
         include: {
@@ -94,6 +98,7 @@ export class StudentDashboardService {
         },
         orderBy: { startsAt: "desc" },
       }),
+      this.assignments.getStudentSummary(student.id),
     ]);
     const hasActiveSubscription = Boolean(subscription);
     const lessonItems = eras.flatMap((era) => era.lessons.map((lesson) => {
@@ -174,6 +179,7 @@ export class StudentDashboardService {
         weekly,
       },
       classGoals,
+      assignments,
       eras: eras.map((era) => {
         const items = lessonItems.filter((item) => item.lesson.era.id === era.id);
         const eraStarted = items.filter((item) => item.progress.status !== "not_started").length;

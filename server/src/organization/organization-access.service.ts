@@ -244,7 +244,7 @@ export class OrganizationAccessService {
       where: { codeHash: hashClassInviteCode(rawCode) },
       include: {
         organizationClass: {
-          include: { organization: { select: { id: true, name: true } } },
+          include: { organization: { select: { id: true, name: true, seatLimit: true } } },
         },
       },
     });
@@ -275,6 +275,34 @@ export class OrganizationAccessService {
       });
       if (existing && existing.startsAt <= now && (!existing.endsAt || existing.endsAt > now)) {
         throw new ApiError("CLASS_ENROLLMENT_EXISTS", "이미 등록된 학급입니다.", HttpStatus.CONFLICT);
+      }
+
+      const existingSeat = await transaction.organizationSeat.findUnique({
+        where: {
+          organizationId_studentId: {
+            organizationId: inviteCode.organizationClass.organization.id,
+            studentId: student.id,
+          },
+        },
+      });
+      if (!existingSeat) {
+        const usedSeats = await transaction.organizationSeat.count({
+          where: { organizationId: inviteCode.organizationClass.organization.id },
+        });
+        const seatLimit = inviteCode.organizationClass.organization.seatLimit;
+        if (seatLimit !== null && usedSeats >= seatLimit) {
+          throw new ApiError(
+            "ORGANIZATION_SEAT_LIMIT_REACHED",
+            "기관의 학생 좌석 한도에 도달했습니다.",
+            HttpStatus.CONFLICT,
+          );
+        }
+        await transaction.organizationSeat.create({
+          data: {
+            organizationId: inviteCode.organizationClass.organization.id,
+            studentId: student.id,
+          },
+        });
       }
 
       const claimed = await transaction.organizationClassInviteCode.updateMany({
@@ -324,7 +352,7 @@ export class OrganizationAccessService {
         },
       });
       return activeEnrollment;
-    });
+    }, { isolationLevel: "Serializable" });
 
     return {
       enrollment: {
@@ -480,7 +508,7 @@ export class OrganizationAccessService {
     }
   }
 
-  private async requireCurrentClassAssignment(userId: string, classId: string, now: Date) {
+  async requireCurrentClassAssignment(userId: string, classId: string, now: Date) {
     if (!UUID_PATTERN.test(classId)) throw this.classStudentsForbidden();
     await this.requireVerifiedInstructor(userId);
     const assignments = await this.prisma.organizationClassTeacherAssignment.findMany({

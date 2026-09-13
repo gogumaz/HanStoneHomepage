@@ -222,6 +222,7 @@ function createPrismaMock() {
     organizationClassEnrollment: {
       findMany: vi.fn(async () => []),
     },
+    organizationClassAssignment: { findMany: vi.fn(async () => []) },
     lesson: {
       findMany: vi.fn(async ({ where }: RecordValue) => lessons
         .filter((lesson) => lesson.status === where.status)
@@ -238,6 +239,7 @@ function createPrismaMock() {
     lessonStepCompletion: {
       findMany: vi.fn(async () => stepActivities),
     },
+    lessonProgress: { findMany: vi.fn(async () => []) },
     missionAttempt: {
       findMany: vi.fn(async () => missionAttempts),
     },

@@ -190,6 +190,20 @@ services:
       ACCOUNT_MAIL_LOCK_TIMEOUT_MS: ${ACCOUNT_MAIL_LOCK_TIMEOUT_MS:-60000}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
+  assignment-reminder-worker:
+    image: ${API_IMAGE:?API_IMAGE must be an immutable repository@sha256 digest reference}
+    restart: unless-stopped
+    command: ["node", "dist/assignment-reminder-worker.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:?PUBLIC_APP_URL must be set}
+      LEGAL_POLICY_VERSION: ${LEGAL_POLICY_VERSION:?LEGAL_POLICY_VERSION must be set}
+      LEGAL_POLICY_APPROVED_AT: ${LEGAL_POLICY_APPROVED_AT:?LEGAL_POLICY_APPROVED_AT must be set}
+      LEGAL_POLICY_APPROVAL_SHA256: ${LEGAL_POLICY_APPROVAL_SHA256:?LEGAL_POLICY_APPROVAL_SHA256 must be set}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
   video-cleanup-worker:
     image: ${API_IMAGE:?API_IMAGE must be an immutable repository@sha256 digest reference}
     restart: unless-stopped

@@ -1,4 +1,4 @@
-export const REQUIRED_RECOVERY_MIGRATION = "20260913000300_organization_class_progress_setting";
+export const REQUIRED_RECOVERY_MIGRATION = "20260913000400_class_assignments_and_management";
 
 export const REQUIRED_RECOVERY_TABLES = [
   "User",
@@ -15,11 +15,15 @@ export const REQUIRED_RECOVERY_TABLES = [
   "ObjectDeletionJob",
   "Organization",
   "OrganizationMembership",
+  "OrganizationSeat",
   "OrganizationClass",
   "OrganizationClassTeacherAssignment",
   "OrganizationClassEnrollment",
   "OrganizationClassInviteCode",
   "OrganizationClassProgressSetting",
+  "OrganizationClassAssignment",
+  "OrganizationClassAssignmentItem",
+  "OrganizationClassAssignmentTarget",
 ] as const;
 
 type QueryResult<Row> = {
@@ -190,6 +194,8 @@ export class RecoveryDrillService {
         subscriptionsValid: boolean;
         missionAttemptsValid: boolean;
         inquiryNotificationsValid: boolean;
+        organizationSeatsValid: boolean;
+        classAssignmentsValid: boolean;
       }>(
         `SELECT
            NOT EXISTS (
@@ -211,7 +217,20 @@ export class RecoveryDrillService {
              SELECT 1 FROM "InquiryNotificationJob" job
              LEFT JOIN "Inquiry" inquiry ON inquiry."id" = job."inquiryId"
              WHERE inquiry."id" IS NULL
-           ) AS "inquiryNotificationsValid"`,
+           ) AS "inquiryNotificationsValid",
+           NOT EXISTS (
+             SELECT 1 FROM "OrganizationSeat" seat
+             LEFT JOIN "Organization" organization ON organization."id" = seat."organizationId"
+             LEFT JOIN "User" student ON student."id" = seat."studentId"
+             WHERE organization."id" IS NULL OR student."id" IS NULL
+           ) AS "organizationSeatsValid",
+           NOT EXISTS (
+             SELECT 1 FROM "OrganizationClassAssignmentItem" item
+             LEFT JOIN "OrganizationClassAssignment" assignment ON assignment."id" = item."assignmentId"
+             WHERE assignment."id" IS NULL
+                OR (item."type" = 'LESSON' AND (item."lessonId" IS NULL OR item."missionId" IS NOT NULL))
+                OR (item."type" = 'BADUK_MISSION' AND (item."missionId" IS NULL OR item."lessonId" IS NOT NULL))
+           ) AS "classAssignmentsValid"`,
       );
       const relationships = relationshipResult.rows[0];
       const invalid = [
@@ -219,6 +238,8 @@ export class RecoveryDrillService {
         ["subscriptions", relationships?.subscriptionsValid],
         ["missionAttempts", relationships?.missionAttemptsValid],
         ["inquiryNotifications", relationships?.inquiryNotificationsValid],
+        ["organizationSeats", relationships?.organizationSeatsValid],
+        ["classAssignments", relationships?.classAssignmentsValid],
       ].filter(([, valid]) => valid !== true).map(([name]) => name);
       checks.push({
         name: "relationships",

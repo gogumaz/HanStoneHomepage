@@ -318,13 +318,16 @@ RewardGrant
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | `GET` | `/teacher/classes` | 담당 반 목록 |
-| `POST` | `/teacher/classes` | 반 생성 |
 | `POST` | `/teacher/classes/{classId}/invite-codes` | 학생 등록 코드 생성 |
 | `POST` | `/me/class-invite-codes/claim` | 학생이 일회용 등록 코드로 학급 등록 |
 | `GET` | `/teacher/classes/{classId}/students` | 반 학생 조회 |
 | `GET`, `PUT` | `/teacher/classes/{classId}/progress-setting` | 반의 현재 수업 조회·설정·해제 |
-| `POST` | `/teacher/classes/{classId}/assignments` | 과제 배포 |
-| `GET` | `/teacher/assignments/{assignmentId}/results` | 과제 결과 집계 |
+| `GET`, `POST` | `/teacher/classes/{classId}/assignments` | 과제 목록·초안 생성 |
+| `GET`, `PUT` | `/teacher/assignments/{assignmentId}` | 과제 상세·초안 수정 |
+| `POST` | `/teacher/assignments/{assignmentId}/publish`, `/cancel`, `/reassign` | 과제 배포·취소·재과제 |
+| `GET` | `/teacher/assignments/{assignmentId}/results`, `/results.csv` | 과제 결과 집계·CSV |
+| `PATCH` | `/teacher/assignments/{assignmentId}/students/{studentId}/comment` | 학생별 지도자 코멘트 |
+| `GET` | `/me/assignments`, `/me/assignments/{assignmentId}` | 본인 과제 목록·상세 |
 | `GET` | `/teacher/materials` | 수업 자료 검색 |
 | `GET` | `/class-helpers` | 지도자용 수업 패키지 게시물 목록·상세 |
 | `POST` | `/admin/class-helpers` | 관리자·운영자 수업 패키지 일괄 등록 |
@@ -335,8 +338,14 @@ RewardGrant
 | `POST`, `DELETE` | `/admin/class-helpers/{packageId}/publish`, `/admin/class-helpers/{packageId}` | 수업 패키지 공개·보관 |
 | `POST` | `/class-helper-assets/uploads`, `/class-helper-assets/{assetId}/complete` | 6종 자료 격리 업로드와 파일 시그니처·ClamAV 검사 |
 | `GET` | `/class-helpers/{packageId}/assets/{field}` | 지도자 권한 재검사 후 단기 서명 다운로드 |
-| `POST` | `/organizations/{organizationId}/members` | 기관 관리자가 지도자 초대 |
-| `PATCH` | `/organizations/{organizationId}/members/{memberId}` | 기관 멤버십 상태·역할 변경 |
+| `GET` | `/organization-admin/organizations/{organizationId}/management` | 기관 좌석·구성원 현황 |
+| `PATCH` | `/organization-admin/organizations/{organizationId}` | 학생 좌석 한도 변경 |
+| `POST` | `/organization-admin/organizations/{organizationId}/members` | 기존 인증 계정을 기관 구성원으로 등록 |
+| `PATCH` | `/organization-admin/organizations/{organizationId}/members/{memberId}` | 기관 멤버십 상태·역할 변경 |
+| `GET`, `POST` | `/organization-admin/organizations/{organizationId}/classes` | 학급 목록·생성 |
+| `PATCH` | `/organization-admin/classes/{classId}` | 학급 수정·보관 |
+| `PUT`, `DELETE` | `/organization-admin/classes/{classId}/instructors/{membershipId}` | 지도자 배정·종료 |
+| `POST`, `DELETE` | `/organization-admin/classes/{classId}/students[/{studentId}]` | 학생 등록·퇴실 |
 | `GET` | `/me/entitlements` | 개인·기관 이용권과 유효기간 조회 |
 
 지도자는 인증 역할, 활성 기관 멤버십, 담당 반을 모두 통과한 데이터만 조회할 수 있어야 합니다. 콘텐츠 이용은 개인 구독과 기관 이용권 중 하나로 허용할 수 있지만, 기관 학생 데이터는 반드시 소속과 담당 반을 추가 검사합니다. 일반 지도자는 기관 라이선스·좌석·환불을 관리하지 않으며 기관 관리자 권한과 분리합니다.
@@ -349,9 +358,15 @@ RewardGrant
 
 `GET`, `PUT /teacher/classes/{classId}/progress-setting`은 같은 담당 반 권한을 다시 검사하고 공개된 강의만 반의 현재 수업으로 지정합니다. `lessonId: null`은 설정만 해제하며 학생 개인의 강의·단계 진도는 삭제하지 않습니다. 설정 변경은 지도자와 선택 강의 ID를 감사로그에 남깁니다. 이 설정은 수업 목표 안내이며 구독·무료 샘플 접근 판정을 우회하지 않습니다. 활성 반 등록 학생의 `GET /me/dashboard`에는 접근 가능 여부와 함께 `classGoals`로 표시됩니다.
 
+과제는 1~20개의 공개 강의·바둑미션과 현재 재학 학생 스냅샷으로 초안을 만든 뒤 배포합니다. 배포 후 항목·대상·마감은 잠그며 취소와 7일 재과제는 새 이력으로 보존합니다. 결과는 기존 `LessonProgress`와 `MissionAttempt`를 동적으로 집계하므로 제출용 중복 기록이나 보상 중복 지급이 없습니다. 과제 지정은 콘텐츠 이용권을 새로 부여하지 않으며 학생 화면의 링크도 기존 강의·미션 권한 판정을 그대로 통과해야 합니다. 학생별 코멘트는 대상 학생과 유효한 보호자 리포트에만 노출됩니다.
+
+`assignment-reminder-worker`는 15분마다 24시간 안에 마감되는 배포 과제를 확인해 미완료 학생에게 한 번만 `ASSIGNMENT_DUE_SOON` 알림을 만듭니다. 배포·취소·코멘트도 버전이 포함된 멱등 앱 알림을 생성합니다. 워커는 일시 오류 후 60초 대기하며, 별도 메일 주소나 과제 본문을 외부 공급자에게 전달하지 않습니다.
+
 React `/teacher`는 조회 API, 등록 코드 발급 API와 반별 현재 수업 설정 API를 사용합니다. `instructor` 역할이 아니면 학급 API를 호출하지 않으며, 학급을 바꿀 때 해당 학급의 학생 명단과 설정을 별도로 조회합니다. 응답의 학생 ID는 React 목록 키로만 사용하고 화면에는 표시명과 등록일만 노출합니다. 학생은 `/dashboard`에서 지도자에게 받은 코드를 입력해 본인 학급 등록을 완료하고 우리 반 현재 수업을 확인합니다.
 
 `GET /organization-admin/organizations`는 `organization_admin` 역할과 유효기간 내 활성 `OrganizationMembership(role=ADMIN)`을 모두 요구합니다. 일반 지도자는 역할 가드에서 차단되어 기관 멤버십이나 관리 권한을 조회할 수 없습니다. 응답은 기관별 라이선스·좌석 조회/관리와 환불 조회/요청 범위만 제공하며, 실제 결제 취소 실행 API는 기존대로 `operator`·`admin`에게만 허용합니다. React 메뉴와 `/organization/admin` 화면도 같은 역할 경계를 사용합니다.
+
+기관 구성원 등록은 이미 가입해 전역 역할 요건을 충족한 계정을 정확한 이메일로 찾습니다. 지도자는 `VERIFIED` 상태만 등록할 수 있습니다. 멤버십 중지·종료 시 현재 지도자 배정을 끝내며 로그인 중인 관리자는 자신의 마지막 관리 경계를 스스로 비활성화할 수 없습니다. 학생 좌석은 기관 전체에서 학생별 한 자리로 계산되어 여러 학급 중복 등록은 추가 좌석을 쓰지 않습니다. 수동 등록과 일회용 코드 사용 모두 `seatLimit`을 검사하고 마지막 활성 학급에서 퇴실할 때 좌석을 반환합니다.
 
 기관 멤버십이 `ENDED`·`SUSPENDED` 상태이거나 `endsAt`이 지난 경우 기관 반·학생·관리 API는 즉시 차단됩니다. 이 판정은 사용자 계정, 세션, 개인 `AccountSubscription`을 변경하지 않습니다. 동일 세션에서 기관 반 조회가 `403 ORGANIZATION_MEMBERSHIP_REQUIRED`로 거부된 뒤에도 `GET /me`와 `GET /me/subscriptions`는 개인 계정과 활성 구독을 정상 반환하는 HTTP 회귀 테스트로 두 권한 수명의 분리를 검증합니다.
 

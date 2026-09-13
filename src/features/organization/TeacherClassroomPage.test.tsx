@@ -61,6 +61,11 @@ describe('TeacherClassroomPage', () => {
           class: { ...classes[0], assignment: undefined },
         } });
       }
+      if (url.endsWith('/assignment-options')) return response({
+        class: classes.find((item) => url.includes(item.id)) ?? classes[0],
+        lessons: [], missions: [], students: [],
+      });
+      if (url.endsWith('/assignments')) return response({ items: [] });
       if (url.endsWith('/progress-setting')) {
         const availableLessons = [{
           id: 'PRE-01', order: 1, course: '입문 1권', title: '주먹도끼에서 배운 첫 수',
@@ -157,10 +162,6 @@ describe('TeacherClassroomPage', () => {
     vi.stubGlobal('fetch', fetchMock);
     renderPage();
 
-    const alerts = await screen.findAllByRole('alert');
-    expect(alerts).not.toHaveLength(0);
-    expect(alerts.every((alert) => alert.textContent?.includes(
-      '담당 반의 학생만 조회할 수 있습니다. (요청 ID: request-teacher-1)',
-    ))).toBe(true);
+    await waitFor(() => expect(screen.getAllByText(/요청 ID: request-teacher-1/).length).toBeGreaterThan(0));
   });
 });

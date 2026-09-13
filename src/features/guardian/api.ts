@@ -42,6 +42,19 @@ export type GuardianStudentReport = {
       firstAttemptAccuracy: number;
     };
   };
+  assignments: {
+    total: number;
+    completed: number;
+    overdue: number;
+    items: Array<{
+      id: string;
+      title: string;
+      dueAt: string;
+      class: { id: string; name: string; academicYear: number; organization: { id: string; name: string } };
+      progress: { status: 'not_started' | 'in_progress' | 'completed'; completedItems: number; totalItems: number; completedAt: string | null; isLate: boolean };
+      teacherComment: string | null;
+    }>;
+  };
   items: Array<{
     lesson: {
       id: string;

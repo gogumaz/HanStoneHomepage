@@ -149,8 +149,8 @@ GuardianConsent
 | `POST` | `/me/guardian-links/{linkId}/revoke` | 학생 또는 보호자가 연결 해제 요청 |
 | `GET` | `/guardians/me/students` | 연결 완료된 학생 목록 |
 | `GET` | `/guardians/me/students/{studentId}/report` | 연결 학생 리포트 |
-| `POST` | `/organizations/{organizationId}/members` | 기관 관리자가 지도자 초대 |
-| `PATCH` | `/organizations/{organizationId}/members/{memberId}` | 기관 멤버십 상태·역할 변경 |
+| `POST` | `/organization-admin/organizations/{organizationId}/members` | 기관 관리자가 기존 인증 계정을 구성원으로 등록 |
+| `PATCH` | `/organization-admin/organizations/{organizationId}/members/{memberId}` | 기관 멤버십 상태·역할 변경 |
 | `GET` | `/me/entitlements` | 개인·기관 이용권과 유효기간 조회 |
 
 ## 8. 완료 기준
@@ -161,7 +161,10 @@ GuardianConsent
 - 지도자의 `GET /teacher/classes/{classId}/students` 요청은 같은 기관의 현재 담당 반에서만 허용되며 비담당 반은 학생 데이터 조회 전에 차단되고 허용된 조회는 감사로그에 기록됩니다.
 - 현재 담당 지도자만 반의 일회용 학생 등록 코드를 만들 수 있고 학생 역할만 이를 사용할 수 있습니다. 코드는 만료형 SHA-256 해시로만 저장하며 원문은 재조회할 수 없고, 소비와 학급 등록은 한 트랜잭션으로 처리합니다. 발급·사용 감사로그에는 코드 원문과 해시를 기록하지 않습니다.
 - 현재 담당 지도자만 공개 강의를 반의 현재 수업으로 지정·해제할 수 있습니다. 설정은 학생 대시보드의 학급 목표 안내에만 사용하고 구독·무료 샘플 접근 정책을 우회하지 않으며, 해제해도 학생의 개인 학습기록은 유지합니다.
+- 과제 생성·수정·배포·취소·결과·코멘트는 현재 담당 지도자에게만 허용합니다. 과제 대상은 배포 시점의 재학 학생으로 고정하고 학생은 자신의 과제만, 보호자는 활성 연결과 현재 동의 범위가 있는 학생의 과제만 조회합니다.
+- 과제 지정은 개인 구독이나 콘텐츠 이용권을 만들지 않습니다. 강의·미션 진입 시 기존 이용권 검사를 그대로 적용합니다.
 - `GET /organization-admin/organizations`와 기관 관리 메뉴는 `organization_admin` 역할과 활성 `ADMIN` 멤버십을 모두 통과한 사용자에게만 라이선스·좌석·환불 요청 범위를 제공합니다.
+- 학생 좌석은 기관별 고유 학생 수로 계산합니다. 등록 코드와 수동 등록 모두 한도를 검사하며 여러 학급 중복 등록은 한 좌석만 사용합니다.
 - 기관 라이선스 만료나 퇴사 시 기관 범위 권한만 즉시 회수되며 같은 세션의 개인 계정과 개인 구독은 유지됩니다.
 - 개인 구독과 기관 라이선스가 동시에 있어도 주문·진도·기관 데이터 소유권이 섞이지 않습니다.
 - 보호자 동의의 버전·범위·확인방법·시각·철회 이력이 감사 가능하게 저장됩니다.

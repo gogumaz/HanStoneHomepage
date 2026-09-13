@@ -52,6 +52,17 @@ describe('DashboardPage class enrollment', () => {
           },
           updatedAt: '2026-09-13T00:00:00.000Z',
         }],
+        assignments: {
+          total: 1, completed: 0, overdue: 0,
+          items: [{
+            id: 'assignment-1', title: '이번 주 과제', description: '첫 강의를 완료하세요.',
+            dueAt: '2026-09-20T00:00:00.000Z', status: 'published', publishedAt: '2026-09-13T00:00:00.000Z', reassignedFromId: null,
+            class: { id: 'class-1', name: '햇살반', academicYear: 2026, organization: { id: 'organization-1', name: '한빛초등학교' } },
+            progress: { status: 'not_started', completedItems: 0, totalItems: 1, completedAt: null, isLate: false },
+            teacherComment: null, commentedAt: null,
+            items: [{ id: 'assignment-item-1', type: 'lesson', resource: { id: 'PRE-01', title: '주먹도끼에서 배운 첫 수', course: '입문 1권', era: { id: 'era_prehistoric', name: '선사시대', order: 1 } }, progress: { status: 'not_started', completedAt: null, score: null, wrongMoveCount: null, hintUseCount: null } }],
+          }],
+        },
         eras: [], recentLessons: [], nextLesson: null,
       });
       if (url === '/api/v1/me/class-invite-codes/claim') {
@@ -78,6 +89,8 @@ describe('DashboardPage class enrollment', () => {
     const enrolledClass = await screen.findByText('햇살반');
     expect(enrolledClass.closest('[role="status"]')).toHaveTextContent('햇살반 등록을 완료했습니다. (한빛초등학교)');
     expect(screen.getByRole('link', { name: '현재 수업 열기' })).toHaveAttribute('href', '/lessons/PRE-01');
+    expect(screen.getByRole('heading', { name: '우리 반 과제' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /주먹도끼에서 배운 첫 수/ })).toHaveAttribute('href', '/lessons/PRE-01');
     await waitFor(() => expect(input).toHaveValue(''));
   });
 });

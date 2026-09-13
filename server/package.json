@@ -18,6 +18,7 @@
     "start:hls-transcode-worker": "node dist/hls-transcode-worker.js",
     "start:inquiry-notification-worker": "node dist/inquiry-notification-worker.js",
     "start:account-mail-worker": "node dist/account-mail-worker.js",
+    "start:assignment-reminder-worker": "node dist/assignment-reminder-worker.js",
     "preflight:production": "node dist/production-preflight.js",
     "drill:recovery": "node dist/recovery-drill.js",
     "test:load:read-only": "node dist/read-only-load-test.js",

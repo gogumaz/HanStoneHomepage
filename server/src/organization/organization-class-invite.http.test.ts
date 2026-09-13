@@ -42,7 +42,7 @@ const organizationClass = {
   name: "햇살반",
   academicYear: 2026,
   status: OrganizationClassStatus.ACTIVE,
-  organization: { id: "organization-1", name: "한빛초등학교" },
+  organization: { id: "organization-1", name: "한빛초등학교", seatLimit: null },
 };
 const assignmentFindMany = vi.fn(async ({ where }: { where: { organizationClassId?: string } }) => (
   where.organizationClassId === classId ? [{
@@ -69,9 +69,11 @@ const enrollmentUpsert = vi.fn(async ({ create }: { create: { startsAt: Date } }
   endsAt: null,
 }));
 const auditCreate = vi.fn(async () => ({ id: "audit-1" }));
+const seatCreate = vi.fn(async () => ({ id: "seat-1" }));
 const transaction = {
   organizationClassInviteCode: { create: inviteCreate, updateMany: inviteUpdateMany },
   organizationClassEnrollment: { findUnique: enrollmentFindUnique, upsert: enrollmentUpsert },
+  organizationSeat: { findUnique: vi.fn(async () => null), count: vi.fn(async () => 0), create: seatCreate },
   auditLog: { create: auditCreate },
 };
 const prisma = {

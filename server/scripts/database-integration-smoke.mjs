@@ -7,7 +7,7 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const REQUIRED_MIGRATION = "20260913000300_organization_class_progress_setting";
+const REQUIRED_MIGRATION = "20260913000400_class_assignments_and_management";
 const { Client } = pg;
 const client = new Client({ connectionString: databaseUrl });
 let transactionStarted = false;
@@ -69,8 +69,13 @@ try {
   const classHelperId = randomUUID();
   const classHelperRevisionId = randomUUID();
   const organizationId = randomUUID();
+  const organizationSeatId = randomUUID();
   const organizationClassId = randomUUID();
   const organizationClassInviteCodeId = randomUUID();
+  const organizationClassAssignmentId = randomUUID();
+  const organizationClassAssignmentLessonItemId = randomUUID();
+  const organizationClassAssignmentMissionItemId = randomUUID();
+  const organizationClassAssignmentTargetId = randomUUID();
   const injectionProbe = `' OR 1=1; DROP TABLE "User"; --`;
 
   await client.query("BEGIN");
@@ -108,6 +113,15 @@ try {
     [organizationClassId, organizationId, "통합 테스트 반"],
   );
   await client.query(
+    `INSERT INTO "OrganizationSeat" ("id", "organizationId", "studentId") VALUES ($1, $2, $3)`,
+    [organizationSeatId, organizationId, userId],
+  );
+  const organizationSeat = await client.query(
+    `SELECT "id" FROM "OrganizationSeat" WHERE "organizationId" = $1 AND "studentId" = $2`,
+    [organizationId, userId],
+  );
+  if (organizationSeat.rowCount !== 1) throw new Error("ORGANIZATION_SEAT_RELATIONSHIP_FAILED");
+  await client.query(
     `INSERT INTO "OrganizationClassInviteCode"
        ("id", "organizationClassId", "createdByUserId", "codeHash", "expiresAt")
      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + INTERVAL '72 hours')`,
@@ -136,6 +150,58 @@ try {
      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)`,
     [organizationClassId, lesson.rows[0].id, userId],
   );
+  await client.query(
+    `INSERT INTO "OrganizationClassAssignment"
+       ("id", "organizationClassId", "createdByUserId", "title", "description", "dueAt", "status", "publishedAt", "updatedAt")
+     VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP + INTERVAL '7 days', 'PUBLISHED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [organizationClassAssignmentId, organizationClassId, userId, "통합 테스트 과제", "강의와 미션 완료"],
+  );
+  await client.query(
+    `INSERT INTO "OrganizationClassAssignmentItem"
+       ("id", "assignmentId", "type", "lessonId", "order")
+     VALUES ($1, $2, 'LESSON', $3, 1)`,
+    [organizationClassAssignmentLessonItemId, organizationClassAssignmentId, lesson.rows[0].id],
+  );
+  await client.query(
+    `INSERT INTO "OrganizationClassAssignmentItem"
+       ("id", "assignmentId", "type", "missionId", "order")
+     VALUES ($1, $2, 'BADUK_MISSION', $3, 2)`,
+    [organizationClassAssignmentMissionItemId, organizationClassAssignmentId, mission.rows[0].id],
+  );
+  await client.query(
+    `INSERT INTO "OrganizationClassAssignmentTarget"
+       ("id", "assignmentId", "studentId")
+     VALUES ($1, $2, $3)`,
+    [organizationClassAssignmentTargetId, organizationClassAssignmentId, userId],
+  );
+  const classAssignmentRelationship = await client.query(
+    `SELECT a."id"
+       FROM "OrganizationClassAssignment" a
+       JOIN "OrganizationClassAssignmentItem" i ON i."assignmentId" = a."id"
+       JOIN "OrganizationClassAssignmentTarget" t ON t."assignmentId" = a."id"
+      WHERE a."id" = $1
+      GROUP BY a."id"
+     HAVING COUNT(DISTINCT i."id") = 2 AND COUNT(DISTINCT t."id") = 1`,
+    [organizationClassAssignmentId],
+  );
+  if (classAssignmentRelationship.rowCount !== 1) throw new Error("ORGANIZATION_CLASS_ASSIGNMENT_RELATIONSHIP_FAILED");
+  await client.query("SAVEPOINT class_assignment_item_check");
+  let assignmentItemConstraintEnforced = false;
+  try {
+    await client.query(
+      `INSERT INTO "OrganizationClassAssignmentItem"
+         ("id", "assignmentId", "type", "lessonId", "missionId", "order")
+       VALUES ($1, $2, 'LESSON', $3, $4, 3)`,
+      [randomUUID(), organizationClassAssignmentId, lesson.rows[0].id, mission.rows[0].id],
+    );
+  } catch (error) {
+    if (error && typeof error === "object" && error.code === "23514") assignmentItemConstraintEnforced = true;
+    else throw error;
+  } finally {
+    await client.query("ROLLBACK TO SAVEPOINT class_assignment_item_check");
+    await client.query("RELEASE SAVEPOINT class_assignment_item_check");
+  }
+  if (!assignmentItemConstraintEnforced) throw new Error("ORGANIZATION_CLASS_ASSIGNMENT_ITEM_CONSTRAINT_NOT_ENFORCED");
   await client.query(
     `INSERT INTO "AccountMailJob" ("id", "tokenId", "kind", "encryptedToken", "updatedAt")
      VALUES ($1, $2, 'EMAIL_VERIFICATION', $3, CURRENT_TIMESTAMP)`,
@@ -370,7 +436,7 @@ try {
   process.stdout.write(`${JSON.stringify({
     ok: true,
     migration: REQUIRED_MIGRATION,
-    checks: ["sql-parameterization", "oauth-link", "mission-attempt", "mission-favorite", "reward-grant", "consultation-consent", "private-inquiry", "inquiry-notification-outbox", "user-notification", "inquiry-attachment", "editorial-content", "community-post", "community-report", "community-attachment", "notice-attachment", "attachment-single-parent", "teaching-material", "teaching-material-asset", "teaching-material-revision", "class-helper", "class-helper-assets", "class-helper-revision", "organization-class-invite-code", "organization-class-invite-single-open-code", "organization-class-progress-setting"],
+    checks: ["sql-parameterization", "oauth-link", "mission-attempt", "mission-favorite", "reward-grant", "consultation-consent", "private-inquiry", "inquiry-notification-outbox", "user-notification", "inquiry-attachment", "editorial-content", "community-post", "community-report", "community-attachment", "notice-attachment", "attachment-single-parent", "teaching-material", "teaching-material-asset", "teaching-material-revision", "class-helper", "class-helper-assets", "class-helper-revision", "organization-seat", "organization-class-invite-code", "organization-class-invite-single-open-code", "organization-class-progress-setting", "organization-class-assignment", "organization-class-assignment-item-constraint"],
     mutation: "rolled-back",
   })}\n`);
 } catch (error) {

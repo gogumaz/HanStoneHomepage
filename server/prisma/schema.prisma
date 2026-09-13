@@ -71,6 +71,17 @@ enum OrganizationClassStatus {
   ARCHIVED
 }
 
+enum ClassAssignmentStatus {
+  DRAFT
+  PUBLISHED
+  CANCELED
+}
+
+enum ClassAssignmentItemType {
+  LESSON
+  BADUK_MISSION
+}
+
 enum InvitationStatus {
   PENDING
   ACCEPTED
@@ -247,6 +258,10 @@ enum AccountMailStatus {
 
 enum UserNotificationKind {
   INQUIRY_ANSWERED
+  ASSIGNMENT_PUBLISHED
+  ASSIGNMENT_DUE_SOON
+  ASSIGNMENT_COMMENTED
+  ASSIGNMENT_CANCELED
 }
 
 enum InquiryAttachmentStatus {
@@ -351,68 +366,72 @@ enum ClassHelperAssetStatus {
 }
 
 model User {
-  id                            String                        @id @default(uuid()) @db.Uuid
-  email                         String?                       @unique
-  displayName                   String
-  passwordHash                  String?
-  emailVerifiedAt               DateTime?
-  status                        AccountStatus                 @default(ACTIVE)
-  ageBand                       AgeBand                       @default(ADULT)
-  minorAccountStatus            MinorAccountStatus            @default(NOT_APPLICABLE)
-  guardianConsentVerifiedAt     DateTime?
-  createdAt                     DateTime                      @default(now())
-  updatedAt                     DateTime                      @updatedAt
-  deletedAt                     DateTime?
-  roles                         UserRoleAssignment[]
-  oauthAccounts                 OAuthAccount[]
-  oauthLoginAttempts            OAuthLoginAttempt[]
-  sessions                      Session[]
-  accountTokens                 AccountToken[]
-  guardianInvitations           GuardianInvitation[]          @relation("InvitationStudent")
-  studentLinks                  GuardianLink[]                @relation("StudentGuardianLinks")
-  guardianLinks                 GuardianLink[]                @relation("GuardianStudentLinks")
-  studentConsents               GuardianConsent[]             @relation("StudentGuardianConsents")
-  guardianConsents              GuardianConsent[]             @relation("GuardianUserConsents")
-  subscriptions                 AccountSubscription[]
-  subscriptionOrders            SubscriptionOrder[]
-  storeOrders                   StoreOrder[]
-  storeCartItems                StoreCartItem[]
-  requestedRefunds              SubscriptionRefund[]          @relation("RefundRequester")
-  lessonProgress                LessonProgress[]
-  auditLogs                     AuditLog[]                    @relation("AuditActor")
-  createdMissions               BadukMission[]                @relation("MissionCreatedBy")
-  updatedMissions               BadukMission[]                @relation("MissionUpdatedBy")
-  publishedMissions             BadukMission[]                @relation("MissionPublishedBy")
-  missionAttempts               MissionAttempt[]
-  rewardGrants                  RewardGrant[]
-  missionFavorites              MissionFavorite[]
-  consultations                 Consultation[]
-  inquiries                     Inquiry[]                     @relation("InquiryRequester")
-  answeredInquiries             Inquiry[]                     @relation("InquiryAnswerer")
-  inquiryNotifications          InquiryNotificationJob[]      @relation("InquiryNotificationRecipient")
-  requestedInquiryNotifications InquiryNotificationJob[]      @relation("InquiryNotificationRequester")
-  notifications                 UserNotification[]
-  inquiryAttachments            InquiryAttachment[]
-  createdEditorialContents      EditorialContent[]            @relation("EditorialContentCreatedBy")
-  updatedEditorialContents      EditorialContent[]            @relation("EditorialContentUpdatedBy")
-  communityPosts                CommunityPost[]               @relation("CommunityPostAuthor")
-  reviewedCommunityPosts        CommunityPost[]               @relation("CommunityPostReviewer")
-  communityReports              CommunityPostReport[]         @relation("CommunityReportReporter")
-  resolvedCommunityReports      CommunityPostReport[]         @relation("CommunityReportResolver")
-  communityAttachments          CommunityAttachment[]
-  createdTeachingMaterials      TeachingMaterial[]            @relation("TeachingMaterialCreatedBy")
-  updatedTeachingMaterials      TeachingMaterial[]            @relation("TeachingMaterialUpdatedBy")
-  teachingMaterialAssets        TeachingMaterialAsset[]
-  teachingMaterialRevisions     TeachingMaterialRevision[]    @relation("TeachingMaterialRevisionChangedBy")
-  createdClassHelpers           ClassHelper[]                 @relation("ClassHelperCreatedBy")
-  updatedClassHelpers           ClassHelper[]                 @relation("ClassHelperUpdatedBy")
-  classHelperAssets             ClassHelperAsset[]
-  classHelperRevisions          ClassHelperRevision[]         @relation("ClassHelperRevisionChangedBy")
-  organizationMemberships       OrganizationMembership[]
-  organizationClassEnrollments  OrganizationClassEnrollment[]
-  createdOrganizationClassInviteCodes OrganizationClassInviteCode[] @relation("OrganizationClassInviteCodeCreator")
-  consumedOrganizationClassInviteCodes OrganizationClassInviteCode[] @relation("OrganizationClassInviteCodeConsumer")
-  updatedOrganizationClassProgressSettings OrganizationClassProgressSetting[] @relation("OrganizationClassProgressSettingUpdatedBy")
+  id                                          String                              @id @default(uuid()) @db.Uuid
+  email                                       String?                             @unique
+  displayName                                 String
+  passwordHash                                String?
+  emailVerifiedAt                             DateTime?
+  status                                      AccountStatus                       @default(ACTIVE)
+  ageBand                                     AgeBand                             @default(ADULT)
+  minorAccountStatus                          MinorAccountStatus                  @default(NOT_APPLICABLE)
+  guardianConsentVerifiedAt                   DateTime?
+  createdAt                                   DateTime                            @default(now())
+  updatedAt                                   DateTime                            @updatedAt
+  deletedAt                                   DateTime?
+  roles                                       UserRoleAssignment[]
+  oauthAccounts                               OAuthAccount[]
+  oauthLoginAttempts                          OAuthLoginAttempt[]
+  sessions                                    Session[]
+  accountTokens                               AccountToken[]
+  guardianInvitations                         GuardianInvitation[]                @relation("InvitationStudent")
+  studentLinks                                GuardianLink[]                      @relation("StudentGuardianLinks")
+  guardianLinks                               GuardianLink[]                      @relation("GuardianStudentLinks")
+  studentConsents                             GuardianConsent[]                   @relation("StudentGuardianConsents")
+  guardianConsents                            GuardianConsent[]                   @relation("GuardianUserConsents")
+  subscriptions                               AccountSubscription[]
+  subscriptionOrders                          SubscriptionOrder[]
+  storeOrders                                 StoreOrder[]
+  storeCartItems                              StoreCartItem[]
+  requestedRefunds                            SubscriptionRefund[]                @relation("RefundRequester")
+  lessonProgress                              LessonProgress[]
+  auditLogs                                   AuditLog[]                          @relation("AuditActor")
+  createdMissions                             BadukMission[]                      @relation("MissionCreatedBy")
+  updatedMissions                             BadukMission[]                      @relation("MissionUpdatedBy")
+  publishedMissions                           BadukMission[]                      @relation("MissionPublishedBy")
+  missionAttempts                             MissionAttempt[]
+  rewardGrants                                RewardGrant[]
+  missionFavorites                            MissionFavorite[]
+  consultations                               Consultation[]
+  inquiries                                   Inquiry[]                           @relation("InquiryRequester")
+  answeredInquiries                           Inquiry[]                           @relation("InquiryAnswerer")
+  inquiryNotifications                        InquiryNotificationJob[]            @relation("InquiryNotificationRecipient")
+  requestedInquiryNotifications               InquiryNotificationJob[]            @relation("InquiryNotificationRequester")
+  notifications                               UserNotification[]
+  inquiryAttachments                          InquiryAttachment[]
+  createdEditorialContents                    EditorialContent[]                  @relation("EditorialContentCreatedBy")
+  updatedEditorialContents                    EditorialContent[]                  @relation("EditorialContentUpdatedBy")
+  communityPosts                              CommunityPost[]                     @relation("CommunityPostAuthor")
+  reviewedCommunityPosts                      CommunityPost[]                     @relation("CommunityPostReviewer")
+  communityReports                            CommunityPostReport[]               @relation("CommunityReportReporter")
+  resolvedCommunityReports                    CommunityPostReport[]               @relation("CommunityReportResolver")
+  communityAttachments                        CommunityAttachment[]
+  createdTeachingMaterials                    TeachingMaterial[]                  @relation("TeachingMaterialCreatedBy")
+  updatedTeachingMaterials                    TeachingMaterial[]                  @relation("TeachingMaterialUpdatedBy")
+  teachingMaterialAssets                      TeachingMaterialAsset[]
+  teachingMaterialRevisions                   TeachingMaterialRevision[]          @relation("TeachingMaterialRevisionChangedBy")
+  createdClassHelpers                         ClassHelper[]                       @relation("ClassHelperCreatedBy")
+  updatedClassHelpers                         ClassHelper[]                       @relation("ClassHelperUpdatedBy")
+  classHelperAssets                           ClassHelperAsset[]
+  classHelperRevisions                        ClassHelperRevision[]               @relation("ClassHelperRevisionChangedBy")
+  organizationMemberships                     OrganizationMembership[]
+  organizationClassEnrollments                OrganizationClassEnrollment[]
+  organizationSeats                           OrganizationSeat[]
+  createdOrganizationClassInviteCodes         OrganizationClassInviteCode[]       @relation("OrganizationClassInviteCodeCreator")
+  consumedOrganizationClassInviteCodes        OrganizationClassInviteCode[]       @relation("OrganizationClassInviteCodeConsumer")
+  updatedOrganizationClassProgressSettings    OrganizationClassProgressSetting[]  @relation("OrganizationClassProgressSettingUpdatedBy")
+  createdOrganizationClassAssignments         OrganizationClassAssignment[]       @relation("OrganizationClassAssignmentCreatedBy")
+  organizationClassAssignmentTargets          OrganizationClassAssignmentTarget[] @relation("OrganizationClassAssignmentStudent")
+  commentedOrganizationClassAssignmentTargets OrganizationClassAssignmentTarget[] @relation("OrganizationClassAssignmentCommentedBy")
 
   @@index([status])
   @@index([minorAccountStatus])
@@ -471,10 +490,24 @@ model Organization {
   id          String                   @id @default(uuid()) @db.Uuid
   name        String                   @db.VarChar(120)
   slug        String                   @unique @db.VarChar(80)
+  seatLimit   Int?
   createdAt   DateTime                 @default(now())
   updatedAt   DateTime                 @updatedAt
   memberships OrganizationMembership[]
   classes     OrganizationClass[]
+  seats       OrganizationSeat[]
+}
+
+model OrganizationSeat {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  studentId      String       @db.Uuid
+  assignedAt     DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  student        User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, studentId])
+  @@index([studentId])
 }
 
 model OrganizationMembership {
@@ -509,6 +542,7 @@ model OrganizationClass {
   enrollments        OrganizationClassEnrollment[]
   inviteCodes        OrganizationClassInviteCode[]
   progressSetting    OrganizationClassProgressSetting?
+  assignments        OrganizationClassAssignment[]
 
   @@unique([organizationId, academicYear, name])
   @@index([organizationId, status])
@@ -573,6 +607,67 @@ model OrganizationClassProgressSetting {
 
   @@index([currentLessonId])
   @@index([updatedByUserId])
+}
+
+model OrganizationClassAssignment {
+  id                    String                              @id @default(uuid()) @db.Uuid
+  organizationClassId   String                              @db.Uuid
+  createdByUserId       String?                             @db.Uuid
+  reassignedFromId      String?                             @db.Uuid
+  title                 String                              @db.VarChar(120)
+  description           String?                             @db.VarChar(1000)
+  dueAt                 DateTime
+  status                ClassAssignmentStatus               @default(DRAFT)
+  revision              Int                                 @default(1)
+  publishedAt           DateTime?
+  canceledAt            DateTime?
+  createdAt             DateTime                            @default(now())
+  updatedAt             DateTime                            @updatedAt
+  organizationClass     OrganizationClass                   @relation(fields: [organizationClassId], references: [id], onDelete: Cascade)
+  createdBy             User?                               @relation("OrganizationClassAssignmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  reassignedFrom        OrganizationClassAssignment?        @relation("OrganizationClassAssignmentReassignment", fields: [reassignedFromId], references: [id], onDelete: SetNull)
+  reassignedAssignments OrganizationClassAssignment[]       @relation("OrganizationClassAssignmentReassignment")
+  items                 OrganizationClassAssignmentItem[]
+  targets               OrganizationClassAssignmentTarget[]
+
+  @@index([organizationClassId, status, dueAt])
+  @@index([createdByUserId, createdAt])
+  @@index([reassignedFromId])
+}
+
+model OrganizationClassAssignmentItem {
+  id           String                      @id @default(uuid()) @db.Uuid
+  assignmentId String                      @db.Uuid
+  type         ClassAssignmentItemType
+  lessonId     String?                     @db.VarChar(40)
+  missionId    String?                     @db.VarChar(60)
+  order        Int
+  createdAt    DateTime                    @default(now())
+  assignment   OrganizationClassAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  lesson       Lesson?                     @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+  mission      BadukMission?               @relation(fields: [missionId], references: [id], onDelete: Restrict)
+
+  @@unique([assignmentId, order])
+  @@index([lessonId])
+  @@index([missionId])
+}
+
+model OrganizationClassAssignmentTarget {
+  id                String                      @id @default(uuid()) @db.Uuid
+  assignmentId      String                      @db.Uuid
+  studentId         String                      @db.Uuid
+  teacherComment    String?                     @db.VarChar(1000)
+  commentVersion    Int                         @default(0)
+  commentedByUserId String?                     @db.Uuid
+  commentedAt       DateTime?
+  assignedAt        DateTime                    @default(now())
+  assignment        OrganizationClassAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student           User                        @relation("OrganizationClassAssignmentStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  commentedBy       User?                       @relation("OrganizationClassAssignmentCommentedBy", fields: [commentedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([assignmentId, studentId])
+  @@index([studentId, assignedAt])
+  @@index([commentedByUserId])
 }
 
 model OAuthAccount {
@@ -692,34 +787,35 @@ model Era {
 }
 
 model Lesson {
-  id                String             @id @db.VarChar(40)
-  eraId             String             @db.VarChar(40)
-  order             Int
-  level             String
-  course            String
-  title             String
-  summary           String
-  instructor        String
-  difficulty        String
-  durationMinutes   Int
-  status            LessonStatus       @default(DRAFT)
-  isFreeSample      Boolean            @default(false)
-  videoAssetKey     String?
-  thumbnailKey      String?
-  publishedAt       DateTime?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  era               Era                @relation(fields: [eraId], references: [id], onDelete: Restrict)
-  steps             LessonStep[]
-  progress          LessonProgress[]
-  assets            LessonAsset[]
-  videoAssets       LessonVideoAsset[]
-  hlsTranscodeJobs  HlsTranscodeJob[]
-  missions          BadukMission[]
-  teachingMaterials TeachingMaterial[]
-  classHelpers      ClassHelper[]
-  qrCodes           LessonQrCode[]
+  id                    String                             @id @db.VarChar(40)
+  eraId                 String                             @db.VarChar(40)
+  order                 Int
+  level                 String
+  course                String
+  title                 String
+  summary               String
+  instructor            String
+  difficulty            String
+  durationMinutes       Int
+  status                LessonStatus                       @default(DRAFT)
+  isFreeSample          Boolean                            @default(false)
+  videoAssetKey         String?
+  thumbnailKey          String?
+  publishedAt           DateTime?
+  createdAt             DateTime                           @default(now())
+  updatedAt             DateTime                           @updatedAt
+  era                   Era                                @relation(fields: [eraId], references: [id], onDelete: Restrict)
+  steps                 LessonStep[]
+  progress              LessonProgress[]
+  assets                LessonAsset[]
+  videoAssets           LessonVideoAsset[]
+  hlsTranscodeJobs      HlsTranscodeJob[]
+  missions              BadukMission[]
+  teachingMaterials     TeachingMaterial[]
+  classHelpers          ClassHelper[]
+  qrCodes               LessonQrCode[]
   classProgressSettings OrganizationClassProgressSetting[]
+  classAssignmentItems  OrganizationClassAssignmentItem[]
 
   @@unique([eraId, order])
   @@index([status, eraId, order])
@@ -1283,55 +1379,56 @@ model CommunityPostReport {
 }
 
 model BadukMission {
-  id                 String             @id @db.VarChar(60)
-  version            Int                @default(1)
-  title              String             @db.VarChar(120)
-  instruction        String             @db.VarChar(500)
-  status             BadukMissionStatus @default(DRAFT)
-  level              String             @db.VarChar(20)
-  volume             Int
-  lessonNumber       Int
-  problemGroup       String             @db.VarChar(30)
-  category           String             @db.VarChar(40)
-  difficulty         Int
-  displayOrder       Int                @default(0)
-  eraId              String?            @db.VarChar(40)
-  lessonId           String?            @db.VarChar(40)
-  textbookPage       String?            @db.VarChar(40)
-  boardSize          Int
-  ruleset            String             @default("japanese_simple_ko") @db.VarChar(40)
-  playerColor        String             @db.VarChar(10)
-  initialBlackStones Json
-  initialWhiteStones Json
-  missionType        String             @db.VarChar(40)
-  successCondition   Json?
-  solutionTree       Json
-  hints              Json
-  correctExplanation String             @db.Text
-  feedbacks          Json
-  baseScore          Int                @default(100)
-  timeLimitSeconds   Int?
-  retryLimit         Int?
-  isFreeSample       Boolean            @default(false)
-  rewardId           String             @default("mission-star") @db.VarChar(40)
-  rewardQuantity     Int                @default(1)
-  scheduledAt        DateTime?
-  publishedAt        DateTime?
-  createdById        String?            @db.Uuid
-  updatedById        String?            @db.Uuid
-  publishedById      String?            @db.Uuid
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  era                Era?               @relation(fields: [eraId], references: [id], onDelete: SetNull)
-  lesson             Lesson?            @relation(fields: [lessonId], references: [id], onDelete: SetNull)
-  createdBy          User?              @relation("MissionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedBy          User?              @relation("MissionUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  publishedBy        User?              @relation("MissionPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
-  attempts           MissionAttempt[]
-  reward             Reward             @relation("MissionRewardDefinition", fields: [rewardId], references: [id], onDelete: Restrict)
-  rewardGrants       RewardGrant[]
-  favorites          MissionFavorite[]
-  classHelpers       ClassHelper[]
+  id                   String                            @id @db.VarChar(60)
+  version              Int                               @default(1)
+  title                String                            @db.VarChar(120)
+  instruction          String                            @db.VarChar(500)
+  status               BadukMissionStatus                @default(DRAFT)
+  level                String                            @db.VarChar(20)
+  volume               Int
+  lessonNumber         Int
+  problemGroup         String                            @db.VarChar(30)
+  category             String                            @db.VarChar(40)
+  difficulty           Int
+  displayOrder         Int                               @default(0)
+  eraId                String?                           @db.VarChar(40)
+  lessonId             String?                           @db.VarChar(40)
+  textbookPage         String?                           @db.VarChar(40)
+  boardSize            Int
+  ruleset              String                            @default("japanese_simple_ko") @db.VarChar(40)
+  playerColor          String                            @db.VarChar(10)
+  initialBlackStones   Json
+  initialWhiteStones   Json
+  missionType          String                            @db.VarChar(40)
+  successCondition     Json?
+  solutionTree         Json
+  hints                Json
+  correctExplanation   String                            @db.Text
+  feedbacks            Json
+  baseScore            Int                               @default(100)
+  timeLimitSeconds     Int?
+  retryLimit           Int?
+  isFreeSample         Boolean                           @default(false)
+  rewardId             String                            @default("mission-star") @db.VarChar(40)
+  rewardQuantity       Int                               @default(1)
+  scheduledAt          DateTime?
+  publishedAt          DateTime?
+  createdById          String?                           @db.Uuid
+  updatedById          String?                           @db.Uuid
+  publishedById        String?                           @db.Uuid
+  createdAt            DateTime                          @default(now())
+  updatedAt            DateTime                          @updatedAt
+  era                  Era?                              @relation(fields: [eraId], references: [id], onDelete: SetNull)
+  lesson               Lesson?                           @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+  createdBy            User?                             @relation("MissionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy            User?                             @relation("MissionUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  publishedBy          User?                             @relation("MissionPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+  attempts             MissionAttempt[]
+  reward               Reward                            @relation("MissionRewardDefinition", fields: [rewardId], references: [id], onDelete: Restrict)
+  rewardGrants         RewardGrant[]
+  favorites            MissionFavorite[]
+  classHelpers         ClassHelper[]
+  classAssignmentItems OrganizationClassAssignmentItem[]
 
   @@index([status, displayOrder])
   @@index([eraId, status, displayOrder])

@@ -3814,3 +3814,125 @@ select {
   .inquiry-notification-jobs li { grid-template-columns: 1fr; }
   .inquiry-notification-jobs li button { grid-column: 1; grid-row: auto; justify-self: start; }
 }
+
+.teacher-assignment-panel,
+.organization-create-class,
+.organization-class-management,
+.dashboard-assignments,
+.guardian-assignment-report {
+  border: 1px solid #e6dcc9;
+  border-radius: 24px;
+  background: #fffdf8;
+  padding: 24px;
+}
+
+.teacher-assignment-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .55fr); gap: 16px; margin-top: 18px; }
+.teacher-assignment-form label,
+.teacher-assignment-form fieldset { display: grid; gap: 7px; min-width: 0; }
+.teacher-assignment-form .wide { grid-column: 1 / -1; }
+.teacher-assignment-form input,
+.teacher-assignment-form textarea,
+.teacher-assignment-form select,
+.organization-admin-page input,
+.organization-admin-page select,
+.teacher-assignment-students input { width: 100%; border: 1px solid #d9ccb7; border-radius: 12px; background: #fff; padding: 11px 13px; color: #302a22; }
+.teacher-assignment-form textarea { min-height: 90px; resize: vertical; }
+.teacher-assignment-form fieldset { border: 1px solid #e6dcc9; border-radius: 14px; padding: 14px; }
+.teacher-assignment-form fieldset p { margin: 0 0 8px; color: #756957; font-size: .9rem; }
+.teacher-assignment-checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px; max-height: 220px; overflow: auto; }
+.teacher-assignment-checks label { display: flex; align-items: flex-start; gap: 8px; padding: 8px; border-radius: 9px; background: #f7f1e7; }
+.teacher-assignment-checks input { width: auto; margin-top: 3px; }
+.teacher-assignment-form > button,
+.teacher-assignment-form-actions button,
+.teacher-assignment-actions button,
+.teacher-assignment-results button,
+.organization-admin-page button { border: 0; border-radius: 999px; background: #a83b2d; color: #fff; padding: 10px 16px; font-weight: 800; cursor: pointer; }
+.teacher-assignment-form > button { justify-self: start; }
+.teacher-assignment-form-actions { display: flex; gap: 10px; align-items: center; }
+.teacher-assignment-panel button.secondary,
+.organization-admin-page button.secondary { background: #eee5d8; color: #51483d; }
+.teacher-assignment-panel button:disabled,
+.organization-admin-page button:disabled { opacity: .55; cursor: wait; }
+.teacher-assignment-list { display: grid; gap: 10px; margin-top: 20px; }
+.teacher-assignment-list > article { display: flex; justify-content: space-between; gap: 14px; align-items: center; border-top: 1px solid #ece3d6; padding-top: 14px; }
+.teacher-assignment-list h4,
+.teacher-assignment-list p { margin: 3px 0; }
+.teacher-assignment-list [data-status="published"] > div:first-child > span { color: #157347; }
+.teacher-assignment-list [data-status="canceled"] { opacity: .65; }
+.teacher-assignment-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.teacher-assignment-results { border-top: 2px solid #d7c3a4; margin-top: 24px; padding-top: 22px; }
+.teacher-assignment-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap: 9px; margin: 16px 0; }
+.teacher-assignment-summary span { display: grid; gap: 4px; background: #f3eadc; border-radius: 12px; padding: 12px; }
+.teacher-assignment-summary strong { font-size: 1.25rem; }
+.teacher-assignment-item-stats,
+.teacher-assignment-students,
+.dashboard-assignments > ul,
+.guardian-assignment-report ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.teacher-assignment-item-stats li { display: flex; justify-content: space-between; background: #f7f3eb; padding: 11px 13px; border-radius: 10px; }
+.teacher-assignment-students { margin-top: 16px; }
+.teacher-assignment-students article { display: grid; grid-template-columns: minmax(140px, .55fr) minmax(240px, 1fr) auto; align-items: end; gap: 12px; padding: 14px; border: 1px solid #e4d8c5; border-radius: 14px; background: #fff; }
+.teacher-assignment-students article > div { display: grid; gap: 4px; }
+.teacher-assignment-students article > div:last-child { display: flex; gap: 6px; }
+.dashboard-assignments { margin: 22px 0; }
+.dashboard-assignments > ul > li { border: 1px solid #e4d8c6; border-radius: 16px; padding: 17px; background: #fff; }
+.dashboard-assignments li[data-status="completed"] { border-left: 5px solid #28845c; }
+.dashboard-assignments li[data-status="in_progress"] { border-left: 5px solid #d19532; }
+.dashboard-assignments header { display: flex; justify-content: space-between; gap: 16px; }
+.dashboard-assignments h3,
+.dashboard-assignments p { margin: 4px 0; }
+.dashboard-assignment-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin-top: 13px; }
+.dashboard-assignment-items a { display: grid; gap: 5px; padding: 11px; border-radius: 11px; background: #f5eee3; color: inherit; text-decoration: none; }
+.dashboard-assignment-items a:hover { background: #eee0ca; }
+.dashboard-assignments blockquote { margin: 13px 0 0; padding: 11px 14px; border-left: 4px solid #a83b2d; background: #fff8ed; }
+.organization-admin-page { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 42px 0 80px; }
+.organization-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+.organization-tabs button[aria-pressed="true"] { background: #573f2b; }
+.organization-create-class { margin: 18px 0; }
+.organization-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 18px 0; }
+.organization-settings-grid > article,
+.organization-member-management { border: 1px solid #e6dcc9; border-radius: 24px; background: #fffdf8; padding: 24px; }
+.organization-settings-grid form { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+.organization-settings-grid label { display: grid; gap: 6px; flex: 1 1 150px; }
+.organization-member-management { margin: 18px 0; }
+.organization-member-management ul { display: grid; gap: 10px; padding: 0; list-style: none; }
+.organization-member-management li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px solid #eee4d6; }
+.organization-member-management li div { display: grid; gap: 3px; }
+.organization-create-class form { display: grid; grid-template-columns: 1fr 180px auto; gap: 12px; align-items: end; }
+.organization-create-class label { display: grid; gap: 6px; }
+.organization-class-management { display: grid; gap: 16px; }
+.organization-class-management > article { border: 1px solid #e3d6c2; border-radius: 17px; background: #fff; padding: 18px; }
+.organization-class-management > article[data-status="archived"] { opacity: .68; }
+.organization-class-management article > header { display: flex; justify-content: space-between; gap: 15px; align-items: start; }
+.organization-class-management h3,
+.organization-class-management p { margin: 4px 0; }
+.organization-class-management article > section { margin-top: 16px; padding-top: 14px; border-top: 1px solid #eee4d6; }
+.organization-class-management ul { list-style: none; padding: 0; display: grid; gap: 7px; }
+.organization-class-management li,
+.organization-class-management form { display: flex; align-items: center; gap: 8px; }
+.organization-class-management li span { flex: 1; }
+.organization-class-management select,
+.organization-class-management input { max-width: 340px; }
+.guardian-assignment-report { margin: 18px 0; padding: 18px; }
+.guardian-assignment-report > div { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.guardian-assignment-report li { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 12px 0; border-top: 1px solid #e8dece; }
+.guardian-assignment-report li > div { display: grid; gap: 3px; }
+.guardian-assignment-report li > div:last-of-type { text-align: right; }
+.guardian-assignment-report li > p { grid-column: 1 / -1; margin: 0; color: #6f4b37; }
+
+@media (max-width: 760px) {
+  .teacher-assignment-form,
+  .teacher-assignment-students article,
+  .organization-settings-grid,
+  .organization-create-class form { grid-template-columns: 1fr; }
+  .teacher-assignment-list > article,
+  .dashboard-assignments header,
+  .organization-class-management article > header,
+  .guardian-assignment-report > div { align-items: stretch; flex-direction: column; }
+  .organization-class-management li,
+  .organization-class-management form { align-items: stretch; flex-direction: column; }
+  .organization-member-management li { align-items: stretch; flex-direction: column; }
+  .organization-class-management select,
+  .organization-class-management input { max-width: none; }
+  .guardian-assignment-report li { grid-template-columns: 1fr; }
+  .guardian-assignment-report li > div:last-of-type { text-align: left; }
+}

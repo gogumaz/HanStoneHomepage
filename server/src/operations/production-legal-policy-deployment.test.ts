@@ -10,6 +10,7 @@ const serviceNames = [
   "video-scan-worker",
   "inquiry-notification-worker",
   "account-mail-worker",
+  "assignment-reminder-worker",
   "video-cleanup-worker",
   "hls-transcode-worker",
 ] as const;

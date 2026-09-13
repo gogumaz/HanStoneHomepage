@@ -35,6 +35,7 @@ export function DashboardPage() {
   const error = errors.find((item): item is ApiClientError => item instanceof ApiClientError);
   const dashboard = dashboardQuery.data;
   const classGoals = dashboard?.classGoals ?? [];
+  const assignments = dashboard?.assignments?.items ?? [];
   const weekly = dashboard?.summary.weekly ?? {
     studyDays: 0,
     firstAttemptMissions: 0,
@@ -124,6 +125,20 @@ export function DashboardPage() {
               </li>
             ))}
           </ul>
+        </section>
+      ) : null}
+
+      {assignments.length > 0 ? (
+        <section className="dashboard-assignments" aria-labelledby="dashboard-assignments-title">
+          <div className="teacher-section-heading"><div><p className="react-stack-eyebrow">MY ASSIGNMENTS</p><h2 id="dashboard-assignments-title">우리 반 과제</h2></div><strong>{dashboard?.assignments.completed ?? 0}/{dashboard?.assignments.total ?? 0} 완료</strong></div>
+          <ul>{assignments.map((assignment) => <li key={assignment.id} data-status={assignment.progress.status}>
+            <header><div><span>{assignment.class.organization.name} · {assignment.class.name}</span><h3>{assignment.title}</h3><p>{new Date(assignment.dueAt).toLocaleString('ko-KR')} 마감{assignment.progress.isLate ? ' · 마감 초과' : ''}</p></div><strong>{assignment.progress.completedItems}/{assignment.progress.totalItems}</strong></header>
+            {assignment.description ? <p>{assignment.description}</p> : null}
+            <div className="dashboard-assignment-items">{assignment.items.map((item) => <Link key={item.id} to={item.type === 'lesson' ? `/lessons/${encodeURIComponent(item.resource.id)}` : `/missions?missionId=${encodeURIComponent(item.resource.id)}`}>
+              <span>{item.type === 'lesson' ? '강의' : '바둑미션'} · {item.progress.status === 'completed' ? '완료' : item.progress.status === 'in_progress' ? '진행 중' : '미시작'}</span><strong>{item.resource.title}</strong>
+            </Link>)}</div>
+            {assignment.teacherComment ? <blockquote><strong>지도자 코멘트</strong><p>{assignment.teacherComment}</p></blockquote> : null}
+          </li>)}</ul>
         </section>
       ) : null}
 

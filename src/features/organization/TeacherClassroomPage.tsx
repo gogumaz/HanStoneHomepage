@@ -10,6 +10,7 @@ import {
   listTeacherClassStudents,
   updateTeacherClassProgressSetting,
 } from './api';
+import { TeacherAssignmentsPanel } from './TeacherAssignmentsPanel';
 
 function formatDate(value: string | null): string {
   if (!value) return '종료일 없음';
@@ -232,6 +233,7 @@ export function TeacherClassroomPage() {
                 </p>
               ) : null}
             </section>
+            {selectedClassId ? <TeacherAssignmentsPanel classId={selectedClassId} /> : null}
             {studentsQuery.isLoading ? <p role="status">학생 명단을 불러오고 있습니다…</p> : null}
             {studentsQuery.isError ? (
               <p className="auth-error" role="alert">

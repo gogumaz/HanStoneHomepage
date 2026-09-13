@@ -85,6 +85,7 @@ export function GuardianPage() {
     firstAttemptMissions: 0,
     firstAttemptAccuracy: 0,
   };
+  const reportAssignments = reportQuery.data?.assignments ?? { total: 0, completed: 0, overdue: 0, items: [] };
 
   return (
     <main className="auth-page guardian-page">
@@ -196,6 +197,14 @@ export function GuardianPage() {
                   <span><strong>전체 단계 진행률</strong><b>{reportQuery.data.summary.stepCompletionRate}%</b></span>
                   <progress max="100" value={reportQuery.data.summary.stepCompletionRate}>{reportQuery.data.summary.stepCompletionRate}%</progress>
                 </div>
+                <section className="guardian-assignment-report" aria-labelledby="guardian-assignment-report-title">
+                  <div><h3 id="guardian-assignment-report-title">학급 과제 수행 현황</h3><span>완료 {reportAssignments.completed}/{reportAssignments.total} · 미완료 마감 초과 {reportAssignments.overdue}</span></div>
+                  {reportAssignments.items.length ? <ul>{reportAssignments.items.map((assignment) => <li key={assignment.id} data-status={assignment.progress.status}>
+                    <div><strong>{assignment.title}</strong><span>{assignment.class.organization.name} · {assignment.class.name}</span></div>
+                    <div><b>{assignment.progress.status === 'completed' ? '완료' : assignment.progress.status === 'in_progress' ? '진행 중' : '미시작'}</b><span>{assignment.progress.completedItems}/{assignment.progress.totalItems} · {new Date(assignment.dueAt).toLocaleDateString('ko-KR')} 마감{assignment.progress.isLate ? ' · 초과' : ''}</span></div>
+                    {assignment.teacherComment ? <p>지도자 코멘트: {assignment.teacherComment}</p> : null}
+                  </li>)}</ul> : <p>현재 배포된 과제가 없습니다.</p>}
+                </section>
                 {reportQuery.data.items.length ? (
                   <ul className="guardian-lesson-progress">
                     {reportQuery.data.items.map((item) => (

@@ -8,6 +8,7 @@ const script = resolve(process.cwd(), "scripts/verify-release-artifacts.mjs");
 const requiredApiFiles = [
   "main.js",
   "account-mail-worker.js",
+  "assignment-reminder-worker.js",
   "inquiry-notification-worker.js",
   "video-scan-worker.js",
   "video-cleanup-worker.js",
@@ -81,7 +82,7 @@ describe("release artifact verifier CLI", () => {
     const result = verify(project);
 
     expect(result.status).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, profile: "api", fileCount: 6 });
+    expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, profile: "api", fileCount: 7 });
   });
 
   it("rejects source maps and their compiled references", async () => {

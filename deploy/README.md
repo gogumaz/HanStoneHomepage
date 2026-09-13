@@ -111,7 +111,7 @@ npm --prefix server run dev
 3. 같은 이미지를 사용해 `npm run db:deploy`를 한 번 실행합니다.
 4. 같은 이미지와 운영 환경변수로 `node dist/production-preflight.js`를 실행하고 모든 점검이 `pass`인지 확인합니다.
 5. 프리플라이트·복구훈련·읽기 전용 부하·워커 soak·공급망 SBOM 매니페스트 JSON을 `npm --prefix server run accept:release`로 검증하고 인수 결과의 `ok`가 `true`인지 확인합니다.
-6. `deploy/compose.production.yaml` 또는 선택한 플랫폼에서 API와 같은 이미지의 `account-mail-worker`, `inquiry-notification-worker`, `video-scan-worker`, `hls-transcode-worker`, `video-cleanup-worker`를 함께 교체합니다. 이미지에는 FFmpeg·FFprobe가 포함되어야 합니다.
+6. `deploy/compose.production.yaml` 또는 선택한 플랫폼에서 API와 같은 이미지의 `account-mail-worker`, `inquiry-notification-worker`, `assignment-reminder-worker`, `video-scan-worker`, `hls-transcode-worker`, `video-cleanup-worker`를 함께 교체합니다. 이미지에는 FFmpeg·FFprobe가 포함되어야 합니다.
 7. 인수 결과의 커밋 SHA와 이미지 digest로 `npm --prefix server run verify:deployment`를 실행해 실제 API의 배포 식별값, liveness, readiness를 반복 확인합니다.
 8. 핵심 사용자 경로를 확인하고 운영자 인증으로 `/api/v1/admin/operations/worker-health`를 조회해 모든 큐가 `healthy`인지 확인합니다.
 9. 인수 매니페스트와 배포 검증 JSON을 `npm --prefix server run close:release`로 결합하고 최종 종료 결과의 `ok`가 `true`인지 확인합니다.
@@ -132,7 +132,7 @@ docker compose --env-file deploy/production.env -f deploy/compose.production.yam
 ### 분기별 PostgreSQL 복구훈련
 
 1. 운영 백업 또는 PITR 시점을 운영과 네트워크·계정이 분리된 스테이징 PostgreSQL로 복원합니다. 호스트명이나 DB 이름에는 `recovery`, `restore`, `staging`, `drill`, `test`, `sandbox` 중 하나가 포함되어야 합니다.
-2. 복원 DB 전용 읽기 권한 계정을 만들고 아래 명령을 실행합니다. 검사는 `BEGIN TRANSACTION READ ONLY` 안에서 최신 마이그레이션, 12개 핵심 테이블, 계정 메일·구독·바둑미션·문의 알림 관계 무결성을 확인합니다.
+2. 복원 DB 전용 읽기 권한 계정을 만들고 아래 명령을 실행합니다. 검사는 `BEGIN TRANSACTION READ ONLY` 안에서 최신 마이그레이션, 필수 핵심 테이블, 계정 메일·구독·바둑미션·기관 좌석·반별 과제·문의 알림 관계 무결성을 확인합니다.
 3. 종료 코드가 0이고 JSON의 `ok`, `rpoMet`, `rtoMet`가 모두 `true`인지 확인합니다. JSON에는 접속 문자열, Secret, 업무 데이터 건수가 포함되지 않으므로 내부 변경관리 시스템에 증빙으로 보관합니다.
 4. 성공한 증빙의 `completedAt`만 `RECOVERY_DRILL_LAST_COMPLETED_AT`에 등록합니다. 실패 결과나 수동 추정 시각으로 갱신하지 않습니다.
 
