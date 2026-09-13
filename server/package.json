@@ -54,10 +54,10 @@
     "db:studio": "node scripts/require-database-url.mjs && prisma studio"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1116.0",
+    "@aws-sdk/client-s3": "^3.1129.0",
     "@aws-sdk/cloudfront-signer": "^3.1125.0",
-    "@aws-sdk/s3-presigned-post": "^3.1116.0",
-    "@aws-sdk/s3-request-presigner": "^3.1116.0",
+    "@aws-sdk/s3-presigned-post": "^3.1129.0",
+    "@aws-sdk/s3-request-presigner": "^3.1129.0",
     "@nestjs/common": "^12.0.1",
     "@nestjs/core": "^12.0.1",
     "@nestjs/platform-express": "^12.0.1",
@@ -66,7 +66,7 @@
     "dotenv": "^17.2.3",
     "helmet": "^8.1.0",
     "jose": "^6.2.12",
-    "nodemailer": "^10.0.2",
+    "nodemailer": "^10.0.3",
     "pg": "^8.16.3",
     "prisma": "^7.10.0",
     "redis": "^5.12.1",
