@@ -37,7 +37,11 @@ describe("LocalVideoService", () => {
     await expect(local.verifyRoot()).resolves.toBeUndefined();
     await expect(local.hasVideo("LESSON-01")).resolves.toBe(true);
     const video = await local.openVideo("LESSON-01");
-    expect(video).toMatchObject({ fileName: "LESSON-01.mp4", size: 11 });
+    expect(video).toMatchObject({
+      fileName: "LESSON-01.mp4",
+      path: join(root, "LESSON-01.mp4"),
+      size: 11,
+    });
     video.stream.destroy();
   });
 

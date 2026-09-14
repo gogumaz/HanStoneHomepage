@@ -141,9 +141,20 @@ export class LocalVideoService {
     if (!SAFE_LESSON_ID.test(lessonId)) {
       throw new ApiError("INVALID_LESSON_ID", "강의 ID 형식을 확인해 주세요.", HttpStatus.BAD_REQUEST);
     }
-    const fileName = `${lessonId}.mp4`;
-    const path = resolve(this.root, fileName);
     try {
+      // Never construct a filesystem path from request data. Select an exact,
+      // regular entry from the configured directory and use its filesystem-provided
+      // name for all subsequent path operations.
+      const requestedFileName = `${lessonId}.mp4`;
+      const entries = await readdir(this.root, { withFileTypes: true });
+      const entry = entries.find((candidate) => (
+        candidate.name === requestedFileName
+        && candidate.isFile()
+        && !candidate.isSymbolicLink()
+      ));
+      if (!entry) return null;
+
+      const path = resolve(this.root, entry.name);
       const metadata = await lstat(path);
       if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size <= 0) return null;
       if (metadata.size > this.maxBytes) {
@@ -153,7 +164,7 @@ export class LocalVideoService {
           HttpStatus.PAYLOAD_TOO_LARGE,
         );
       }
-      return { fileName, path, size: metadata.size };
+      return { fileName: entry.name, path, size: metadata.size };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
