@@ -1,6 +1,7 @@
 export const REQUIRED_RELEASE_WORKFLOWS = [
   "CI",
   "CodeQL security analysis",
+  "Publish managed ClamAV image",
   "Release readiness audit",
   "Staging read-only load test",
   "Staging worker queue soak",

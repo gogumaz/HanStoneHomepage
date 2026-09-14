@@ -53,6 +53,33 @@ describe("repository security automation", () => {
     expect(workflow).toContain('grep -Eq "^MaxScanSize 2200M$" /etc/clamav/clamd.conf');
   });
 
+  it("publishes an attested immutable ClamAV image for anonymous production pulls", () => {
+    const workflow = readRepositoryText(
+      resolve(process.cwd(), "../.github/workflows/publish-clamav-image.yml"),
+    );
+
+    expect(workflow).toContain("name: Publish managed ClamAV image");
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(workflow).toContain('test "$PUBLISH_CONFIRMATION" = "PUBLISH_CLAMAV_IMAGE"');
+    expect(workflow).toContain("contents: read");
+    expect(workflow).toContain("packages: write");
+    expect(workflow).toContain("attestations: write");
+    expect(workflow).toContain("id-token: write");
+    expect(workflow).toContain("environment: production");
+    expect(workflow).toContain("if: github.ref == 'refs/heads/main'");
+    expect(workflow).toContain("ghcr.io/gogumaz/hanstone-clamav");
+    expect(workflow).toContain("platforms: linux/amd64");
+    expect(workflow).toContain("push: true");
+    expect(workflow).toContain("provenance: mode=max");
+    expect(workflow).toContain("sbom: true");
+    expect(workflow).toContain("subject-digest: ${{ steps.push.outputs.digest }}");
+    expect(workflow).toContain("-f visibility=public");
+    expect(workflow).toContain('docker pull "$CLAMAV_IMAGE_REPOSITORY@$IMAGE_DIGEST"');
+    expect(workflow).toContain("immutableReference");
+    expect(workflow).toContain("retention-days: 90");
+    expect(workflow).not.toMatch(/uses: [^\n]+@(v|main|master)(?:\d|\b)/u);
+  });
+
   it("keeps CI, package engines, and the production image on Node.js 26", () => {
     const workflowPaths = [
       ".github/workflows/ci.yml",

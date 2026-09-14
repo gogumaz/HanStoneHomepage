@@ -449,7 +449,7 @@ npm --prefix server run coordinate:rollback-rehearsal -- --apply --confirm AUTHO
 
 소형 학습자료는 운영 API가, MP4 영상은 독립 `video-scan-worker`가 `MALWARE_SCANNER_HOST`의 ClamAV `clamd`에 TCP `INSTREAM`으로 격리 파일을 전송합니다. 운영 Compose의 기본값은 내부 서비스 이름 `clamav`이며 3310 포트를 호스트에 게시하지 않습니다. 이 포트는 인증·암호화를 제공하지 않으므로 공개 인터넷에 노출하지 않고 API·워커와 같은 사설망에서만 허용합니다. 공식 ClamAV 컨테이너는 서명 데이터 볼륨을 영속화하고 최소 3GB, 기본 4GB의 메모리를 배정합니다.
 
-운영에서는 `deploy/clamav/Dockerfile`을 전용 레지스트리에 빌드·게시하고 레지스트리가 반환한 불변 digest를 `CLAMAV_IMAGE=repository@sha256:<64자리>`로 등록합니다. 태그만 넣지 않습니다. API와 영상 검사 워커는 ClamAV 이미지에 포함된 `clamd` 헬스체크가 통과할 때까지 시작을 기다립니다. 최초 기동은 서명 DB 초기화 때문에 수 분이 걸릴 수 있으며 `CLAMD_STARTUP_TIMEOUT` 동안 기다립니다. `clamav-signatures` 볼륨은 컨테이너 교체 시에도 유지하고 정기 업데이트는 `FRESHCLAM_CHECKS`로 제어합니다.
+운영에서는 `.github/workflows/publish-clamav-image.yml`을 `main`에서 수동 실행하고 확인 문구 `PUBLISH_CLAMAV_IMAGE`를 입력합니다. 워크플로는 `deploy/clamav/Dockerfile`을 `linux/amd64`용으로 빌드해 `ghcr.io/gogumaz/hanstone-clamav`에 게시하고 SBOM·provenance 증명과 90일 manifest artifact를 남긴 뒤 익명 pull까지 검증합니다. artifact의 `immutableReference`를 `CLAMAV_IMAGE=repository@sha256:<64자리>`로 등록하며 태그만 넣지 않습니다. API와 영상 검사 워커는 ClamAV 이미지에 포함된 `clamd` 헬스체크가 통과할 때까지 시작을 기다립니다. 최초 기동은 서명 DB 초기화 때문에 수 분이 걸릴 수 있으며 `CLAMD_STARTUP_TIMEOUT` 동안 기다립니다. `clamav-signatures` 볼륨은 컨테이너 교체 시에도 유지하고 정기 업데이트는 `FRESHCLAM_CHECKS`로 제어합니다.
 
 ClamAV `StreamMaxLength`, `MaxFileSize`, `MaxScanSize`는 `VIDEO_UPLOAD_MAX_BYTES` 이상이어야 합니다. 로컬 `deploy/clamav/Dockerfile`은 2GB 업로드 상한에 맞춰 2200MB로 설정합니다. 운영 ClamAV도 같은 기준의 `clamd.conf`를 배포해야 합니다. 영상 워커는 기본 5초 간격으로 작업을 가져오고 1분·5분·30분 간격으로 최대 3회 재시도합니다. `VIDEO_SCAN_POLL_INTERVAL_MS`, `VIDEO_SCAN_MAX_ATTEMPTS`, `VIDEO_SCAN_LOCK_TIMEOUT_MS`로 조정하며 검사 통과 전에는 새 영상이 재생 자산에 연결되지 않습니다.
 

@@ -1,0 +1,99 @@
+name: Publish managed ClamAV image
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type PUBLISH_CLAMAV_IMAGE to publish the production scanner image
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: publish-managed-clamav
+  cancel-in-progress: false
+
+env:
+  CLAMAV_IMAGE_REPOSITORY: ghcr.io/gogumaz/hanstone-clamav
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Require explicit publication confirmation
+        env:
+          PUBLISH_CONFIRMATION: ${{ inputs.confirmation }}
+        run: test "$PUBLISH_CONFIRMATION" = "PUBLISH_CLAMAV_IMAGE"
+      - name: Check out the candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Configure Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Authenticate to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish the managed scanner
+        id: push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: deploy/clamav
+          file: deploy/clamav/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.CLAMAV_IMAGE_REPOSITORY }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=HanStone managed ClamAV scanner
+          provenance: mode=max
+          sbom: true
+      - name: Generate registry-backed provenance attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.CLAMAV_IMAGE_REPOSITORY }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: Make the scanner package available to production hosts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh api --method PATCH /user/packages/container/hanstone-clamav
+          -f visibility=public
+      - name: Verify the immutable image and write deployment evidence
+        env:
+          CANDIDATE_SHA: ${{ github.sha }}
+          IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          test "$IMAGE_DIGEST" != ""
+          docker buildx imagetools inspect "$CLAMAV_IMAGE_REPOSITORY@$IMAGE_DIGEST"
+          mkdir -p clamav-image
+          jq -n \
+            --arg candidateSha "$CANDIDATE_SHA" \
+            --arg imageRepository "$CLAMAV_IMAGE_REPOSITORY" \
+            --arg imageDigest "$IMAGE_DIGEST" \
+            --arg immutableReference "$CLAMAV_IMAGE_REPOSITORY@$IMAGE_DIGEST" \
+            '{candidateSha: $candidateSha, imageRepository: $imageRepository, imageDigest: $imageDigest, immutableReference: $immutableReference}' \
+            > clamav-image/manifest.json
+      - name: Prove anonymous production pulls
+        env:
+          IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          docker logout ghcr.io
+          docker pull "$CLAMAV_IMAGE_REPOSITORY@$IMAGE_DIGEST"
+      - name: Upload immutable image evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: clamav-image-${{ github.sha }}-${{ github.run_id }}
+          path: clamav-image/manifest.json
+          if-no-files-found: error
+          retention-days: 90
