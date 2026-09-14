@@ -15,8 +15,12 @@ describe("production local video download deployment", () => {
     ]);
     expect(compose).toContain("MEDIA_DELIVERY_MODE: ${MEDIA_DELIVERY_MODE:-local-download}");
     expect(compose).toContain("LOCAL_VIDEO_MAX_BYTES: ${LOCAL_VIDEO_MAX_BYTES:-268435456}");
+    expect(compose).toContain("LOCAL_VIDEO_WARNING_FREE_BYTES: ${LOCAL_VIDEO_WARNING_FREE_BYTES:-5368709120}");
+    expect(compose).toContain("LOCAL_VIDEO_CRITICAL_FREE_BYTES: ${LOCAL_VIDEO_CRITICAL_FREE_BYTES:-1073741824}");
     expect(environment).toContain("MEDIA_DELIVERY_MODE=local-download");
     expect(environment).toContain("LOCAL_VIDEO_ROOT_HOST=/var/www/hanstone/media/lessons");
+    expect(environment).toContain("LOCAL_VIDEO_WARNING_FREE_BYTES=5368709120");
+    expect(environment).toContain("LOCAL_VIDEO_CRITICAL_FREE_BYTES=1073741824");
     expect(environment).toMatch(/^OBJECT_STORAGE_BUCKET=\r?$/mu);
     expect(environment).toContain("PREFLIGHT_REQUIRE_CDN=false");
   });

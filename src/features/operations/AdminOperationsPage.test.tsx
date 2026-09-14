@@ -46,6 +46,12 @@ describe('AdminOperationsPage', () => {
         return response({
           status: 'critical', checkedAt: '2026-08-24T00:30:00.000Z',
           backlogThresholdMinutes: 15, queues,
+          localVideoStorage: {
+            enabled: true, status: 'attention', fileCount: 2, totalVideoBytes: 1024,
+            capacityBytes: 32 * 1024 ** 3, availableBytes: 26 * 1024 ** 3,
+            usedPercent: 18.8, invalidEntries: 0,
+            warningFreeBytes: 5 * 1024 ** 3, criticalFreeBytes: 1024 ** 3,
+          },
         });
       }
       throw new Error(`Unexpected request: ${url}`);
@@ -58,6 +64,8 @@ describe('AdminOperationsPage', () => {
     expect(screen.getByRole('heading', { name: '계정 인증·복구 메일' })).toBeInTheDocument();
     expect(screen.getByText('위험 적체 기준 15분')).toBeInTheDocument();
     expect(screen.getAllByText('1건').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole('heading', { name: '로컬 영상 저장소' })).toBeInTheDocument();
+    expect(screen.getByText('26.0 GB')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '상태 새로고침' }));
     await waitFor(() => expect(healthRequests).toBe(2));

@@ -25,6 +25,18 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
+function formatBytes(value: number | null) {
+  if (value === null) return '-';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let amount = value;
+  let unit = 0;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit += 1;
+  }
+  return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
 export function AdminOperationsPage() {
   const meQuery = useQuery({ queryKey: ['current-user'], queryFn: getCurrentUser, retry: false });
   const canManage = meQuery.data?.roles.some((role) => role === 'operator' || role === 'admin') ?? false;
@@ -77,6 +89,29 @@ export function AdminOperationsPage() {
                 {healthQuery.isFetching ? '새로고침 중…' : '상태 새로고침'}
               </button>
             </div>
+          </section>
+
+          <section className="worker-queue-grid" aria-label="로컬 영상 저장소 상태">
+            <article data-status={healthQuery.data.localVideoStorage.status === 'disabled'
+              ? 'healthy'
+              : healthQuery.data.localVideoStorage.status}>
+              <header>
+                <h2>로컬 영상 저장소</h2>
+                <strong>{healthQuery.data.localVideoStorage.status === 'disabled'
+                  ? '사용 안 함'
+                  : STATUS_LABELS[healthQuery.data.localVideoStorage.status]}</strong>
+              </header>
+              {healthQuery.data.localVideoStorage.enabled ? (
+                <dl>
+                  <div><dt>정상 영상</dt><dd>{healthQuery.data.localVideoStorage.fileCount}개</dd></div>
+                  <div><dt>영상 사용량</dt><dd>{formatBytes(healthQuery.data.localVideoStorage.totalVideoBytes)}</dd></div>
+                  <div><dt>디스크 여유</dt><dd>{formatBytes(healthQuery.data.localVideoStorage.availableBytes)}</dd></div>
+                  <div><dt>디스크 사용률</dt><dd>{healthQuery.data.localVideoStorage.usedPercent ?? '-'}%</dd></div>
+                  <div><dt>잘못된 파일</dt><dd>{healthQuery.data.localVideoStorage.invalidEntries}개</dd></div>
+                  <div><dt>경고 / 위험 기준</dt><dd>{formatBytes(healthQuery.data.localVideoStorage.warningFreeBytes)} / {formatBytes(healthQuery.data.localVideoStorage.criticalFreeBytes)}</dd></div>
+                </dl>
+              ) : <p>현재 로컬 다운로드 영상 모드를 사용하지 않습니다.</p>}
+            </article>
           </section>
 
           <section className="worker-queue-grid" aria-label="작업 큐 상태">

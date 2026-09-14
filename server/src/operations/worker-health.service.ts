@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { loadAppConfig, type AppConfig } from "../config/app-config.js";
 import { PrismaService } from "../database/prisma.service.js";
+import { LocalVideoService, type LocalVideoStorageHealth } from "../content/local-video.service.js";
 import {
   AccountMailStatus,
   HlsTranscodeJobStatus,
@@ -23,6 +24,7 @@ export type WorkerHealthReport = {
   checkedAt: string;
   backlogThresholdMinutes: number;
   queues: WorkerQueueHealth[];
+  localVideoStorage: LocalVideoStorageHealth;
 };
 
 type QueueName = WorkerQueueHealth["name"];
@@ -31,26 +33,35 @@ type QueueName = WorkerQueueHealth["name"];
 export class WorkerHealthService {
   private readonly config: AppConfig;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly localVideo: LocalVideoService,
+  ) {
     this.config = loadAppConfig();
   }
 
   async inspect(now = new Date()): Promise<WorkerHealthReport> {
-    const queues = await Promise.all([
-      this.accountMail(now),
-      this.inquiryNotification(now),
-      this.videoScan(now),
-      this.hlsTranscode(now),
-      this.objectDeletion(now),
+    const [queues, localVideoStorage] = await Promise.all([
+      Promise.all([
+        this.accountMail(now),
+        this.inquiryNotification(now),
+        this.videoScan(now),
+        this.hlsTranscode(now),
+        this.objectDeletion(now),
+      ]),
+      this.localVideo.inspectStorage(),
     ]);
-    const status = queues.some((queue) => queue.status === "critical")
+    const status = queues.some((queue) => queue.status === "critical") || localVideoStorage.status === "critical"
       ? "critical"
-      : queues.some((queue) => queue.status === "attention") ? "attention" : "healthy";
+      : queues.some((queue) => queue.status === "attention") || localVideoStorage.status === "attention"
+        ? "attention"
+        : "healthy";
     return {
       status,
       checkedAt: now.toISOString(),
       backlogThresholdMinutes: this.config.workerHealthBacklogMinutes,
       queues,
+      localVideoStorage,
     };
   }
 

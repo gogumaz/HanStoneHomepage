@@ -47,6 +47,8 @@ export type AppConfig = {
   mediaDeliveryMode: "object-storage" | "local-download";
   localVideoRoot: string | null;
   localVideoMaxBytes: number;
+  localVideoWarningFreeBytes: number;
+  localVideoCriticalFreeBytes: number;
   objectStorageEndpoint: string | null;
   objectStorageRegion: string;
   objectStorageBucket: string | null;
@@ -315,6 +317,19 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   );
   if (localVideoMaxBytes > 1_073_741_824) {
     throw new Error("LOCAL_VIDEO_MAX_BYTES는 1GiB 이하여야 합니다.");
+  }
+  const localVideoWarningFreeBytes = positiveInteger(
+    env.LOCAL_VIDEO_WARNING_FREE_BYTES,
+    5_368_709_120,
+    "LOCAL_VIDEO_WARNING_FREE_BYTES",
+  );
+  const localVideoCriticalFreeBytes = positiveInteger(
+    env.LOCAL_VIDEO_CRITICAL_FREE_BYTES,
+    1_073_741_824,
+    "LOCAL_VIDEO_CRITICAL_FREE_BYTES",
+  );
+  if (localVideoCriticalFreeBytes >= localVideoWarningFreeBytes) {
+    throw new Error("LOCAL_VIDEO_CRITICAL_FREE_BYTES는 경고 기준보다 작아야 합니다.");
   }
 
   const objectStorageBucket = env.OBJECT_STORAGE_BUCKET?.trim() || null;
@@ -735,6 +750,8 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     mediaDeliveryMode,
     localVideoRoot,
     localVideoMaxBytes,
+    localVideoWarningFreeBytes,
+    localVideoCriticalFreeBytes,
     objectStorageEndpoint,
     objectStorageRegion: env.OBJECT_STORAGE_REGION?.trim() || "ap-northeast-2",
     objectStorageBucket,

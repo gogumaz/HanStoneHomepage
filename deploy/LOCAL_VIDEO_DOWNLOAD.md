@@ -14,6 +14,38 @@
   제공하지 않습니다.
 - 서버 디스크 장애에 대비해 원본 MP4는 운영자 PC 또는 별도 백업 매체에도 보관합니다.
 
+## 자동 백업과 용량 감시
+
+다음 도구는 동일한 영상을 내용 해시로 한 번만 저장하는 증분 백업과 시간별 상태 점검을
+systemd 타이머로 설치합니다. 기본 백업 위치는
+`/var/backups/hanstone/local-videos`이며 운영 영상 디렉터리와 겹치는 경로는 거부합니다.
+
+```bash
+sudo ./deploy/configure-local-video-maintenance.sh
+sudo ./deploy/configure-local-video-maintenance.sh \
+  --apply --confirm CONFIGURE_LOCAL_VIDEO_MAINTENANCE
+systemctl list-timers 'hanstone-local-video-*'
+```
+
+백업은 매일 03:20(Asia/Seoul), 상태 점검은 매시간 실행됩니다. 디스크 여유 공간이 기본
+5GiB 이하면 `attention`, 1GiB 이하면 `critical`입니다. 같은 정보는 운영자 화면과 보호된
+Prometheus 지표 `baduk_local_video_*`에서도 확인할 수 있습니다. 영상 설치 도구는 백업
+서비스가 설치되어 있으면 설치 직후 증분 백업을 요청합니다.
+
+최신 백업을 전체 해시 검증하거나 복원하려면 다음 순서를 사용합니다. 복원은 기본적으로
+dry-run이며, 적용하더라도 백업에 없는 현재 파일은 삭제하지 않습니다.
+
+```bash
+sudo python3 /usr/local/lib/hanstone/local-video-maintenance.py verify
+sudo python3 /usr/local/lib/hanstone/local-video-maintenance.py restore
+sudo python3 /usr/local/lib/hanstone/local-video-maintenance.py restore \
+  --apply --confirm RESTORE_LOCAL_LESSON_VIDEOS
+```
+
+현재 백업 디렉터리는 운영 서버의 같은 디스크에 있으므로 운영자 실수나 파일 손상 복구에는
+유효하지만 디스크 자체 고장에는 충분하지 않습니다. 원본을 운영자 PC 또는 분리된 저장장치에
+함께 보관하고, 서비스 고도화 시 외부 객체 저장소의 버전 관리로 교체합니다.
+
 ## 영상 파일 배치
 
 영상 파일명은 강의 ID와 정확히 같아야 합니다. 예를 들어 `PRE-01` 강의는 `PRE-01.mp4`입니다.

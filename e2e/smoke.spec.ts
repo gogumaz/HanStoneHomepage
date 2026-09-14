@@ -1789,6 +1789,12 @@ test("운영자가 워커 적체와 오래된 잠금을 확인하고 상태를 �
         status: "critical",
         checkedAt: "2026-08-24T00:30:00.000Z",
         backlogThresholdMinutes: 15,
+        localVideoStorage: {
+          enabled: true, status: "healthy", fileCount: 0, totalVideoBytes: 0,
+          capacityBytes: 46_375_239_680, availableBytes: 35_433_480_192,
+          usedPercent: 23.6, invalidEntries: 0,
+          warningFreeBytes: 5_368_709_120, criticalFreeBytes: 1_073_741_824,
+        },
         queues: [
           { name: "accountMail", status: "critical", due: 2, staleLocks: 1, terminalErrors: 0, oldestDueAt: "2026-08-24T00:00:00.000Z" },
           { name: "inquiryNotification", status: "attention", due: 0, staleLocks: 0, terminalErrors: 1, oldestDueAt: null },
@@ -1805,6 +1811,7 @@ test("운영자가 워커 적체와 오래된 잠금을 확인하고 상태를 �
   await expect(page.getByRole("heading", { name: "즉시 확인" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "계정 인증·복구 메일" })).toBeVisible();
   await expect(page.getByText("위험 적체 기준 15분")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "로컬 영상 저장소" })).toBeVisible();
   await page.getByRole("button", { name: "상태 새로고침" }).click();
   await expect.poll(() => healthRequests).toBe(2);
 });

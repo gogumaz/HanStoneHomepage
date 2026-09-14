@@ -44,7 +44,9 @@ HTML·`config.js`는 항상 재검증하며 `/api/`는 `127.0.0.1:3000`으로만
 
 현재 운영 영상은 객체 저장소를 사용하지 않고
 [`LOCAL_VIDEO_DOWNLOAD.md`](./LOCAL_VIDEO_DOWNLOAD.md)의 로컬 MP4 전체 다운로드 재생을
-사용합니다. `compose.production.local-download.yaml`을 함께 적용하고 `managed-media` 프로필은
+사용하며, 같은 문서의 내용 해시 증분 백업·시간별 디스크 감시·확인 문자열 기반 복원 절차를
+운영 서버에 함께 적용합니다.
+`compose.production.local-download.yaml`을 함께 적용하고 `managed-media` 프로필은
 활성화하지 않습니다. AWS S3·HLS·CloudFront 설정은 서비스 고도화 단계의 선택 절차입니다.
 
 | 환경 | 결제·OAuth | 데이터 | 배포 |

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Hanstone local lesson video backup
+
+[Timer]
+OnCalendar=*-*-* 03:20:00 Asia/Seoul
+RandomizedDelaySec=20m
+Persistent=true
+Unit=hanstone-local-video-backup.service
+
+[Install]
+WantedBy=timers.target

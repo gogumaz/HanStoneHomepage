@@ -367,10 +367,14 @@ describe("loadAppConfig media delivery mode", () => {
       MEDIA_DELIVERY_MODE: "local-download",
       LOCAL_VIDEO_ROOT: "/var/lib/hanstone/media/lessons",
       LOCAL_VIDEO_MAX_BYTES: "268435456",
+      LOCAL_VIDEO_WARNING_FREE_BYTES: "5368709120",
+      LOCAL_VIDEO_CRITICAL_FREE_BYTES: "1073741824",
     })).toMatchObject({
       mediaDeliveryMode: "local-download",
       localVideoRoot: resolve("/var/lib/hanstone/media/lessons"),
       localVideoMaxBytes: 268_435_456,
+      localVideoWarningFreeBytes: 5_368_709_120,
+      localVideoCriticalFreeBytes: 1_073_741_824,
       objectStorageBucket: null,
     });
   });
@@ -395,6 +399,13 @@ describe("loadAppConfig media delivery mode", () => {
       LOCAL_VIDEO_ROOT: "/videos",
       OBJECT_STORAGE_BUCKET: "mixed-storage",
     })).toThrow(/함께 사용할 수 없습니다/);
+    expect(() => loadAppConfig({
+      ...base,
+      MEDIA_DELIVERY_MODE: "local-download",
+      LOCAL_VIDEO_ROOT: "/videos",
+      LOCAL_VIDEO_WARNING_FREE_BYTES: "100",
+      LOCAL_VIDEO_CRITICAL_FREE_BYTES: "100",
+    })).toThrow(/경고 기준보다 작아야/);
   });
 });
 

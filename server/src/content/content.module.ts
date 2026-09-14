@@ -27,5 +27,6 @@ import { LocalVideoService } from "./local-video.service.js";
     HlsManifestService,
     LocalVideoService,
   ],
+  exports: [LocalVideoService],
 })
 export class ContentModule {}

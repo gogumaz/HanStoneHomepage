@@ -17,6 +17,7 @@ const QUEUE_NAMES = {
 } as const;
 
 const STATUS_VALUES = { healthy: 0, attention: 1, critical: 2 } as const;
+const STORAGE_STATUS_VALUES = { disabled: -1, healthy: 0, attention: 1, critical: 2 } as const;
 
 export function formatWorkerHealthMetrics(report: WorkerHealthReport): string {
   const lines = [
@@ -48,7 +49,32 @@ export function formatWorkerHealthMetrics(report: WorkerHealthReport): string {
     "# HELP baduk_worker_health_checked_timestamp_seconds Unix timestamp of this worker health snapshot.",
     "# TYPE baduk_worker_health_checked_timestamp_seconds gauge",
     `baduk_worker_health_checked_timestamp_seconds ${Math.floor(Date.parse(report.checkedAt) / 1_000)}`,
+    "# HELP baduk_local_video_storage_status Local video storage: -1 disabled, 0 healthy, 1 attention, 2 critical.",
+    "# TYPE baduk_local_video_storage_status gauge",
+    `baduk_local_video_storage_status ${STORAGE_STATUS_VALUES[report.localVideoStorage.status]}`,
+    "# HELP baduk_local_video_file_count Valid local lesson video files.",
+    "# TYPE baduk_local_video_file_count gauge",
+    `baduk_local_video_file_count ${report.localVideoStorage.fileCount}`,
+    "# HELP baduk_local_video_invalid_entry_count Invalid local MP4 entries.",
+    "# TYPE baduk_local_video_invalid_entry_count gauge",
+    `baduk_local_video_invalid_entry_count ${report.localVideoStorage.invalidEntries}`,
+    "# HELP baduk_local_video_bytes Bytes used by valid local lesson videos.",
+    "# TYPE baduk_local_video_bytes gauge",
+    `baduk_local_video_bytes ${report.localVideoStorage.totalVideoBytes}`,
   );
+  if (report.localVideoStorage.enabled) {
+    lines.push(
+      "# HELP baduk_local_video_filesystem_available_bytes Bytes available on the local video filesystem.",
+      "# TYPE baduk_local_video_filesystem_available_bytes gauge",
+      `baduk_local_video_filesystem_available_bytes ${report.localVideoStorage.availableBytes ?? 0}`,
+      "# HELP baduk_local_video_filesystem_capacity_bytes Total bytes on the local video filesystem.",
+      "# TYPE baduk_local_video_filesystem_capacity_bytes gauge",
+      `baduk_local_video_filesystem_capacity_bytes ${report.localVideoStorage.capacityBytes ?? 0}`,
+      "# HELP baduk_local_video_filesystem_used_percent Used percentage of the local video filesystem.",
+      "# TYPE baduk_local_video_filesystem_used_percent gauge",
+      `baduk_local_video_filesystem_used_percent ${report.localVideoStorage.usedPercent ?? 100}`,
+    );
+  }
   return `${lines.join("\n")}\n`;
 }
 

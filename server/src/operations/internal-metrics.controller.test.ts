@@ -16,6 +16,11 @@ const report: WorkerHealthReport = {
   status: "critical",
   checkedAt: "2026-08-24T00:30:00.000Z",
   backlogThresholdMinutes: 15,
+  localVideoStorage: {
+    enabled: true, status: "attention", fileCount: 3, totalVideoBytes: 4096,
+    capacityBytes: 10_000, availableBytes: 2_000, usedPercent: 80, invalidEntries: 0,
+    warningFreeBytes: 3_000, criticalFreeBytes: 1_000,
+  },
   queues: [
     { name: "accountMail", status: "critical", due: 2, staleLocks: 1, terminalErrors: 0, oldestDueAt: "2026-08-24T00:00:00.000Z" },
     { name: "inquiryNotification", status: "attention", due: 0, staleLocks: 0, terminalErrors: 1, oldestDueAt: null },
@@ -45,6 +50,9 @@ describe("internal worker metrics", () => {
     expect(metrics).toContain('baduk_worker_queue_due{queue="account_mail"} 2');
     expect(metrics).toContain('baduk_worker_queue_stale_locks{queue="account_mail"} 1');
     expect(metrics).toContain('baduk_worker_queue_terminal_errors{queue="inquiry_notification"} 1');
+    expect(metrics).toContain("baduk_local_video_storage_status 1");
+    expect(metrics).toContain("baduk_local_video_file_count 3");
+    expect(metrics).toContain("baduk_local_video_filesystem_available_bytes 2000");
     expect(metrics).not.toContain("2026-08-24T00:00:00.000Z");
   });
 

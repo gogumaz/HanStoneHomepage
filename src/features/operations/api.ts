@@ -14,8 +14,37 @@ export type WorkerHealthReport = {
   checkedAt: string;
   backlogThresholdMinutes: number;
   queues: WorkerQueueHealth[];
+  localVideoStorage: {
+    enabled: boolean;
+    status: 'disabled' | 'healthy' | 'attention' | 'critical';
+    fileCount: number;
+    totalVideoBytes: number;
+    capacityBytes: number | null;
+    availableBytes: number | null;
+    usedPercent: number | null;
+    invalidEntries: number;
+    warningFreeBytes: number;
+    criticalFreeBytes: number;
+  };
 };
 
-export function getWorkerHealth() {
-  return apiRequest<WorkerHealthReport>('/admin/operations/worker-health');
+export async function getWorkerHealth(): Promise<WorkerHealthReport> {
+  const report = await apiRequest<Omit<WorkerHealthReport, 'localVideoStorage'> & {
+    localVideoStorage?: WorkerHealthReport['localVideoStorage'];
+  }>('/admin/operations/worker-health');
+  return {
+    ...report,
+    localVideoStorage: report.localVideoStorage ?? {
+      enabled: false,
+      status: 'disabled',
+      fileCount: 0,
+      totalVideoBytes: 0,
+      capacityBytes: null,
+      availableBytes: null,
+      usedPercent: null,
+      invalidEntries: 0,
+      warningFreeBytes: 0,
+      criticalFreeBytes: 0,
+    },
+  };
 }

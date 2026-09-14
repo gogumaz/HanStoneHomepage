@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly Hanstone local lesson video storage check
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=10m
+Persistent=true
+Unit=hanstone-local-video-check.service
+
+[Install]
+WantedBy=timers.target

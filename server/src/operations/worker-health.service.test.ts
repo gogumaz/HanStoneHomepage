@@ -1,6 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaService } from "../database/prisma.service.js";
 import { WorkerHealthService } from "./worker-health.service.js";
+import type { LocalVideoService, LocalVideoStorageHealth } from "../content/local-video.service.js";
+
+const storage = (status: LocalVideoStorageHealth["status"] = "disabled"): LocalVideoStorageHealth => ({
+  enabled: status !== "disabled",
+  status,
+  fileCount: 0,
+  totalVideoBytes: 0,
+  capacityBytes: status === "disabled" ? null : 1000,
+  availableBytes: status === "disabled" ? null : 500,
+  usedPercent: status === "disabled" ? null : 50,
+  invalidEntries: 0,
+  warningFreeBytes: 100,
+  criticalFreeBytes: 10,
+});
 
 function queue(counts: [number, number, number] = [0, 0, 0], oldestDueAt: Date | null = null) {
   return {
@@ -19,6 +33,7 @@ function createService(input: {
   video?: [number, number, number];
   hls?: [number, number, number];
   deletion?: [number, number, number];
+  storageStatus?: LocalVideoStorageHealth["status"];
 } = {}) {
   const prisma = {
     accountMailJob: queue(input.accountMail, input.accountOldest),
@@ -27,7 +42,10 @@ function createService(input: {
     hlsTranscodeJob: queue(input.hls),
     objectDeletionJob: queue(input.deletion),
   };
-  return { service: new WorkerHealthService(prisma as unknown as PrismaService), prisma };
+  const localVideo = {
+    inspectStorage: vi.fn(async () => storage(input.storageStatus)),
+  } as unknown as LocalVideoService;
+  return { service: new WorkerHealthService(prisma as unknown as PrismaService, localVideo), prisma };
 }
 
 describe("WorkerHealthService", () => {
@@ -41,6 +59,7 @@ describe("WorkerHealthService", () => {
     expect(report).toMatchObject({ status: "healthy", backlogThresholdMinutes: 15 });
     expect(report.queues).toHaveLength(5);
     expect(report.queues.every((item) => item.status === "healthy")).toBe(true);
+    expect(report.localVideoStorage.status).toBe("disabled");
   });
 
   it("reports attention for a terminal failure without exposing job data", async () => {
@@ -76,5 +95,12 @@ describe("WorkerHealthService", () => {
       status: "critical",
       staleLocks: 1,
     });
+  });
+
+  it("includes local video disk pressure in the overall status", async () => {
+    const report = await createService({ storageStatus: "attention" }).service
+      .inspect(new Date("2026-08-24T00:30:00.000Z"));
+    expect(report.status).toBe("attention");
+    expect(report.localVideoStorage).toMatchObject({ enabled: true, status: "attention" });
   });
 });

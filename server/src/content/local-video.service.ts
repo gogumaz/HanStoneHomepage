@@ -1,5 +1,5 @@
 import { constants, createReadStream } from "node:fs";
-import { access, lstat } from "node:fs/promises";
+import { access, lstat, readdir, statfs } from "node:fs/promises";
 import { resolve } from "node:path";
 import { HttpStatus, Injectable } from "@nestjs/common";
 import { ApiError } from "../common/api-error.js";
@@ -14,17 +14,34 @@ export type LocalVideoFile = {
   stream: ReturnType<typeof createReadStream>;
 };
 
+export type LocalVideoStorageHealth = {
+  enabled: boolean;
+  status: "disabled" | "healthy" | "attention" | "critical";
+  fileCount: number;
+  totalVideoBytes: number;
+  capacityBytes: number | null;
+  availableBytes: number | null;
+  usedPercent: number | null;
+  invalidEntries: number;
+  warningFreeBytes: number;
+  criticalFreeBytes: number;
+};
+
 @Injectable()
 export class LocalVideoService {
   private readonly mode: "object-storage" | "local-download";
   private readonly root: string | null;
   private readonly maxBytes: number;
+  private readonly warningFreeBytes: number;
+  private readonly criticalFreeBytes: number;
 
   constructor() {
     const config = loadAppConfig();
     this.mode = config.mediaDeliveryMode;
     this.root = config.localVideoRoot;
     this.maxBytes = config.localVideoMaxBytes;
+    this.warningFreeBytes = config.localVideoWarningFreeBytes;
+    this.criticalFreeBytes = config.localVideoCriticalFreeBytes;
   }
 
   isEnabled(): boolean {
@@ -42,6 +59,69 @@ export class LocalVideoService {
 
   async hasVideo(lessonId: string): Promise<boolean> {
     return Boolean(await this.findVideo(lessonId));
+  }
+
+  async inspectStorage(): Promise<LocalVideoStorageHealth> {
+    const base = {
+      fileCount: 0,
+      totalVideoBytes: 0,
+      capacityBytes: null,
+      availableBytes: null,
+      usedPercent: null,
+      invalidEntries: 0,
+      warningFreeBytes: this.warningFreeBytes,
+      criticalFreeBytes: this.criticalFreeBytes,
+    };
+    if (!this.isEnabled() || !this.root) {
+      return { enabled: false, status: "disabled", ...base };
+    }
+    try {
+      await this.verifyRoot();
+      const [filesystem, entries] = await Promise.all([
+        statfs(this.root, { bigint: true }),
+        readdir(this.root, { withFileTypes: true }),
+      ]);
+      let fileCount = 0;
+      let totalVideoBytes = 0;
+      let invalidEntries = 0;
+      for (const entry of entries) {
+        if (!entry.name.toLowerCase().endsWith(".mp4")) continue;
+        const lessonId = entry.name.slice(0, -4);
+        if (!SAFE_LESSON_ID.test(lessonId) || !entry.isFile() || entry.isSymbolicLink()) {
+          invalidEntries += 1;
+          continue;
+        }
+        const metadata = await lstat(resolve(this.root, entry.name));
+        if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size <= 0 || metadata.size > this.maxBytes) {
+          invalidEntries += 1;
+          continue;
+        }
+        fileCount += 1;
+        totalVideoBytes += metadata.size;
+      }
+      const capacityBytes = Number(filesystem.blocks * filesystem.bsize);
+      const availableBytes = Number(filesystem.bavail * filesystem.bsize);
+      const usedPercent = capacityBytes > 0
+        ? Math.round(((capacityBytes - availableBytes) / capacityBytes) * 1_000) / 10
+        : 100;
+      const status = invalidEntries > 0 || availableBytes <= this.criticalFreeBytes
+        ? "critical"
+        : availableBytes <= this.warningFreeBytes ? "attention" : "healthy";
+      return {
+        enabled: true,
+        status,
+        fileCount,
+        totalVideoBytes,
+        capacityBytes,
+        availableBytes,
+        usedPercent,
+        invalidEntries,
+        warningFreeBytes: this.warningFreeBytes,
+        criticalFreeBytes: this.criticalFreeBytes,
+      };
+    } catch {
+      return { enabled: true, status: "critical", ...base, invalidEntries: 1 };
+    }
   }
 
   async openVideo(lessonId: string): Promise<LocalVideoFile> {

@@ -17,6 +17,8 @@ async function service(root: string, maxBytes = 1024) {
   vi.stubEnv("MEDIA_DELIVERY_MODE", "local-download");
   vi.stubEnv("LOCAL_VIDEO_ROOT", root);
   vi.stubEnv("LOCAL_VIDEO_MAX_BYTES", String(maxBytes));
+  vi.stubEnv("LOCAL_VIDEO_WARNING_FREE_BYTES", "2");
+  vi.stubEnv("LOCAL_VIDEO_CRITICAL_FREE_BYTES", "1");
   const { LocalVideoService } = await import("./local-video.service.js");
   return new LocalVideoService();
 }
@@ -48,5 +50,26 @@ describe("LocalVideoService", () => {
     await expect(local.hasVideo("LESSON-01")).resolves.toBe(false);
     await writeFile(join(root, "LESSON-02.mp4"), Buffer.from("large"));
     await expect(local.openVideo("LESSON-02")).rejects.toMatchObject({ code: "LOCAL_VIDEO_TOO_LARGE" });
+  });
+
+  it("reports disk capacity and rejects unsafe MP4 entries from the inventory", async () => {
+    const root = await createRoot();
+    await writeFile(join(root, "LESSON-01.mp4"), Buffer.from("video-bytes"));
+    await writeFile(join(root, "lesson-02.mp4"), Buffer.from("invalid-name"));
+    const local = await service(root);
+
+    const health = await local.inspectStorage();
+    expect(health).toMatchObject({
+      enabled: true,
+      status: "critical",
+      fileCount: 1,
+      totalVideoBytes: 11,
+      invalidEntries: 1,
+      warningFreeBytes: 2,
+      criticalFreeBytes: 1,
+    });
+    expect(health.capacityBytes).toBeGreaterThan(0);
+    expect(health.availableBytes).toBeGreaterThan(0);
+    expect(health.usedPercent).toBeGreaterThanOrEqual(0);
   });
 });

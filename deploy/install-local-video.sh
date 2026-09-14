@@ -78,3 +78,6 @@ install -o root -g root -m 0644 -- "$SOURCE_FILE" "$TEMP_FILE"
 mv -f -- "$TEMP_FILE" "$TARGET_FILE"
 trap - EXIT
 printf 'mode=applied\ninstalled=1\n'
+if command -v systemctl >/dev/null && systemctl cat hanstone-local-video-backup.service >/dev/null 2>&1; then
+  systemctl start hanstone-local-video-backup.service || printf 'backup=deferred\n' >&2
+fi
