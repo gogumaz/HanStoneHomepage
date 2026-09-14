@@ -84,6 +84,7 @@ export type AppConfig = {
   hlsTranscodeMaxAttempts: number;
   hlsTranscodeLockTimeoutMs: number;
   hlsSegmentDurationSeconds: number;
+  hlsTranscodeThreads: number;
   ffmpegPath: string;
   ffprobePath: string;
   logLevel: string;
@@ -527,6 +528,14 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (hlsSegmentDurationSeconds < 2 || hlsSegmentDurationSeconds > 10) {
     throw new Error("HLS_SEGMENT_DURATION_SECONDS는 2~10초여야 합니다.");
   }
+  const hlsTranscodeThreads = positiveInteger(
+    env.HLS_TRANSCODE_THREADS,
+    2,
+    "HLS_TRANSCODE_THREADS",
+  );
+  if (hlsTranscodeThreads > 16) {
+    throw new Error("HLS_TRANSCODE_THREADS must be 16 or less.");
+  }
   const ffmpegPath = env.FFMPEG_PATH?.trim() || "ffmpeg";
   const ffprobePath = env.FFPROBE_PATH?.trim() || "ffprobe";
   if (ffmpegPath.length > 1024 || ffprobePath.length > 1024) {
@@ -743,6 +752,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     hlsTranscodeMaxAttempts,
     hlsTranscodeLockTimeoutMs,
     hlsSegmentDurationSeconds,
+    hlsTranscodeThreads,
     ffmpegPath,
     ffprobePath,
     logLevel: env.LOG_LEVEL?.trim() || "info",

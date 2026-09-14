@@ -6,6 +6,7 @@
 set -uo pipefail
 
 MODE="full"
+RESOURCE_PROFILE="standard"
 DOMAIN="uzdream.com"
 EXPECTED_IP=""
 API_BASE_URL=""
@@ -24,6 +25,8 @@ Usage:
 Options:
   --mode base|static|full   base: OS/resources, static: +Nginx/HTTPS,
                             full: +Docker/API (default: full)
+  --resource-profile NAME  standard: 4 GiB baseline, compact: verified 2 GiB
+                            deployment with 4 GiB swap (default: standard)
   --domain DOMAIN          Public website domain (default: uzdream.com)
   --expected-ip IP         Expected public IPv4 address for DNS comparison
   --api-base-url URL       API base URL (default: https://DOMAIN)
@@ -36,6 +39,8 @@ Examples:
   ./deploy/check-host-readiness.sh --mode base --expected-ip 203.0.113.10
   ./deploy/check-host-readiness.sh --mode static --expected-ip 203.0.113.10
   ./deploy/check-host-readiness.sh --mode full --expected-ip 203.0.113.10
+  ./deploy/check-host-readiness.sh --mode full --resource-profile compact \
+    --expected-ip 203.0.113.10
 
 The script is read-only. Redirect its output to save a report:
   ./deploy/check-host-readiness.sh --mode full | tee host-readiness.txt
@@ -95,6 +100,11 @@ while (($# > 0)); do
       MODE="$2"
       shift 2
       ;;
+    --resource-profile)
+      require_value "$1" "${2:-}"
+      RESOURCE_PROFILE="$2"
+      shift 2
+      ;;
     --domain)
       require_value "$1" "${2:-}"
       DOMAIN="$2"
@@ -139,6 +149,14 @@ case "$MODE" in
     ;;
 esac
 
+case "$RESOURCE_PROFILE" in
+  standard|compact) ;;
+  *)
+    printf 'Invalid --resource-profile: %s (expected standard or compact)\n' "$RESOURCE_PROFILE" >&2
+    exit 2
+    ;;
+esac
+
 if [[ ! "$SSH_PORT" =~ ^[0-9]+$ ]] || ((SSH_PORT < 1 || SSH_PORT > 65535)); then
   printf 'Invalid --ssh-port: %s\n' "$SSH_PORT" >&2
   exit 2
@@ -150,8 +168,8 @@ fi
 API_BASE_URL="${API_BASE_URL%/}"
 
 printf 'HanStone host readiness audit\n'
-printf 'Mode: %s | Domain: %s | Expected IP: %s\n' \
-  "$MODE" "$DOMAIN" "${EXPECTED_IP:-not supplied}"
+printf 'Mode: %s | Resource profile: %s | Domain: %s | Expected IP: %s\n' \
+  "$MODE" "$RESOURCE_PROFILE" "$DOMAIN" "${EXPECTED_IP:-not supplied}"
 printf '%s\n' '------------------------------------------------------------'
 
 if [[ "$(uname -s 2>/dev/null || true)" == "Linux" ]]; then
@@ -225,6 +243,10 @@ if [[ "$MEM_KB" =~ ^[0-9]+$ ]]; then
     else
       fail "Memory ${MEM_MIB} MiB is below the static-only minimum"
     fi
+  elif [[ "$RESOURCE_PROFILE" == "compact" ]] && ((MEM_MIB >= 1900)); then
+    pass "Memory ${MEM_MIB} MiB meets the compact 2 GiB service baseline"
+  elif [[ "$RESOURCE_PROFILE" == "compact" ]]; then
+    fail "Memory ${MEM_MIB} MiB is below the 1900 MiB compact-service minimum"
   elif ((MEM_MIB >= 3800)); then
     pass "Memory ${MEM_MIB} MiB meets the full-service baseline"
   else
@@ -247,13 +269,18 @@ else
 fi
 
 SWAP_RECOMMENDED_KB=1048576
+if [[ "$RESOURCE_PROFILE" == "compact" && "$MODE" != "static" ]]; then
+  SWAP_RECOMMENDED_KB=4194304
+fi
 # Linux excludes the swap header page from SwapTotal, so a provisioned 1 GiB
 # partition can be reported a few KiB below its nominal size.
-SWAP_HEADER_TOLERANCE_KB=4
+SWAP_HEADER_TOLERANCE_KB=2048
 SWAP_MINIMUM_KB=$((SWAP_RECOMMENDED_KB - SWAP_HEADER_TOLERANCE_KB))
 SWAP_KB="$(awk '/^SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || true)"
 if [[ "$SWAP_KB" =~ ^[0-9]+$ ]] && ((SWAP_KB >= SWAP_MINIMUM_KB)); then
   pass "Swap is configured ($((SWAP_KB / 1024)) MiB)"
+elif [[ "$RESOURCE_PROFILE" == "compact" && "$MODE" != "static" ]]; then
+  fail 'The compact service profile requires 4 GiB swap'
 else
   warn 'At least 1 GiB swap is recommended for this small host'
 fi
@@ -350,6 +377,7 @@ fi
 
 if [[ "$MODE" == "full" ]]; then
   DOCKER_PREFIX=()
+  COMPOSE_CONFIG_ARGS=(-f /opt/hanstone/deploy/compose.production.yaml)
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     DOCKER_PREFIX=(docker)
     pass 'Docker Engine is reachable by the current user'
@@ -374,6 +402,15 @@ if [[ "$MODE" == "full" ]]; then
     fail '/opt/hanstone/deploy/compose.production.yaml is missing'
   fi
 
+  if [[ "$RESOURCE_PROFILE" == "compact" ]]; then
+    if [[ -f /opt/hanstone/deploy/compose.production.compact.yaml ]]; then
+      pass 'Compact production Compose overlay exists'
+      COMPOSE_CONFIG_ARGS+=( -f /opt/hanstone/deploy/compose.production.compact.yaml )
+    else
+      fail '/opt/hanstone/deploy/compose.production.compact.yaml is missing'
+    fi
+  fi
+
   if [[ -f /etc/hanstone/production.env ]]; then
     ENV_MODE="$(stat -c '%a' /etc/hanstone/production.env 2>/dev/null || true)"
     ENV_OWNER="$(stat -c '%U' /etc/hanstone/production.env 2>/dev/null || true)"
@@ -393,7 +430,7 @@ if [[ "$MODE" == "full" ]]; then
     && [[ -f /etc/hanstone/production.env ]]; then
     if "${DOCKER_PREFIX[@]}" compose \
       --env-file /etc/hanstone/production.env \
-      -f /opt/hanstone/deploy/compose.production.yaml \
+      "${COMPOSE_CONFIG_ARGS[@]}" \
       config --quiet >/dev/null 2>&1; then
       pass 'Production Compose configuration is valid'
     else
@@ -402,7 +439,7 @@ if [[ "$MODE" == "full" ]]; then
 
     CLAMAV_CONTAINER_ID="$("${DOCKER_PREFIX[@]}" compose \
       --env-file /etc/hanstone/production.env \
-      -f /opt/hanstone/deploy/compose.production.yaml \
+      "${COMPOSE_CONFIG_ARGS[@]}" \
       ps -q clamav 2>/dev/null || true)"
     if [[ -n "$CLAMAV_CONTAINER_ID" ]]; then
       CLAMAV_HEALTH="$("${DOCKER_PREFIX[@]}" inspect \

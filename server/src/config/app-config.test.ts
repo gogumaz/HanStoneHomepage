@@ -297,21 +297,27 @@ describe("loadAppConfig account mail settings", () => {
       HLS_TRANSCODE_POLL_INTERVAL_MS: "1000",
       HLS_TRANSCODE_MAX_ATTEMPTS: "10",
       HLS_TRANSCODE_LOCK_TIMEOUT_MS: "60000",
-      HLS_SEGMENT_DURATION_SECONDS: "10",
+        HLS_SEGMENT_DURATION_SECONDS: "10",
+        HLS_TRANSCODE_THREADS: "1",
       FFMPEG_PATH: "custom-ffmpeg",
       FFPROBE_PATH: "custom-ffprobe",
     })).toMatchObject({
       hlsTranscodePollIntervalMs: 1000,
       hlsTranscodeMaxAttempts: 10,
       hlsTranscodeLockTimeoutMs: 60000,
-      hlsSegmentDurationSeconds: 10,
+        hlsSegmentDurationSeconds: 10,
+        hlsTranscodeThreads: 1,
       ffmpegPath: "custom-ffmpeg",
       ffprobePath: "custom-ffprobe",
     });
-    expect(() => loadAppConfig({
-      DATABASE_URL: "postgresql://test:test@localhost/test",
-      HLS_SEGMENT_DURATION_SECONDS: "11",
-    })).toThrow(/HLS_SEGMENT_DURATION_SECONDS/);
+      expect(() => loadAppConfig({
+        DATABASE_URL: "postgresql://test:test@localhost/test",
+        HLS_SEGMENT_DURATION_SECONDS: "11",
+      })).toThrow(/HLS_SEGMENT_DURATION_SECONDS/);
+      expect(() => loadAppConfig({
+        DATABASE_URL: "postgresql://test:test@localhost/test",
+        HLS_TRANSCODE_THREADS: "17",
+      })).toThrow(/HLS_TRANSCODE_THREADS/);
   });
 });
 

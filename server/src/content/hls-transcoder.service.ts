@@ -42,6 +42,7 @@ export class HlsTranscoderService {
   private readonly ffmpegPath: string;
   private readonly ffprobePath: string;
   private readonly segmentDuration: number;
+  private readonly threads: number;
   private readonly processTimeoutMs: number;
 
   constructor() {
@@ -49,6 +50,7 @@ export class HlsTranscoderService {
     this.ffmpegPath = config.ffmpegPath;
     this.ffprobePath = config.ffprobePath;
     this.segmentDuration = config.hlsSegmentDurationSeconds;
+    this.threads = config.hlsTranscodeThreads;
     this.processTimeoutMs = Math.max(60_000, config.hlsTranscodeLockTimeoutMs - 60_000);
   }
 
@@ -74,6 +76,7 @@ export class HlsTranscoderService {
         "-map", "0:a:0?",
         "-vf", `scale=-2:${rendition.height}`,
         "-c:v", "libx264",
+        "-threads", String(this.threads),
         "-preset", "medium",
         "-profile:v", "main",
         "-pix_fmt", "yuv420p",

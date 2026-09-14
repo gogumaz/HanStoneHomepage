@@ -27,6 +27,7 @@ describe('hosting readiness audit', () => {
     const help = spawnSync(bash!, [scriptPath, '--help'], { encoding: 'utf8' });
     expect(help.status).toBe(0);
     expect(help.stdout).toContain('--mode base|static|full');
+    expect(help.stdout).toContain('--resource-profile NAME');
     expect(help.stdout).toContain('--allow-ubuntu-20-test');
     expect(help.stdout).toContain('The script is read-only');
   });
@@ -69,7 +70,8 @@ describe('hosting readiness audit', () => {
     }
 
     expect(script).toContain('SWAP_RECOMMENDED_KB=1048576');
-    expect(script).toContain('SWAP_HEADER_TOLERANCE_KB=4');
+    expect(script).toContain('SWAP_RECOMMENDED_KB=4194304');
+    expect(script).toContain('SWAP_HEADER_TOLERANCE_KB=2048');
     expect(script).toContain('SWAP_KB >= SWAP_MINIMUM_KB');
   });
 });

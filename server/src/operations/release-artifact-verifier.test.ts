@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 const script = resolve(process.cwd(), "scripts/verify-release-artifacts.mjs");
 const requiredApiFiles = [
   "main.js",
+  "compact-operations-worker.js",
   "account-mail-worker.js",
   "assignment-reminder-worker.js",
   "inquiry-notification-worker.js",
@@ -82,7 +83,7 @@ describe("release artifact verifier CLI", () => {
     const result = verify(project);
 
     expect(result.status).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, profile: "api", fileCount: 7 });
+    expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, profile: "api", fileCount: 8 });
   });
 
   it("rejects source maps and their compiled references", async () => {

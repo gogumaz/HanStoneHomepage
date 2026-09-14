@@ -113,7 +113,7 @@ npm --prefix server run dev
 3. 같은 이미지를 사용해 `npm run db:deploy`를 한 번 실행합니다.
 4. 같은 이미지와 운영 환경변수로 `node dist/production-preflight.js`를 실행하고 모든 점검이 `pass`인지 확인합니다.
 5. 프리플라이트·복구훈련·읽기 전용 부하·워커 soak·공급망 SBOM 매니페스트 JSON을 `npm --prefix server run accept:release`로 검증하고 인수 결과의 `ok`가 `true`인지 확인합니다.
-6. `deploy/compose.production.yaml` 또는 선택한 플랫폼에서 API와 같은 이미지의 `account-mail-worker`, `inquiry-notification-worker`, `assignment-reminder-worker`, `video-scan-worker`, `hls-transcode-worker`, `video-cleanup-worker`를 함께 교체합니다. 이미지에는 FFmpeg·FFprobe가 포함되어야 합니다.
+6. 표준 호스트는 `deploy/compose.production.yaml`의 개별 워커를 사용합니다. 2GB PHPS 호스트는 `deploy/compose.production.compact.yaml`을 함께 적용해 단일 `compact-operations-worker`로 교체합니다. 이미지에는 FFmpeg·FFprobe가 포함되어야 합니다.
 7. 인수 결과의 커밋 SHA와 이미지 digest로 `npm --prefix server run verify:deployment`를 실행해 실제 API의 배포 식별값, liveness, readiness를 반복 확인합니다.
 8. 핵심 사용자 경로를 확인하고 운영자 인증으로 `/api/v1/admin/operations/worker-health`를 조회해 모든 큐가 `healthy`인지 확인합니다.
 9. 인수 매니페스트와 배포 검증 JSON을 `npm --prefix server run close:release`로 결합하고 최종 종료 결과의 `ok`가 `true`인지 확인합니다.
@@ -449,7 +449,7 @@ npm --prefix server run coordinate:rollback-rehearsal -- --apply --confirm AUTHO
 
 ## 악성 파일 검사
 
-소형 학습자료는 운영 API가, MP4 영상은 독립 `video-scan-worker`가 `MALWARE_SCANNER_HOST`의 ClamAV `clamd`에 TCP `INSTREAM`으로 격리 파일을 전송합니다. 운영 Compose의 기본값은 내부 서비스 이름 `clamav`이며 3310 포트를 호스트에 게시하지 않습니다. 이 포트는 인증·암호화를 제공하지 않으므로 공개 인터넷에 노출하지 않고 API·워커와 같은 사설망에서만 허용합니다. 공식 ClamAV 컨테이너는 서명 데이터 볼륨을 영속화하고 최소 3GB, 기본 4GB의 메모리를 배정합니다.
+소형 학습자료는 운영 API가, MP4 영상은 워커가 `MALWARE_SCANNER_HOST`의 ClamAV `clamd`에 TCP `INSTREAM`으로 격리 파일을 전송합니다. 운영 Compose의 기본값은 내부 서비스 이름 `clamav`이며 3310 포트를 호스트에 게시하지 않습니다. 이 포트는 인증·암호화를 제공하지 않으므로 공개 인터넷에 노출하지 않고 API·워커와 같은 사설망에서만 허용합니다. 표준 프로필은 4GB 메모리 상한과 2GB 영상 업로드를 사용합니다. 2GB 호스트는 [COMPACT_HOSTING.md](./COMPACT_HOSTING.md)의 제한 프로필을 적용해 256MB 영상 상한, 단일 검사 스레드와 직렬 미디어 워커를 사용합니다.
 
 운영에서는 `.github/workflows/publish-clamav-image.yml`을 `main`에서 수동 실행하고 확인 문구 `PUBLISH_CLAMAV_IMAGE`를 입력합니다. 워크플로는 `deploy/clamav/Dockerfile`을 `linux/amd64`용으로 빌드해 `ghcr.io/gogumaz/hanstone-clamav`에 게시하고 SBOM·provenance 증명과 90일 manifest artifact를 남긴 뒤 익명 pull까지 검증합니다. artifact의 `immutableReference`를 `CLAMAV_IMAGE=repository@sha256:<64자리>`로 등록하며 태그만 넣지 않습니다. API와 영상 검사 워커는 ClamAV 이미지에 포함된 `clamd` 헬스체크가 통과할 때까지 시작을 기다립니다. 최초 기동은 서명 DB 초기화 때문에 수 분이 걸릴 수 있으며 `CLAMD_STARTUP_TIMEOUT` 동안 기다립니다. `clamav-signatures` 볼륨은 컨테이너 교체 시에도 유지하고 정기 업데이트는 `FRESHCLAM_CHECKS`로 제어합니다.
 

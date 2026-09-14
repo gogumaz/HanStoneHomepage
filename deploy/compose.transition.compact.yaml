@@ -1,0 +1,32 @@
+# Overlay for the currently deployed transitional /opt/hanstone/compose.yaml.
+# It enables malware scanning on the 2 GiB host without activating the three
+# high-memory media profile containers.
+services:
+  api:
+    environment:
+      VIDEO_UPLOAD_MAX_BYTES: ${COMPACT_VIDEO_UPLOAD_MAX_BYTES:-268435456}
+      MALWARE_SCANNER_HOST: clamav-compact
+      MALWARE_SCANNER_PORT: 3310
+      MALWARE_SCANNER_TIMEOUT_MS: ${MALWARE_SCANNER_TIMEOUT_MS:-120000}
+    depends_on:
+      clamav-compact:
+        condition: service_healthy
+
+  clamav-compact:
+    image: ${CLAMAV_IMAGE:-ghcr.io/gogumaz/hanstone-clamav@sha256:d5db12ce7cd7a7365ecda2a9db990fb7eda731cbb0c42a4cdd06fc65aef3acee}
+    restart: unless-stopped
+    environment:
+      CLAMD_STARTUP_TIMEOUT: ${CLAMD_STARTUP_TIMEOUT:-900}
+      CLAMD_CONF_StreamMaxLength: ${COMPACT_CLAMAV_STREAM_MAX_LENGTH:-256M}
+      CLAMD_CONF_MaxFileSize: ${COMPACT_CLAMAV_MAX_FILE_SIZE:-256M}
+      CLAMD_CONF_MaxScanSize: ${COMPACT_CLAMAV_MAX_SCAN_SIZE:-300M}
+      CLAMD_CONF_MaxThreads: ${COMPACT_CLAMAV_MAX_THREADS:-1}
+      CLAMD_CONF_MaxQueue: ${COMPACT_CLAMAV_MAX_QUEUE:-2}
+      CLAMD_CONF_ConcurrentDatabaseReload: "no"
+      FRESHCLAM_CHECKS: ${COMPACT_FRESHCLAM_CHECKS:-24}
+    volumes:
+      - clamav-signatures:/var/lib/clamav
+    mem_limit: ${COMPACT_CLAMAV_MEMORY_LIMIT:-1250m}
+    memswap_limit: ${COMPACT_CLAMAV_MEMORY_SWAP_LIMIT:-2g}
+    cpus: ${COMPACT_CLAMAV_CPU_LIMIT:-1.0}
+    stop_grace_period: 1m

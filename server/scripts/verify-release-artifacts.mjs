@@ -19,6 +19,7 @@ const forbiddenNames = new Set([".env", ".env.local", ".npmrc"]);
 const profiles = {
   api: [
     "main.js",
+    "compact-operations-worker.js",
     "account-mail-worker.js",
     "assignment-reminder-worker.js",
     "inquiry-notification-worker.js",
