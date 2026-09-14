@@ -37,6 +37,7 @@ describe("runtime Compose worker contract", () => {
     const api = serviceBlock(compose, "api");
     expect(api).toContain("RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET:-}");
     expect(api).toContain("ACCOUNT_MAIL_ENCRYPTION_KEY_BASE64: ${ACCOUNT_MAIL_ENCRYPTION_KEY_BASE64:-}");
+    expect(api).toContain("OPERATIONS_METRICS_TOKEN: ${OPERATIONS_METRICS_TOKEN:-}");
   });
 
   it("passes SMTP and encryption settings to the account-mail worker", () => {
