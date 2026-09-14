@@ -10,7 +10,7 @@
 | 우선순위 | 항목 | 확인 결과 | 다음 완료 조건 |
 |---|---|---|---|
 | 1 | 카카오 로그인 | `KOE004`의 원인이던 TEST 앱 로그인 비활성화를 해소했고, TEST 앱의 닉네임·이메일 필수 동의도 활성화함. 운영 서버의 REST API 키와 클라이언트 시크릿을 정식 운영 앱 값으로 함께 전환했으며, 운영 앱의 로그인 ON·필수 동의·정확한 콜백 URI·클라이언트 시크릿 활성 상태를 확인함. 운영 URL은 정식 운영 앱과 `https://handol-edu.com/api/v1/auth/oauth/kakao/callback`으로 정상 전환되고, 비로그인 흐름이 `accounts.kakao.com` HTTP 200에 도달하며 `KOE004`가 재발하지 않음 | 실제 카카오 계정으로 동의→콜백→서비스 세션 발급→로그아웃→재로그인까지 브라우저 검증하고 TEST 앱 의존 제거를 최종 확인 |
-| 2 | 운영 API·웹 배포 | API·정적 웹은 `82aa5e50c2d12d9f95428aa3a1ca26261db7c5ad` 후보로 배포됐고 운영 소스는 Compose 보강 커밋 `56336e005d61`까지 fast-forward됨. DB 마이그레이션 4건, Docker health, 외부 liveness/readiness와 정적 번들 검증이 통과함. `account-mail-worker`·`inquiry-notification-worker`·`assignment-reminder-worker`를 API 이미지 기반 Compose 서비스로 통일했고 계정메일 암호화키를 권한 제한 환경파일에 생성함. API·DB·Redis와 세 워커 모두 `unless-stopped` 재시작 정책으로 실행 중임 | 자체 호스팅 DB·Redis가 TLS를 제공하지 않고 법무 승인·객체 저장소가 미설정이므로 API는 아직 전환용 `development` 런타임임. 관리형 TLS DB·Redis, 법무 승인값, 객체 저장소를 준비한 뒤 `deploy/compose.production.yaml`과 불변 이미지 digest로 전환 |
+| 2 | 운영 API·웹 배포 | API·정적 웹은 `82aa5e50c2d12d9f95428aa3a1ca26261db7c5ad` 후보로 배포됐고 운영 소스는 Compose 보강 커밋 `623ba98`까지 fast-forward됨. DB 마이그레이션 4건, Docker health, 외부 liveness/readiness와 정적 번들 검증이 통과함. `account-mail-worker`·`inquiry-notification-worker`·`assignment-reminder-worker`를 API 이미지 기반 Compose 서비스로 통일했고 계정메일 암호화키를 권한 제한 환경파일에 생성함. API·DB·Redis와 세 워커 모두 `unless-stopped` 재시작 정책으로 실행 중임. 전환용 Compose도 배포 후보 SHA·이미지 digest·PITR·저장소·메일 DNS 등 운영 프리플라이트 입력을 API에 전달하며 실제 프록시 홉 수 `1`을 적용함 | 자체 호스팅 DB·Redis가 TLS를 제공하지 않고 법무 승인·객체 저장소가 미설정이므로 API는 아직 전환용 `development` 런타임임. 관리형 TLS DB·Redis, 법무 승인값, 객체 저장소를 준비한 뒤 `deploy/compose.production.yaml`과 불변 이미지 digest로 전환 |
 | 3 | 릴리스 준비 감사 | CodeQL과 전체 CI가 최신 커밋에서도 통과함. 열린 CodeQL·Dependabot 취약점 경고와 업데이트 PR은 0건임. GitHub `production` 환경에는 운영 API URL·웹 URL·보호 메트릭 토큰을 등록했으며, 인증 메트릭은 `200`, 무인증 요청은 `401`, 워커 건강도는 정상임. 남은 감사 실패 조건은 저장소 Secret 6개와 production Secret 6개임 | 최소 권한 `RELEASE_READINESS_TOKEN`과 실제 스테이징·격리 복구·메일 반송·법무 승인 자료를 준비해 남은 Secret 12개를 등록한 뒤 공식 감사를 재실행 |
 | 4 | 스테이징·인수 증빙 | 최신 CI run `34796160462`와 CodeQL run `34796160495`가 성공했고 웹·브라우저·SBOM artifact가 존재함. 실제 스테이징 부하·워커 soak·후보 인수 실행은 없음 | 스테이징 URL·메트릭 토큰·불변 이미지 digest·격리 복구 DB를 준비하고 부하→soak→후보 인수 순으로 성공 artifact 생성 |
 | 5 | 결제 운영 전환 | 프런트 설정은 토스 테스트 모드이며 실제 결제 운영키·웹훅은 미등록. 소액 승인·중복 승인·웹훅·전액 환불·토스 취소를 봉인하는 12개 판정과 릴리스별 임시 Secret 수명주기 도구는 구현됨 | 토스 운영 클라이언트 키·Secret Key·웹훅 Secret을 비밀 저장소에 등록하고, 실제 후보에서 소액 왕복 증빙을 생성해 임시 Secret 등록→운영 검증→제거 순서로 완료 |
@@ -22,10 +22,12 @@
 실행 중이고 공개 홈페이지·liveness·readiness가 HTTP 200임을 확인했습니다. 다만 완전한
 운영 Compose 전환의 선행 조건은 여전히 충족되지 않았습니다.
 
-2026-09-12 운영 컨테이너에서 실행한 프리플라이트에서 확인된 실패 항목에는
+2026-09-14 운영 컨테이너에서 다시 실행한 전체 9개 프리플라이트 중 데이터베이스 연결·최신
+마이그레이션, Redis 원자 연산, FFmpeg/FFprobe 무변경 검사와 비활성 CDN 판정은 통과했습니다.
+배포 후보 SHA와 이미지 digest 전달 오류도 전환용 Compose 보강으로 제거했습니다. 남은 실패는
+`TOSS_PAYMENTS_LIVE_SECRET_REQUIRED`, `DATABASE_PITR_REQUIRED`,
 `OBJECT_STORAGE_NOT_CONFIGURED`, `MALWARE_SCANNER_NOT_CONFIGURED`,
-`MAIL_DOMAIN_AUTH_NOT_CONFIGURED`가 있습니다. 전체 9개 판정의 재수집은 서버 SSH 인증 후
-진행하며, 확인되지 않은 항목을 통과로 간주하지 않습니다.
+`MAIL_DOMAIN_AUTH_NOT_CONFIGURED`입니다. 확인되지 않은 항목을 통과로 간주하지 않습니다.
 
 객체 저장소 프리플라이트는 이제 환경변수의 버전 관리 선언만 신뢰하지 않고 S3 호환
 `GetBucketVersioning` 응답이 실제 `Enabled`인지 확인합니다. 이어서 비공개 임시 객체의
