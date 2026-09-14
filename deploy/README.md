@@ -13,6 +13,8 @@
 `uzdream.com` 호스팅 설치 후에는 읽기 전용 점검 스크립트로 단계별 상태를 확인합니다.
 스크립트는 서버 설정을 바꾸지 않으며 OS·자원·DNS·방화벽·Nginx·Docker·HTTPS·API
 상태만 검사합니다. 사용법은 [`HOSTING_READINESS.md`](./HOSTING_READINESS.md)를 따릅니다.
+UFW가 비활성 상태라면 [`HOST_FIREWALL.md`](./HOST_FIREWALL.md)의 읽기 전용 계획을 먼저
+확인하고, 별도 SSH 세션을 유지한 상태에서 확인 문구가 필요한 적용 명령을 실행합니다.
 
 ```bash
 ./deploy/check-host-readiness.sh --mode base --expected-ip SERVER_IP

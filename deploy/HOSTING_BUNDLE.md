@@ -53,6 +53,7 @@ npm run bundle:hosting -- --output artifacts/hanstone-hosting-release-001.tgz
 - `deploy/production.env.example`: 자리표시자 템플릿만 포함
 - `deploy/nginx/`: HTTP 부트스트랩·HTTPS·프록시·보안 헤더·캐시 설정
 - `deploy/check-host-readiness.sh`
+- `deploy/configure-host-firewall.sh`와 `deploy/HOST_FIREWALL.md`
 - `DEPLOYMENT_BUNDLE_MANIFEST.json`: 모든 포함 파일의 크기와 SHA-256
 
 다음 항목은 포함되지 않습니다.
