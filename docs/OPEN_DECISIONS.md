@@ -23,10 +23,10 @@
 운영 Compose 전환의 선행 조건은 여전히 충족되지 않았습니다.
 
 2026-09-14 운영 컨테이너에서 다시 실행한 전체 9개 프리플라이트 중 데이터베이스 연결·최신
-마이그레이션, Redis 원자 연산, FFmpeg/FFprobe 무변경 검사와 비활성 CDN 판정은 통과했습니다.
-배포 후보 SHA와 이미지 digest 전달 오류도 전환용 Compose 보강으로 제거했습니다. 남은 실패는
-`TOSS_PAYMENTS_LIVE_SECRET_REQUIRED`, `DATABASE_PITR_REQUIRED`,
-`OBJECT_STORAGE_NOT_CONFIGURED`, `MALWARE_SCANNER_NOT_CONFIGURED`,
+마이그레이션, Redis 원자 연산, FFmpeg/FFprobe 무변경 검사, ClamAV 스트림 검사와 비활성 CDN
+판정은 통과했습니다. 배포 후보 SHA와 이미지 digest 전달 오류도 전환용 Compose 보강으로
+제거했습니다. 남은 실패는 `TOSS_PAYMENTS_LIVE_SECRET_REQUIRED`,
+`DATABASE_PITR_REQUIRED`, `OBJECT_STORAGE_NOT_CONFIGURED`,
 `MAIL_DOMAIN_AUTH_NOT_CONFIGURED`입니다. 확인되지 않은 항목을 통과로 간주하지 않습니다.
 
 객체 저장소 프리플라이트는 이제 환경변수의 버전 관리 선언만 신뢰하지 않고 S3 호환
@@ -41,7 +41,8 @@
 `deploy/aws-object-storage.yaml`과 확인 문구를 요구하는 프로비저닝 도구를 준비했습니다.
 템플릿은 버전 관리·기본 암호화·공개 접근 전면 차단·HTTPS 강제·운영 도메인 CORS·비현재
 버전 보존과 애플리케이션 최소 권한 IAM 사용자를 선언하며 액세스 키를 만들거나 출력하지
-않습니다. 현재 작업 환경에는 인증된 AWS 계정이 없어 과금 리소스는 생성하지 않았습니다.
+않습니다. AWS 콘솔은 IAM 사용자 로그인 화면까지 열어 두었으며 계정 로그인과 과금 리소스 생성
+승인 전이므로 아직 리소스를 생성하지 않았습니다.
 
 같은 날 저장소의 표준 운영 Compose에는 사설망 전용 ClamAV 서비스, 서명 DB 영속 볼륨,
 4GB 메모리 상한, 2GB 영상 검사용 2200MB 제한, 헬스체크 기반 API·영상 워커 시작 순서를
@@ -55,8 +56,8 @@
 `ghcr.io/gogumaz/hanstone-clamav@sha256:d5db12ce7cd7a7365ecda2a9db990fb7eda731cbb0c42a4cdd06fc65aef3acee`입니다.
 실서버 `1967 MiB` 메모리와 4GiB 스왑에서 이 digest를 1250MiB 상한·단일 스레드로
 격리 기동한 결과 ClamAV가 healthy 상태와 `PONG` 응답에 도달했고, 유휴 점유량은 약
-989MiB였습니다. 이 실측값을 compact 프로필에 반영했으며 해당 오버레이로 재배포하고
-프리플라이트해야 `MALWARE_SCANNER_NOT_CONFIGURED`가 해소됩니다.
+989MiB였습니다. 이 실측값을 반영한 compact 오버레이로 실서버를 재배포했으며 PONG, EICAR
+탐지와 운영 프리플라이트를 다시 확인해 `malwareScanner` 판정이 통과했습니다.
 
 같은 실서버 준비 점검에서 UFW가 비활성 상태임을 확인해 SSH·Nginx와 22·80·443
 리스너를 먼저 검증하고, 기존 규칙 백업·오류 시 복원·정확한 확인 문구를 강제하는
