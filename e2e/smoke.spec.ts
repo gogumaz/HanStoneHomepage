@@ -1480,6 +1480,11 @@ test("운영자가 MP4 영상을 업로드하고 비동기 검사를 요청한�
     publishedAt: "2026-08-01T00:00:00.000Z",
     steps: [],
   };
+  await page.route("**/config.js", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/javascript",
+    body: "window.APP_CONFIG=Object.freeze({apiBaseUrl:'/api/v1',lectureApiEnabled:true,mediaDeliveryMode:'object-storage'});",
+  }));
   let storageUploads = 0;
   let completions = 0;
   await page.route("**/api/v1/lessons/PRE-01", (route) => route.fulfill({
@@ -1600,6 +1605,11 @@ test("운영자가 CMS에서 강의를 등록·수정하고 공개 상태를 변
     updatedAt: "2026-08-22T00:00:00.000Z",
   }];
   const assets: Array<Record<string, unknown>> = [];
+  await page.route("**/config.js", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/javascript",
+    body: "window.APP_CONFIG=Object.freeze({apiBaseUrl:'/api/v1',lectureApiEnabled:true,mediaDeliveryMode:'object-storage'});",
+  }));
   let videoRetried = false;
   let hlsActivated = false;
   await page.route("**/api/v1/me", (route) => route.fulfill({
