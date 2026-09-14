@@ -40,6 +40,23 @@ describe("runtime Compose worker contract", () => {
     expect(api).toContain("OPERATIONS_METRICS_TOKEN: ${OPERATIONS_METRICS_TOKEN:-}");
   });
 
+  it("passes production preflight inputs through the transitional API service", () => {
+    const api = serviceBlock(compose, "api");
+    for (const setting of [
+      "DEPLOYMENT_COMMIT_SHA",
+      "DEPLOYMENT_IMAGE_DIGEST",
+      "DATABASE_PITR_ENABLED",
+      "RECOVERY_DRILL_LAST_COMPLETED_AT",
+      "OBJECT_STORAGE_BUCKET",
+      "OBJECT_STORAGE_VERSIONING_ENABLED",
+      "MALWARE_SCANNER_HOST",
+      "MAIL_SPF_DOMAIN",
+      "MAIL_DKIM_SELECTORS",
+    ]) {
+      expect(api, setting).toContain(`${setting}: ${"${"}${setting}`);
+    }
+  });
+
   it("passes SMTP and encryption settings to the account-mail worker", () => {
     const worker = serviceBlock(compose, "account-mail-worker");
     expect(worker).toContain('command: ["node", "dist/account-mail-worker.js"]');
