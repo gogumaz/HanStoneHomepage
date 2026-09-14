@@ -51,6 +51,11 @@ ClamAV 헬스와 호스트 3310 포트 미노출을 검사하며, 관리형 Clam
 중단했습니다. 메모리를 최소 4GB로 증설한 뒤 이 digest를 `CLAMAV_IMAGE`에 등록하고
 재배포·프리플라이트해야 `MALWARE_SCANNER_NOT_CONFIGURED`가 해소됩니다.
 
+같은 실서버 준비 점검에서 UFW가 비활성 상태임을 확인했습니다. SSH·Nginx와 22·80·443
+리스너를 먼저 검증하고, 기존 규칙 백업·오류 시 복원·정확한 확인 문구를 강제하는
+`deploy/configure-host-firewall.sh`를 추가했습니다. 실서버 읽기 전용 계획은 통과했지만
+실제 활성화는 별도 SSH 세션을 유지하는 점검 창에서 수행해야 하므로 아직 적용하지 않았습니다.
+
 메일 도메인 프리플라이트는 SPF의 마지막 `all`이 `~all` 또는 `-all`인지, DMARC 정책이
 중복 없이 `quarantine` 또는 `reject`인지, 레거시 `pct`가 있으면 `100`인지까지 검사하도록
 강화했습니다. 2026-09-14 재조회한 `handol-edu.com` SPF는
