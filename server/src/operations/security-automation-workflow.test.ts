@@ -73,7 +73,6 @@ describe("repository security automation", () => {
     expect(workflow).toContain("provenance: mode=max");
     expect(workflow).toContain("sbom: true");
     expect(workflow).toContain("subject-digest: ${{ steps.push.outputs.digest }}");
-    expect(workflow).toContain("-f visibility=public");
     expect(workflow).toContain('docker pull "$CLAMAV_IMAGE_REPOSITORY@$IMAGE_DIGEST"');
     expect(workflow).toContain("immutableReference");
     expect(workflow).toContain("retention-days: 90");

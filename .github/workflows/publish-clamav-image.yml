@@ -63,12 +63,6 @@ jobs:
           subject-name: ${{ env.CLAMAV_IMAGE_REPOSITORY }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
-      - name: Make the scanner package available to production hosts
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >-
-          gh api --method PATCH /user/packages/container/hanstone-clamav
-          -f visibility=public
       - name: Verify the immutable image and write deployment evidence
         env:
           CANDIDATE_SHA: ${{ github.sha }}
