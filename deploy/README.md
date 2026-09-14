@@ -109,6 +109,8 @@ npm --prefix server run dev
 실제 후보의 실행 ID·artifact SHA-256·법무·메일·HTTPS·롤백 증적은 [`docs/RELEASE_CHANGE_APPROVAL_TEMPLATE.md`](../docs/RELEASE_CHANGE_APPROVAL_TEMPLATE.md)를 후보별로 복제해 변경승인 시스템에 기록합니다. Secret과 환경 파일 원문은 기록하지 않습니다.
 
 1. 관리형 PostgreSQL과 비공개 객체 저장소를 생성합니다.
+   AWS S3를 사용할 때는 [AWS_OBJECT_STORAGE.md](./AWS_OBJECT_STORAGE.md)의 서울 리전
+   CloudFormation 템플릿과 최소 권한 절차를 적용합니다.
 2. API 이미지를 커밋 SHA 태그로 빌드·보관하고 레지스트리가 반환한 `repository@sha256:<64자리>` 불변 참조를 기록합니다. 운영 Compose의 `API_IMAGE`에는 태그가 아니라 이 참조만 사용합니다.
 3. 같은 이미지를 사용해 `npm run db:deploy`를 한 번 실행합니다.
 4. 같은 이미지와 운영 환경변수로 `node dist/production-preflight.js`를 실행하고 모든 점검이 `pass`인지 확인합니다.
