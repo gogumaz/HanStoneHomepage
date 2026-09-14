@@ -29,6 +29,10 @@ describe("runtime Compose worker contract", () => {
     }
   });
 
+  it("makes restart persistence explicit and configurable for every service", () => {
+    expect(compose.match(/restart: \$\{COMPOSE_RESTART_POLICY:-no\}/gu)).toHaveLength(10);
+  });
+
   it("passes the Resend webhook and encrypted account-mail settings to the API", () => {
     const api = serviceBlock(compose, "api");
     expect(api).toContain("RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET:-}");

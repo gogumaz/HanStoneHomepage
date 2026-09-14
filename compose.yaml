@@ -1,6 +1,7 @@
 services:
   database:
     image: postgres:17-alpine
+    restart: ${COMPOSE_RESTART_POLICY:-no}
     environment:
       POSTGRES_DB: baduk_history
       POSTGRES_USER: baduk
@@ -17,6 +18,7 @@ services:
 
   redis:
     image: redis:8-alpine
+    restart: ${COMPOSE_RESTART_POLICY:-no}
     command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
@@ -30,6 +32,7 @@ services:
 
   api:
     image: ${API_IMAGE:-hanstone-api:latest}
+    restart: ${COMPOSE_RESTART_POLICY:-no}
     build:
       context: ./server
     environment:
@@ -101,6 +104,7 @@ services:
 
   video-scan-worker:
     image: ${API_IMAGE:-hanstone-api:latest}
+    restart: ${COMPOSE_RESTART_POLICY:-no}
     build:
       context: ./server
     profiles: ["malware-scan"]
@@ -131,6 +135,7 @@ services:
 
   inquiry-notification-worker:
     image: ${API_IMAGE:-hanstone-api:latest}
+    restart: ${COMPOSE_RESTART_POLICY:-no}
     build:
       context: ./server
     command: ["node", "dist/inquiry-notification-worker.js"]
@@ -156,6 +161,7 @@ services:
 
   account-mail-worker:
     image: ${API_IMAGE:-hanstone-api:latest}
+    restart: ${COMPOSE_RESTART_POLICY:-no}
     build:
       context: ./server
     command: ["node", "dist/account-mail-worker.js"]
@@ -182,6 +188,7 @@ services:
 
   assignment-reminder-worker:
     image: ${API_IMAGE:-hanstone-api:latest}
+    restart: ${COMPOSE_RESTART_POLICY:-no}
     build:
       context: ./server
     command: ["node", "dist/assignment-reminder-worker.js"]
@@ -196,6 +203,7 @@ services:
 
   video-cleanup-worker:
     image: ${API_IMAGE:-hanstone-api:latest}
+    restart: ${COMPOSE_RESTART_POLICY:-no}
     build:
       context: ./server
     profiles: ["malware-scan"]
@@ -223,6 +231,7 @@ services:
 
   hls-transcode-worker:
     image: ${API_IMAGE:-hanstone-api:latest}
+    restart: ${COMPOSE_RESTART_POLICY:-no}
     build:
       context: ./server
     profiles: ["malware-scan"]
@@ -252,6 +261,7 @@ services:
   clamav:
     build:
       context: ./deploy/clamav
+    restart: ${COMPOSE_RESTART_POLICY:-no}
     profiles: ["malware-scan"]
     ports:
       - "127.0.0.1:${CLAMAV_HOST_PORT:-3310}:3310"
