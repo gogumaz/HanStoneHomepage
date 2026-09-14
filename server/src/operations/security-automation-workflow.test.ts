@@ -107,6 +107,8 @@ describe("repository security automation", () => {
     expect(apiPackage.engines.node).toBe(">=26");
     expect(componentsPackage.engines.node).toBe(">=26");
     expect(dockerfile).toContain("FROM node:26-bookworm-slim AS base");
+    expect(dockerfile).toContain("COPY --chmod=0644 package.json package-lock.json ./");
+    expect(dockerfile).toContain("RUN chmod -R a+rX ./prisma ./scripts");
     expect(nvmVersion).toBe("26");
   });
 });

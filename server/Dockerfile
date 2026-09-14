@@ -18,12 +18,13 @@ RUN npm run build
 FROM base AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-COPY package.json package-lock.json ./
+COPY --chmod=0644 package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/prisma.config.ts ./prisma.config.ts
 COPY scripts ./scripts
+RUN chmod -R a+rX ./prisma ./scripts
 EXPOSE 3000
 USER node
 CMD ["node", "dist/main.js"]
