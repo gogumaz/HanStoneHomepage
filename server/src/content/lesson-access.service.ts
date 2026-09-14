@@ -5,6 +5,7 @@ import { PrismaService } from "../database/prisma.service.js";
 import { LessonStatus, SubscriptionPaymentStatus } from "../generated/prisma/enums.js";
 import { MediaDeliveryService } from "../storage/media-delivery.service.js";
 import { HlsManifestService } from "./hls-manifest.service.js";
+import { LocalVideoService, type LocalVideoFile } from "./local-video.service.js";
 
 export type LessonAccess = {
   source: "free_sample" | "subscription" | "operator_preview";
@@ -17,6 +18,7 @@ export class LessonAccessService {
     private readonly prisma: PrismaService,
     private readonly delivery: MediaDeliveryService,
     private readonly hls: HlsManifestService,
+    private readonly localVideo: LocalVideoService,
   ) {}
 
   async getPlayback(lessonId: string, user?: CurrentUser) {
@@ -28,6 +30,34 @@ export class LessonAccessService {
       throw new ApiError("LESSON_NOT_FOUND", "공개된 강의를 찾을 수 없습니다.", HttpStatus.NOT_FOUND);
     }
     const access = await this.requireAccess(lesson, user);
+    if (this.localVideo.isEnabled()) {
+      if (!await this.localVideo.hasVideo(lesson.id)) {
+        return {
+          lessonId: lesson.id,
+          access,
+          playback: {
+            status: "asset_pending" as const,
+            format: null,
+            delivery: "local-download" as const,
+            url: null,
+            expiresAt: null,
+            message: "다운로드 재생용 MP4 영상을 준비하고 있습니다.",
+          },
+        };
+      }
+      return {
+        lessonId: lesson.id,
+        access,
+        playback: {
+          status: "ready" as const,
+          format: "mp4" as const,
+          delivery: "local-download" as const,
+          url: `/api/v1/lessons/${encodeURIComponent(lesson.id)}/video-download`,
+          expiresAt: null,
+          message: "영상을 브라우저로 내려받은 뒤 재생합니다.",
+        },
+      };
+    }
     if (!lesson.videoAssetKey) {
       return {
         lessonId: lesson.id,
@@ -83,6 +113,18 @@ export class LessonAccessService {
         message: "재생 URL이 준비되었습니다.",
       },
     };
+  }
+
+  async downloadLocalVideo(lessonId: string, user?: CurrentUser): Promise<LocalVideoFile> {
+    if (!this.localVideo.isEnabled()) {
+      throw new ApiError(
+        "LOCAL_VIDEO_MODE_NOT_CONFIGURED",
+        "다운로드 재생 모드가 활성화되지 않았습니다.",
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    await this.requireLessonAccess(lessonId, user);
+    return this.localVideo.openVideo(lessonId);
   }
 
   async getHlsManifest(lessonId: string, relativePath: string | undefined, user?: CurrentUser) {

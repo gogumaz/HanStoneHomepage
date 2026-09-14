@@ -30,11 +30,14 @@ services:
   compact-operations-worker:
     extends:
       file: compose.production.yaml
-      service: video-scan-worker
+      service: account-mail-worker
     restart: unless-stopped
     command: ["node", "dist/compact-operations-worker.js"]
     environment:
       NODE_OPTIONS: --max-old-space-size=256
+      MEDIA_DELIVERY_MODE: ${MEDIA_DELIVERY_MODE:-local-download}
+      LOCAL_VIDEO_ROOT: ${LOCAL_VIDEO_ROOT:-/var/lib/hanstone/media/lessons}
+      LOCAL_VIDEO_MAX_BYTES: ${LOCAL_VIDEO_MAX_BYTES:-268435456}
       COMPACT_WORKER_POLL_INTERVAL_MS: ${COMPACT_WORKER_POLL_INTERVAL_MS:-5000}
       VIDEO_UPLOAD_MAX_BYTES: ${COMPACT_VIDEO_UPLOAD_MAX_BYTES:-268435456}
       MALWARE_SCANNER_TIMEOUT_MS: ${MALWARE_SCANNER_TIMEOUT_MS:-120000}

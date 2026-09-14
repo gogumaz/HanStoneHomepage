@@ -1,3 +1,4 @@
+import { pipeline } from "node:stream/promises";
 import { Body, Controller, Get, Header, Param, Patch, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
 import type { CurrentUser as CurrentUserValue } from "../auth/auth.types.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
@@ -18,6 +19,11 @@ type HlsManifestResponse = {
   setHeader(name: string, value: string): void;
   status(statusCode: number): HlsManifestResponse;
   send(body: string): void;
+};
+
+type VideoDownloadResponse = NodeJS.WritableStream & {
+  setHeader(name: string, value: string | number): void;
+  status(statusCode: number): VideoDownloadResponse;
 };
 
 @Controller()
@@ -83,6 +89,23 @@ export class ContentController {
     @CurrentUser() user?: CurrentUserValue,
   ) {
     return this.accessService.getPlayback(lessonId, user);
+  }
+
+  @Get("lessons/:lessonId/video-download")
+  @UseGuards(OptionalSessionGuard)
+  async downloadVideo(
+    @Param("lessonId") lessonId: string,
+    @CurrentUser() user: CurrentUserValue | undefined,
+    @Res() response: VideoDownloadResponse,
+  ) {
+    const video = await this.accessService.downloadLocalVideo(lessonId, user);
+    response.setHeader("Content-Type", "video/mp4");
+    response.setHeader("Content-Length", video.size);
+    response.setHeader("Content-Disposition", `inline; filename="${video.fileName}"`);
+    response.setHeader("Cache-Control", "private, no-store");
+    response.setHeader("Vary", "Cookie");
+    response.status(200);
+    await pipeline(video.stream, response);
   }
 
   @Get("lessons/:lessonId/hls-manifest")

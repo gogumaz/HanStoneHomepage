@@ -6,6 +6,7 @@ window.APP_CONFIG = Object.freeze({
   oauthProviders: Object.freeze(["naver", "kakao", "google"]),
   boardApiEnabled: true,
   lectureApiEnabled: true,
+  mediaDeliveryMode: "object-storage",
   demoRoleSwitcher: false,
   paymentProvider: "toss-payments",
   tossPayments: Object.freeze({

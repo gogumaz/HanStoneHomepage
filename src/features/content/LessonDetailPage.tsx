@@ -89,7 +89,8 @@ export function LessonDetailPage() {
   ];
   const error = errors.find((item): item is ApiClientError => item instanceof ApiClientError);
   const progress = progressQuery.data;
-  const canManageVideo = meQuery.data?.roles.some((role) => role === 'operator' || role === 'admin') ?? false;
+  const canManageVideo = (meQuery.data?.roles.some((role) => role === 'operator' || role === 'admin') ?? false)
+    && window.APP_CONFIG?.mediaDeliveryMode !== 'local-download';
 
   return (
     <main className="catalog-page lesson-detail-page">
@@ -131,6 +132,7 @@ export function LessonDetailPage() {
                   <LessonVideoPlayer
                     src={playbackMutation.data.playback.url}
                     format={playbackMutation.data.playback.format ?? 'mp4'}
+                    downloadBeforePlayback={playbackMutation.data.playback.delivery === 'local-download'}
                   />
                 ) : null}
                 {playbackMutation.data.playback.expiresAt ? (

@@ -5,11 +5,13 @@ import type { ErrorData } from 'hls.js';
 type LessonVideoPlayerProps = {
   src: string;
   format: 'mp4' | 'hls';
+  downloadBeforePlayback?: boolean;
 };
 
-export function LessonVideoPlayer({ src, format }: LessonVideoPlayerProps) {
+export function LessonVideoPlayer({ src, format, downloadBeforePlayback = false }: LessonVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -17,9 +19,39 @@ export function LessonVideoPlayer({ src, format }: LessonVideoPlayerProps) {
     setError(null);
 
     if (format === 'mp4') {
-      video.src = src;
+      if (!downloadBeforePlayback) {
+        video.src = src;
+        return () => {
+          video.removeAttribute('src');
+        };
+      }
+      const controller = new AbortController();
+      let objectUrl: string | null = null;
+      let disposed = false;
+      setDownloading(true);
+      void fetch(src, { credentials: 'include', signal: controller.signal })
+        .then(async (response) => {
+          if (!response.ok) throw new Error('VIDEO_DOWNLOAD_FAILED');
+          const blob = await response.blob();
+          if (!blob.size || !blob.type.toLowerCase().startsWith('video/mp4')) {
+            throw new Error('VIDEO_DOWNLOAD_INVALID');
+          }
+          objectUrl = URL.createObjectURL(blob);
+          video.src = objectUrl;
+        })
+        .catch((downloadError: unknown) => {
+          if ((downloadError as Error).name !== 'AbortError') {
+            setError('영상을 내려받지 못했습니다. 잠시 후 다시 시도해 주세요.');
+          }
+        })
+        .finally(() => {
+          if (!disposed) setDownloading(false);
+        });
       return () => {
+        disposed = true;
+        controller.abort();
         video.removeAttribute('src');
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
       };
     }
 
@@ -66,10 +98,11 @@ export function LessonVideoPlayer({ src, format }: LessonVideoPlayerProps) {
       hls?.destroy();
       video.removeAttribute('src');
     };
-  }, [format, src]);
+  }, [downloadBeforePlayback, format, src]);
 
   return (
     <>
+      {downloading ? <p role="status">강의 영상을 내려받고 있습니다…</p> : null}
       <video
         ref={videoRef}
         className="lesson-video"

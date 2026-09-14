@@ -8,6 +8,7 @@
 |---|---|
 | [개발 가이드](./DEVELOPMENT_GUIDE.md) | 로컬 실행, 파일 구조, 코딩 규칙, 배포 방법 |
 | [홈페이지 테스트 및 서버 설치 매뉴얼](./HOMEPAGE_TEST_AND_SERVER_INSTALLATION.md) | 빠른 화면 확인, 자동 테스트, 로컬·Docker·운영 서버 설치와 장애 대응 절차 |
+| [로컬 MP4 다운로드 재생](../deploy/LOCAL_VIDEO_DOWNLOAD.md) | AWS 없이 권한 확인 후 MP4 전체를 브라우저로 내려받아 재생하는 현재 운영 절차 |
 | [uzdream.com PHPS 서버 호스팅 테스트 매뉴얼](./UZDREAM_PHPS_HOSTING_TEST_MANUAL.md) | 512MB PHPS 서버의 Ubuntu 재설치, 정적 배포, SSL과 실제 도메인 브라우저 확인 절차 |
 | [아키텍처](./ARCHITECTURE.md) | 현재 구조와 목표 시스템 구성, 주요 데이터 흐름 |
 | [React 프런트엔드 기술 스택](./FRONTEND_STACK.md) | React·TypeScript·Vite 전환 구조와 개발 기준 |

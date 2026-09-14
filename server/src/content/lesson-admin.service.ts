@@ -3,6 +3,7 @@ import type { CurrentUser } from "../auth/auth.types.js";
 import { ApiError } from "../common/api-error.js";
 import { PrismaService } from "../database/prisma.service.js";
 import { LessonStatus, LessonStepType } from "../generated/prisma/enums.js";
+import { LocalVideoService } from "./local-video.service.js";
 
 const LESSON_ID = /^[A-Z0-9][A-Z0-9-]{2,39}$/;
 const STATUS_INPUT: Record<string, LessonStatus> = {
@@ -143,7 +144,10 @@ function statusInput(body: unknown): LessonStatus {
 
 @Injectable()
 export class LessonAdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly localVideo: LocalVideoService,
+  ) {}
 
   async list(include?: string) {
     const statuses = this.parseStatuses(include);
@@ -160,7 +164,7 @@ export class LessonAdminService {
     ]);
     return {
       eras: eras.map(({ id, order, name }) => ({ id, order, name })),
-      items: lessons.map((lesson) => this.view(lesson)),
+      items: await Promise.all(lessons.map((lesson) => this.view(lesson))),
     };
   }
 
@@ -244,7 +248,10 @@ export class LessonAdminService {
   async changeStatus(user: CurrentUser, lessonId: string, body: unknown, requestId?: string) {
     const status = statusInput(body);
     const current = await this.findLesson(lessonId);
-    if (status === LessonStatus.PUBLISHED && (!current.videoAssetKey || current._count.steps !== STANDARD_STEPS.length)) {
+    const hasVideo = this.localVideo.isEnabled()
+      ? await this.localVideo.hasVideo(current.id)
+      : Boolean(current.videoAssetKey);
+    if (status === LessonStatus.PUBLISHED && (!hasVideo || current._count.steps !== STANDARD_STEPS.length)) {
       throw new ApiError(
         "LESSON_NOT_READY_TO_PUBLISH",
         "영상과 6개 기본 단계가 준비된 강의만 공개할 수 있습니다.",
@@ -303,7 +310,10 @@ export class LessonAdminService {
     return lesson;
   }
 
-  private view(lesson: LessonRecord & { era: { id: string; name: string }; _count: { steps: number } }) {
+  private async view(lesson: LessonRecord & { era: { id: string; name: string }; _count: { steps: number } }) {
+    const hasVideo = this.localVideo.isEnabled()
+      ? await this.localVideo.hasVideo(lesson.id)
+      : Boolean(lesson.videoAssetKey);
     return {
       id: lesson.id,
       era: lesson.era,
@@ -317,7 +327,7 @@ export class LessonAdminService {
       durationMinutes: lesson.durationMinutes,
       status: lesson.status.toLowerCase(),
       isFreeSample: lesson.isFreeSample,
-      hasVideo: Boolean(lesson.videoAssetKey),
+      hasVideo,
       stepCount: lesson._count.steps,
       publishedAt: lesson.publishedAt,
       createdAt: lesson.createdAt,

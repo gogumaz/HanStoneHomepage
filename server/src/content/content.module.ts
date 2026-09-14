@@ -11,6 +11,7 @@ import { StorageModule } from "../storage/storage.module.js";
 import { StudentDashboardService } from "./student-dashboard.service.js";
 import { HlsManifestService } from "./hls-manifest.service.js";
 import { OrganizationModule } from "../organization/organization.module.js";
+import { LocalVideoService } from "./local-video.service.js";
 
 @Module({
   imports: [AuthModule, StorageModule, OrganizationModule],
@@ -24,6 +25,7 @@ import { OrganizationModule } from "../organization/organization.module.js";
     LessonAssetService,
     StudentDashboardService,
     HlsManifestService,
+    LocalVideoService,
   ],
 })
 export class ContentModule {}

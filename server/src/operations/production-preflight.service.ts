@@ -9,6 +9,7 @@ import { MediaDeliveryService } from "../storage/media-delivery.service.js";
 import { HlsTranscoderService } from "../content/hls-transcoder.service.js";
 import { ObjectStorageService } from "../storage/object-storage.service.js";
 import type { RateLimitStore } from "../common/rate-limit.store.js";
+import { LocalVideoService } from "../content/local-video.service.js";
 import { loadReleaseIdentity } from "./release-identity.js";
 
 export type PreflightCheckName =
@@ -66,6 +67,7 @@ export class ProductionPreflightService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: ObjectStorageService,
+    private readonly localVideo: LocalVideoService,
     private readonly delivery: MediaDeliveryService,
     private readonly transcoder: HlsTranscoderService,
     private readonly scanner: MalwareScannerService,
@@ -129,7 +131,7 @@ export class ProductionPreflightService {
       this.check("recoveryPolicy", async () => {
         if (!config.databasePitrEnabled) throw new ConfigurationError("DATABASE_PITR_REQUIRED");
         if (config.backupRetentionDays < 30) throw new ConfigurationError("BACKUP_RETENTION_INSUFFICIENT");
-        if (!config.objectStorageVersioningEnabled) {
+        if (config.mediaDeliveryMode === "object-storage" && !config.objectStorageVersioningEnabled) {
           throw new ConfigurationError("OBJECT_STORAGE_VERSIONING_REQUIRED");
         }
         if (config.recoveryRpoMinutes > 15) throw new ConfigurationError("RECOVERY_RPO_TOO_HIGH");
@@ -143,7 +145,9 @@ export class ProductionPreflightService {
         return [
           "databasePitr=declared",
           `retentionDays=${config.backupRetentionDays}`,
-          "objectVersioning=declared",
+          config.mediaDeliveryMode === "object-storage"
+            ? "objectVersioning=declared"
+            : "mediaBackup=deployment-managed",
           `rpoMinutes=${config.recoveryRpoMinutes}`,
           `rtoMinutes=${config.recoveryRtoMinutes}`,
           `drillCompletedAt=${config.recoveryDrillLastCompletedAt}`,
@@ -240,10 +244,15 @@ export class ProductionPreflightService {
         return "provider=redis; atomicIncrement=ok; expiry=ok; probeDeleted=true";
       }),
       this.check("objectStorage", async () => {
+        if (config.mediaDeliveryMode === "local-download") {
+          await this.localVideo.verifyRoot();
+          return "disabled; localVideoRoot=readable";
+        }
         await this.storage.verifyVideoStorageAccess();
         return "versioning=enabled; put=get=delete=ok; anonymousRead=denied";
       }),
       this.check("cdn", async () => {
+        if (config.mediaDeliveryMode === "local-download") return "disabled; mode=local-download";
         const provider = await this.delivery.verifyCdnConnection();
         if (config.preflightRequireCdn && provider === "disabled") {
           throw new ConfigurationError("CDN_NOT_CONFIGURED");
@@ -253,10 +262,12 @@ export class ProductionPreflightService {
           : `provider=${provider}; signedFetch=ok; probeDeleted=true`;
       }),
       this.check("hlsTranscoder", async () => {
+        if (config.mediaDeliveryMode === "local-download") return "disabled; mode=local-download";
         await this.transcoder.verifyBinaries();
         return "ffmpeg=ok; ffprobe=ok; mutation=false";
       }),
       this.check("malwareScanner", async () => {
+        if (config.mediaDeliveryMode === "local-download") return "disabled; managedUploads=false";
         const result = await this.scanner.scan(new TextEncoder().encode("baduk-history-preflight"));
         if (!result.clean) throw new ConfigurationError("MALWARE_SCANNER_UNEXPECTED_DETECTION");
         return `provider=${result.provider}; result=${result.result}`;

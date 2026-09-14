@@ -9,6 +9,7 @@ import { LessonVideoScanWorkerService } from "./content/lesson-video-scan-worker
 import { InquiryNotificationWorkerService } from "./inquiry/inquiry-notification-worker.service.js";
 import { AccountMailWorkerService } from "./mail/account-mail-worker.service.js";
 import { ClassAssignmentService } from "./organization/class-assignment.service.js";
+import { loadAppConfig } from "./config/app-config.js";
 
 const logger = new Logger("CompactOperationsWorker");
 
@@ -61,13 +62,19 @@ async function bootstrap(): Promise<void> {
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
+  const mediaTasks = loadAppConfig().mediaDeliveryMode === "object-storage"
+    ? [
+        runMediaJobsSerially(
+          application.get(LessonVideoScanWorkerService),
+          application.get(LessonHlsTranscodeWorkerService),
+          controller.signal,
+        ),
+        application.get(LessonVideoCleanupWorkerService).runForever(controller.signal),
+      ]
+    : [];
+  if (mediaTasks.length === 0) logger.log("Managed media workers disabled (local download mode)");
   const tasks = [
-    runMediaJobsSerially(
-      application.get(LessonVideoScanWorkerService),
-      application.get(LessonHlsTranscodeWorkerService),
-      controller.signal,
-    ),
-    application.get(LessonVideoCleanupWorkerService).runForever(controller.signal),
+    ...mediaTasks,
     application.get(AccountMailWorkerService).runForever(controller.signal),
     application.get(InquiryNotificationWorkerService).runForever(controller.signal),
     application.get(ClassAssignmentService).runReminderWorker(controller.signal),

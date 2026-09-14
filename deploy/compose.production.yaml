@@ -53,15 +53,18 @@ services:
       PREFLIGHT_REQUIRED_OAUTH_PROVIDERS: ${PREFLIGHT_REQUIRED_OAUTH_PROVIDERS:-naver,kakao,google}
       GUARDIAN_INVITATION_TTL_HOURS: ${GUARDIAN_INVITATION_TTL_HOURS:-72}
       TOSS_PAYMENTS_SECRET_KEY: ${TOSS_PAYMENTS_SECRET_KEY:?TOSS_PAYMENTS_SECRET_KEY must be set to a live_gsk_ key}
+      MEDIA_DELIVERY_MODE: ${MEDIA_DELIVERY_MODE:-local-download}
+      LOCAL_VIDEO_ROOT: ${LOCAL_VIDEO_ROOT:-/var/lib/hanstone/media/lessons}
+      LOCAL_VIDEO_MAX_BYTES: ${LOCAL_VIDEO_MAX_BYTES:-268435456}
       OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-}
       OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-ap-northeast-2}
-      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:?OBJECT_STORAGE_BUCKET must be set}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-}
       OBJECT_STORAGE_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY_ID:-}
       OBJECT_STORAGE_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_ACCESS_KEY:-}
       OBJECT_STORAGE_FORCE_PATH_STYLE: ${OBJECT_STORAGE_FORCE_PATH_STYLE:-false}
       DATABASE_PITR_ENABLED: ${DATABASE_PITR_ENABLED:?DATABASE_PITR_ENABLED must be set}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
-      OBJECT_STORAGE_VERSIONING_ENABLED: ${OBJECT_STORAGE_VERSIONING_ENABLED:?OBJECT_STORAGE_VERSIONING_ENABLED must be set}
+      OBJECT_STORAGE_VERSIONING_ENABLED: ${OBJECT_STORAGE_VERSIONING_ENABLED:-false}
       RECOVERY_RPO_MINUTES: ${RECOVERY_RPO_MINUTES:-15}
       RECOVERY_RTO_MINUTES: ${RECOVERY_RTO_MINUTES:-240}
       RECOVERY_DRILL_LAST_COMPLETED_AT: ${RECOVERY_DRILL_LAST_COMPLETED_AT:?RECOVERY_DRILL_LAST_COMPLETED_AT must be set}
@@ -79,7 +82,7 @@ services:
       INQUIRY_ATTACHMENT_RETENTION_HOURS: ${INQUIRY_ATTACHMENT_RETENTION_HOURS:-24}
       COMMUNITY_ATTACHMENT_MAX_BYTES: ${COMMUNITY_ATTACHMENT_MAX_BYTES:-20971520}
       COMMUNITY_ATTACHMENT_RETENTION_HOURS: ${COMMUNITY_ATTACHMENT_RETENTION_HOURS:-24}
-      MALWARE_SCANNER_HOST: ${MALWARE_SCANNER_HOST:-clamav}
+      MALWARE_SCANNER_HOST: ${MALWARE_SCANNER_HOST:-}
       MALWARE_SCANNER_PORT: ${MALWARE_SCANNER_PORT:-3310}
       MALWARE_SCANNER_TIMEOUT_MS: ${MALWARE_SCANNER_TIMEOUT_MS:-30000}
       VIDEO_SCAN_POLL_INTERVAL_MS: ${VIDEO_SCAN_POLL_INTERVAL_MS:-5000}
@@ -93,9 +96,6 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "127.0.0.1:3000:3000"
-    depends_on:
-      clamav:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/api/v1/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
       interval: 10s
@@ -105,6 +105,7 @@ services:
   video-scan-worker:
     image: ${API_IMAGE:?API_IMAGE must be an immutable repository@sha256 digest reference}
     restart: unless-stopped
+    profiles: ["managed-media"]
     command: ["node", "dist/video-scan-worker.js"]
     environment:
       NODE_ENV: production
@@ -123,7 +124,7 @@ services:
       MAIL_FROM: ${MAIL_FROM:?MAIL_FROM must be set}
       OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-}
       OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-ap-northeast-2}
-      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:?OBJECT_STORAGE_BUCKET must be set}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-}
       OBJECT_STORAGE_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY_ID:-}
       OBJECT_STORAGE_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_ACCESS_KEY:-}
       OBJECT_STORAGE_FORCE_PATH_STYLE: ${OBJECT_STORAGE_FORCE_PATH_STYLE:-false}
@@ -207,6 +208,7 @@ services:
   video-cleanup-worker:
     image: ${API_IMAGE:?API_IMAGE must be an immutable repository@sha256 digest reference}
     restart: unless-stopped
+    profiles: ["managed-media"]
     command: ["node", "dist/video-cleanup-worker.js"]
     environment:
       NODE_ENV: production
@@ -225,7 +227,7 @@ services:
       MAIL_FROM: ${MAIL_FROM:?MAIL_FROM must be set}
       OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-}
       OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-ap-northeast-2}
-      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:?OBJECT_STORAGE_BUCKET must be set}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-}
       OBJECT_STORAGE_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY_ID:-}
       OBJECT_STORAGE_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_ACCESS_KEY:-}
       OBJECT_STORAGE_FORCE_PATH_STYLE: ${OBJECT_STORAGE_FORCE_PATH_STYLE:-false}
@@ -240,6 +242,7 @@ services:
   hls-transcode-worker:
     image: ${API_IMAGE:?API_IMAGE must be an immutable repository@sha256 digest reference}
     restart: unless-stopped
+    profiles: ["managed-media"]
     command: ["node", "dist/hls-transcode-worker.js"]
     environment:
       NODE_ENV: production
@@ -258,7 +261,7 @@ services:
       MAIL_FROM: ${MAIL_FROM:?MAIL_FROM must be set}
       OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-}
       OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-ap-northeast-2}
-      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:?OBJECT_STORAGE_BUCKET must be set}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-}
       OBJECT_STORAGE_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY_ID:-}
       OBJECT_STORAGE_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_ACCESS_KEY:-}
       OBJECT_STORAGE_FORCE_PATH_STYLE: ${OBJECT_STORAGE_FORCE_PATH_STYLE:-false}
@@ -275,6 +278,7 @@ services:
   clamav:
     image: ${CLAMAV_IMAGE:?CLAMAV_IMAGE must be an immutable repository@sha256 digest reference}
     restart: unless-stopped
+    profiles: ["managed-media"]
     environment:
       CLAMD_STARTUP_TIMEOUT: ${CLAMD_STARTUP_TIMEOUT:-600}
       CLAMD_CONF_StreamMaxLength: ${CLAMAV_STREAM_MAX_LENGTH:-2200M}

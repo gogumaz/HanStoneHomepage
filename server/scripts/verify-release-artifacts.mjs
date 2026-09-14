@@ -41,6 +41,7 @@ const publicConfigKeys = new Set([
   "oauthProviders",
   "boardApiEnabled",
   "lectureApiEnabled",
+  "mediaDeliveryMode",
   "demoRoleSwitcher",
   "paymentProvider",
   "tossPayments",
@@ -107,6 +108,7 @@ function validateWebConfig(source) {
     || config.oauthProviders.some((provider) => !oauthProviders.has(provider))
     || typeof config.boardApiEnabled !== "boolean"
     || typeof config.lectureApiEnabled !== "boolean"
+    || (config.mediaDeliveryMode !== "object-storage" && config.mediaDeliveryMode !== "local-download")
     || typeof config.demoRoleSwitcher !== "boolean"
     || config.paymentProvider !== "toss-payments"
     || !isRecord(config.tossPayments)

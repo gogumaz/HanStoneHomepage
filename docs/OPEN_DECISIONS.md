@@ -10,7 +10,7 @@
 | 우선순위 | 항목 | 확인 결과 | 다음 완료 조건 |
 |---|---|---|---|
 | 1 | 카카오 로그인 | `KOE004`의 원인이던 TEST 앱 로그인 비활성화를 해소했고, TEST 앱의 닉네임·이메일 필수 동의도 활성화함. 운영 서버의 REST API 키와 클라이언트 시크릿을 정식 운영 앱 값으로 함께 전환했으며, 운영 앱의 로그인 ON·필수 동의·정확한 콜백 URI·클라이언트 시크릿 활성 상태를 확인함. 운영 URL은 정식 운영 앱과 `https://handol-edu.com/api/v1/auth/oauth/kakao/callback`으로 정상 전환되고, 비로그인 흐름이 `accounts.kakao.com` HTTP 200에 도달하며 `KOE004`가 재발하지 않음 | 실제 카카오 계정으로 동의→콜백→서비스 세션 발급→로그아웃→재로그인까지 브라우저 검증하고 TEST 앱 의존 제거를 최종 확인 |
-| 2 | 운영 API·웹 배포 | API·정적 웹은 배포되어 DB 마이그레이션, Docker health, 외부 liveness/readiness와 정적 번들 검증이 통과함. API·DB·Redis와 메일·문의·과제 워커는 `unless-stopped`로 실행 중이고 UFW는 외부에 SSH·HTTP·HTTPS만 허용함. 2GB 실서버에서 ClamAV 제한 기동과 정상 헬스를 실측했고, 256MB 영상·단일 검사 스레드·직렬 미디어 처리를 사용하는 compact 운영 프로필을 추가함 | 자체 호스팅 DB·Redis가 TLS를 제공하지 않고 법무 승인·객체 저장소가 미설정이므로 API는 아직 전환용 `development` 런타임임. 4GB 증설 대신 4GB 스왑을 유지한 `deploy/compose.production.compact.yaml`로 전환하고 관리형 TLS DB·Redis, 법무 승인값과 객체 저장소를 연결 |
+| 2 | 운영 API·웹 배포 | API·정적 웹은 배포되어 DB 마이그레이션, Docker health, 외부 liveness/readiness와 정적 번들 검증이 통과함. API·DB·Redis와 메일·문의·과제 워커는 `unless-stopped`로 실행 중이고 UFW는 외부에 SSH·HTTP·HTTPS만 허용함. 현재 영상은 256MB 이하 로컬 MP4 전체를 권한 확인 후 브라우저로 내려받아 재생하도록 확정했으며 S3·HLS·ClamAV 미디어 워커는 고도화 시점까지 비활성화함 | 자체 호스팅 DB·Redis가 TLS를 제공하지 않고 법무 승인이 미설정이므로 API는 아직 전환용 `development` 런타임임. 4GB 증설 대신 4GB 스왑과 `deploy/compose.production.compact.yaml`·`deploy/compose.production.local-download.yaml`을 사용하고 관리형 TLS DB·Redis와 법무 승인값을 연결 |
 | 3 | 릴리스 준비 감사 | CodeQL과 전체 CI가 최신 커밋에서도 통과함. 열린 CodeQL·Dependabot 취약점 경고와 업데이트 PR은 0건임. GitHub `production` 환경에는 운영 API URL·웹 URL·보호 메트릭 토큰을 등록했으며, 인증 메트릭은 `200`, 무인증 요청은 `401`, 워커 건강도는 정상임. 남은 감사 실패 조건은 저장소 Secret 6개와 production Secret 6개임 | 최소 권한 `RELEASE_READINESS_TOKEN`과 실제 스테이징·격리 복구·메일 반송·법무 승인 자료를 준비해 남은 Secret 12개를 등록한 뒤 공식 감사를 재실행 |
 | 4 | 스테이징·인수 증빙 | 최신 CI run `34797563496`와 CodeQL run `34797563500`이 성공했고 웹·브라우저·SBOM artifact가 존재함. 실제 스테이징 부하·워커 soak·후보 인수 실행은 없음 | 스테이징 URL·메트릭 토큰·불변 이미지 digest·격리 복구 DB를 준비하고 부하→soak→후보 인수 순으로 성공 artifact 생성 |
 | 5 | 결제 운영 전환 | 프런트 설정은 토스 테스트 모드이며 실제 결제 운영키·웹훅은 미등록. 소액 승인·중복 승인·웹훅·전액 환불·토스 취소를 봉인하는 12개 판정과 릴리스별 임시 Secret 수명주기 도구는 구현됨 | 토스 운영 클라이언트 키·Secret Key·웹훅 Secret을 비밀 저장소에 등록하고, 실제 후보에서 소액 왕복 증빙을 생성해 임시 Secret 등록→운영 검증→제거 순서로 완료 |
@@ -26,23 +26,24 @@
 마이그레이션, Redis 원자 연산, FFmpeg/FFprobe 무변경 검사, ClamAV 스트림 검사와 비활성 CDN
 판정은 통과했습니다. 배포 후보 SHA와 이미지 digest 전달 오류도 전환용 Compose 보강으로
 제거했습니다. 남은 실패는 `TOSS_PAYMENTS_LIVE_SECRET_REQUIRED`,
-`DATABASE_PITR_REQUIRED`, `OBJECT_STORAGE_NOT_CONFIGURED`,
-`MAIL_DOMAIN_AUTH_NOT_CONFIGURED`입니다. 확인되지 않은 항목을 통과로 간주하지 않습니다.
+`DATABASE_PITR_REQUIRED`, `MAIL_DOMAIN_AUTH_NOT_CONFIGURED`입니다. 객체 저장소·CDN·HLS·영상
+검사기는 `MEDIA_DELIVERY_MODE=local-download`에서 의도적으로 비활성화하고 로컬 영상 디렉터리의
+읽기 가능 여부를 대신 검사합니다. 확인되지 않은 항목을 통과로 간주하지 않습니다.
 
-객체 저장소 프리플라이트는 이제 환경변수의 버전 관리 선언만 신뢰하지 않고 S3 호환
+향후 객체 저장소 모드의 프리플라이트는 환경변수의 버전 관리 선언만 신뢰하지 않고 S3 호환
 `GetBucketVersioning` 응답이 실제 `Enabled`인지 확인합니다. 이어서 비공개 임시 객체의
 쓰기·읽기·삭제와 익명 접근 차단을 검사하며, 버전 관리가 중지됐거나 상태 조회 권한이
-없으면 실패합니다. 저장소 구현 검증은 완료됐지만 실서버의
-`OBJECT_STORAGE_NOT_CONFIGURED` 해소에는 실제 HTTPS endpoint·region·bucket·최소 권한
-자격정보와 버전 관리 활성화가 필요합니다. 런타임 역할 또는 키에는 객체 작업 권한 외에
-버킷의 `GetBucketVersioning` 조회 권한도 부여해야 합니다.
+없으면 실패합니다. 저장소 구현 검증은 완료했지만 현재 서비스 범위에서는 활성화하지 않습니다.
+스트리밍 고도화 시 실제 HTTPS endpoint·region·bucket·최소 권한 자격정보와 버전 관리를
+준비하고, 런타임 역할에는 객체 작업 권한 외에 버킷의 `GetBucketVersioning` 조회 권한도
+부여합니다.
 
-2GB 호스트에 저장소 프로세스를 추가하지 않도록 AWS S3 서울 리전용
+향후 2GB 호스트에 저장소 프로세스를 추가하지 않도록 AWS S3 서울 리전용
 `deploy/aws-object-storage.yaml`과 확인 문구를 요구하는 프로비저닝 도구를 준비했습니다.
 템플릿은 버전 관리·기본 암호화·공개 접근 전면 차단·HTTPS 강제·운영 도메인 CORS·비현재
 버전 보존과 애플리케이션 최소 권한 IAM 사용자를 선언하며 액세스 키를 만들거나 출력하지
-않습니다. AWS 콘솔은 IAM 사용자 로그인 화면까지 열어 두었으며 계정 로그인과 과금 리소스 생성
-승인 전이므로 아직 리소스를 생성하지 않았습니다.
+않습니다. 현재는 로컬 다운로드 재생으로 확정했으므로 AWS 콘솔 작업과 과금 리소스 생성은
+중단했습니다.
 
 같은 날 저장소의 표준 운영 Compose에는 사설망 전용 ClamAV 서비스, 서명 DB 영속 볼륨,
 4GB 메모리 상한, 2GB 영상 검사용 2200MB 제한, 헬스체크 기반 API·영상 워커 시작 순서를
@@ -115,8 +116,8 @@ Resend 검증 버튼이나 운영 서버 메일 도메인 환경값을 앞당겨
 
 | ID | 항목 | 현재 제안 범위 | 결정 시점 |
 |---|---|---|---|
-| R-01 | 자동 HLS 변환 운영 규모 | FFmpeg 영속 큐 워커, 원본 이하 최대 360p·720p fMP4 HLS, 재시도·경쟁 방지 구현됨 | GPU 변환·1080p 이상·동시 처리량과 비용은 실제 영상량 측정 후 확정 |
-| R-02 | CDN 운영 활성화 | CloudFront·신뢰 키 그룹 기반 SHA-256 서명 URL 어댑터와 S3 폴백 구현됨 | 운영 AWS 계정의 배포·OAC·도메인·인증서·캐시 정책과 비용 확정 후 활성화 |
+| R-01 | 자동 HLS 변환 운영 규모 | 구현은 보존하되 현재 운영은 256MB 이하 로컬 MP4 전체 다운로드 재생 | 영상량·동시 접속·비용을 측정한 뒤 HLS/GPU/1080p 규모 확정 |
+| R-02 | CDN 운영 활성화 | 구현과 AWS 템플릿은 보존하되 현재 S3·CloudFront는 생성하지 않음 | 서비스 고도화 시 배포·OAC·도메인·인증서·캐시 정책과 비용 확정 후 활성화 |
 
 ## 3. 사업자가 값을 제공해야 하는 항목
 

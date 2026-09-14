@@ -1,0 +1,33 @@
+# Current low-cost media profile. The API reads immutable MP4 files from the
+# host and sends the complete file to an authorized browser before playback.
+services:
+  api:
+    environment:
+      MEDIA_DELIVERY_MODE: local-download
+      LOCAL_VIDEO_ROOT: /var/lib/hanstone/media/lessons
+      LOCAL_VIDEO_MAX_BYTES: ${LOCAL_VIDEO_MAX_BYTES:-268435456}
+      OBJECT_STORAGE_ENDPOINT: ""
+      OBJECT_STORAGE_BUCKET: ""
+      OBJECT_STORAGE_ACCESS_KEY_ID: ""
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: ""
+      OBJECT_STORAGE_VERSIONING_ENABLED: "false"
+      PLAYBACK_CDN_PROVIDER: ""
+      PLAYBACK_CDN_BASE_URL: ""
+      PLAYBACK_CDN_KEY_PAIR_ID: ""
+      PLAYBACK_CDN_PRIVATE_KEY_BASE64: ""
+      PREFLIGHT_REQUIRE_CDN: "false"
+      MALWARE_SCANNER_HOST: ""
+    volumes:
+      - ${LOCAL_VIDEO_ROOT_HOST:-/var/www/hanstone/media/lessons}:/var/lib/hanstone/media/lessons:ro
+
+  video-scan-worker:
+    profiles: ["managed-media"]
+
+  video-cleanup-worker:
+    profiles: ["managed-media"]
+
+  hls-transcode-worker:
+    profiles: ["managed-media"]
+
+  clamav:
+    profiles: ["managed-media"]

@@ -47,6 +47,7 @@ let subscriptions = [];
 let activeView = 'all';
 let activeLessonId = null;
 let activeStepIndex = 0;
+let activeDownloadedVideoUrl = null;
 let lastFocused = null;
 let paymentState = { plan: null, order: null, widgets: null, clientConfig: null };
 const sessionVideoUrls = new Map();
@@ -427,6 +428,10 @@ function openModal(modal) {
 
 function closeModal(modal) {
   if (!modal) return;
+  if (modal.id === 'lecturePlayerModal' && activeDownloadedVideoUrl) {
+    URL.revokeObjectURL(activeDownloadedVideoUrl);
+    activeDownloadedVideoUrl = null;
+  }
   modal.classList.remove('open');
   modal.setAttribute('aria-hidden', 'true');
   if (!$('.modal.open')) document.body.classList.remove('modal-open');
@@ -561,11 +566,24 @@ function safeVideoUrl(value) {
 }
 
 async function getPlaybackUrl(lesson) {
-  if (!config.lectureApiEnabled || canManage()) return safeVideoUrl(sessionVideoUrls.get(lesson.id) || lesson.videoUrl);
+  const sessionUrl = sessionVideoUrls.get(lesson.id);
+  if (!config.lectureApiEnabled || sessionUrl) return safeVideoUrl(sessionUrl || lesson.videoUrl);
   const response = await fetch(apiUrl(`/lessons/${encodeURIComponent(lesson.id)}/playback`), { credentials: 'include' });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error?.message || '재생 권한을 확인하지 못했습니다.');
-  return safeVideoUrl((payload.data || payload).playbackUrl);
+  const playback = (payload.data || payload).playback;
+  const playbackUrl = safeVideoUrl(playback?.url);
+  if (!playbackUrl) return '';
+  if (playback.delivery !== 'local-download') return playbackUrl;
+  const download = await fetch(playbackUrl, { credentials: 'include' });
+  if (!download.ok) throw new Error('강의 영상을 내려받지 못했습니다.');
+  const blob = await download.blob();
+  if (!blob.size || !blob.type.toLowerCase().startsWith('video/mp4')) {
+    throw new Error('내려받은 영상 파일을 확인할 수 없습니다.');
+  }
+  if (activeDownloadedVideoUrl) URL.revokeObjectURL(activeDownloadedVideoUrl);
+  activeDownloadedVideoUrl = URL.createObjectURL(blob);
+  return activeDownloadedVideoUrl;
 }
 
 async function openLessonPlayer(lessonId) {
@@ -586,7 +604,7 @@ async function openLessonPlayer(lessonId) {
     ? '관리자·운영자 미리보기'
     : (isFreeSampleLesson(lesson) && !subscription ? '무료 샘플 영상' : `구독 종료 ${formatDateTime(subscription.endsAt, true)}`);
   const host = $('#lectureVideoHost');
-  host.innerHTML = '<div class="lecture-video-placeholder"><span>◷</span><strong>재생 권한 확인 중</strong></div>';
+  host.innerHTML = '<div class="lecture-video-placeholder"><span>◷</span><strong>재생 권한 확인 및 영상 다운로드 중</strong></div>';
   openModal($('#lecturePlayerModal'));
   try {
     const mediaUrl = await getPlaybackUrl(lesson);
@@ -605,7 +623,7 @@ async function openLessonPlayer(lessonId) {
         }
       });
     } else {
-      host.innerHTML = `<div class="lecture-video-placeholder"><span>▶</span><strong>${escapeHtml(lesson.videoFileName || '영상 연결 대기')}</strong><p>운영 서버에서는 계정 구독을 확인한 뒤 만료 시간이 포함된 재생 URL을 제공합니다.</p></div>`;
+      host.innerHTML = `<div class="lecture-video-placeholder"><span>▶</span><strong>${escapeHtml(lesson.videoFileName || '영상 연결 대기')}</strong><p>다운로드 재생용 MP4 영상을 준비하고 있습니다.</p></div>`;
     }
   } catch (error) {
     host.innerHTML = `<div class="lecture-video-placeholder"><span>!</span><strong>영상을 재생할 수 없습니다.</strong><p>${escapeHtml(error.message)}</p></div>`;

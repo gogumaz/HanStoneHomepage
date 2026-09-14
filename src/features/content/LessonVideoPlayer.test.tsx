@@ -36,12 +36,41 @@ describe('LessonVideoPlayer', () => {
     hlsState.instances.length = 0;
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   it('assigns an MP4 URL directly to the video element', () => {
     const { container } = render(<LessonVideoPlayer format="mp4" src="https://media.example.test/video.mp4" />);
     expect(container.querySelector('video')).toHaveAttribute('src', 'https://media.example.test/video.mp4');
     expect(hlsState.instances).toHaveLength(0);
+  });
+
+  it('downloads a local MP4 before assigning a browser object URL', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      new Blob(['video-bytes'], { type: 'video/mp4' }),
+      { status: 200, headers: { 'content-type': 'video/mp4' } },
+    ));
+    const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:local-video');
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    const result = render(
+      <LessonVideoPlayer
+        format="mp4"
+        src="/api/v1/lessons/LESSON-01/video-download"
+        downloadBeforePlayback
+      />,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('내려받고 있습니다');
+    await waitFor(() => expect(result.container.querySelector('video')).toHaveAttribute('src', 'blob:local-video'));
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/lessons/LESSON-01/video-download',
+      expect.objectContaining({ credentials: 'include' }),
+    );
+    result.unmount();
+    expect(createObjectUrl).toHaveBeenCalledOnce();
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:local-video');
   });
 
   it('attaches HLS.js and destroys it when the player unmounts', async () => {

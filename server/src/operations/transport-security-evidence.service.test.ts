@@ -116,6 +116,20 @@ describe("TransportSecurityEvidenceService", () => {
     expect(report.activeTransports).toMatchObject({ objectStorage: "provider-default-https", cdn: "disabled" });
   });
 
+  it("accepts local download media without an object storage transport", () => {
+    const input = validInput();
+    input.environment.MEDIA_DELIVERY_MODE = "local-download";
+    input.environment.LOCAL_VIDEO_ROOT = "/var/lib/hanstone/media/lessons";
+    delete input.environment.OBJECT_STORAGE_BUCKET;
+    delete input.environment.OBJECT_STORAGE_ENDPOINT;
+    delete input.environment.PLAYBACK_CDN_BASE_URL;
+    input.environment.PREFLIGHT_REQUIRE_CDN = "false";
+    const report = new TransportSecurityEvidenceService(() => now).run(input);
+
+    expect(report.ok).toBe(true);
+    expect(report.activeTransports).toMatchObject({ objectStorage: "local-download", cdn: "disabled" });
+  });
+
   it("normalizes an HTTPS CORS trailing slash and honors an intentional OAuth provider subset", () => {
     const input = validInput();
     input.environment.CORS_ORIGINS = "https://www.example.com/";

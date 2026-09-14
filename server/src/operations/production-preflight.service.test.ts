@@ -10,6 +10,7 @@ import {
   REQUIRED_PRODUCTION_MIGRATION,
 } from "./production-preflight.service.js";
 import { HlsTranscoderService } from "../content/hls-transcoder.service.js";
+import { LocalVideoService } from "../content/local-video.service.js";
 
 const resendWebhookTestSecret = `whsec_${Buffer.from("test_resend_webhook_secret").toString("base64")}`;
 
@@ -98,6 +99,7 @@ function harness(
       ? vi.fn(async () => { throw storageError; })
       : vi.fn(async () => undefined),
   };
+  const localVideo = { verifyRoot: vi.fn(async () => undefined) };
   const scanner = {
     scan: vi.fn(async () => ({ clean: true, provider: "clamav", result: "OK" })),
   };
@@ -123,6 +125,7 @@ function harness(
     service: new ProductionPreflightService(
       prisma as unknown as PrismaService,
       storage as unknown as ObjectStorageService,
+      localVideo as unknown as LocalVideoService,
       delivery as unknown as MediaDeliveryService,
       transcoder as unknown as HlsTranscoderService,
       scanner as unknown as MalwareScannerService,
@@ -131,6 +134,7 @@ function harness(
     ),
     prisma,
     storage,
+    localVideo,
     delivery,
     transcoder,
     scanner,
@@ -203,6 +207,36 @@ describe("ProductionPreflightService", () => {
     expect(report.checks.find((check) => check.name === "database")?.detail)
       .toContain(`migration=${REQUIRED_PRODUCTION_MIGRATION}`);
     expect(JSON.stringify(report)).not.toContain("preflight-access-token");
+  });
+
+  it("accepts local download media without object storage, CDN, HLS, or scanner dependencies", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      code: 0,
+      response: { access_token: "preflight-access-token" },
+    }), { status: 200 })));
+    const env = productionEnv();
+    env.MEDIA_DELIVERY_MODE = "local-download";
+    env.LOCAL_VIDEO_ROOT = "/var/lib/hanstone/media/lessons";
+    env.OBJECT_STORAGE_VERSIONING_ENABLED = "false";
+    delete env.OBJECT_STORAGE_BUCKET;
+    const test = harness();
+
+    const report = await test.service.run(env);
+
+    expect(report.ok).toBe(true);
+    expect(report.checks.find((check) => check.name === "objectStorage")?.detail)
+      .toBe("disabled; localVideoRoot=readable");
+    expect(report.checks.find((check) => check.name === "cdn")?.detail)
+      .toBe("disabled; mode=local-download");
+    expect(report.checks.find((check) => check.name === "hlsTranscoder")?.detail)
+      .toBe("disabled; mode=local-download");
+    expect(report.checks.find((check) => check.name === "malwareScanner")?.detail)
+      .toBe("disabled; managedUploads=false");
+    expect(test.localVideo.verifyRoot).toHaveBeenCalledOnce();
+    expect(test.storage.verifyVideoStorageAccess).not.toHaveBeenCalled();
+    expect(test.delivery.verifyCdnConnection).not.toHaveBeenCalled();
+    expect(test.transcoder.verifyBinaries).not.toHaveBeenCalled();
+    expect(test.scanner.scan).not.toHaveBeenCalled();
   });
 
   it("reports individual failures while completing the remaining checks", async () => {

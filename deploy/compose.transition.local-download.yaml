@@ -1,0 +1,23 @@
+# Overlay for the current /opt/hanstone/compose.yaml deployment.
+services:
+  api:
+    environment:
+      MEDIA_DELIVERY_MODE: local-download
+      LOCAL_VIDEO_ROOT: /var/lib/hanstone/media/lessons
+      LOCAL_VIDEO_MAX_BYTES: ${LOCAL_VIDEO_MAX_BYTES:-268435456}
+      OBJECT_STORAGE_ENDPOINT: ""
+      OBJECT_STORAGE_BUCKET: ""
+      OBJECT_STORAGE_ACCESS_KEY_ID: ""
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: ""
+      OBJECT_STORAGE_VERSIONING_ENABLED: "false"
+      PLAYBACK_CDN_PROVIDER: ""
+      PLAYBACK_CDN_BASE_URL: ""
+      PLAYBACK_CDN_KEY_PAIR_ID: ""
+      PLAYBACK_CDN_PRIVATE_KEY_BASE64: ""
+      PREFLIGHT_REQUIRE_CDN: "false"
+      MALWARE_SCANNER_HOST: ""
+      NODE_OPTIONS: --max-old-space-size=256
+    volumes:
+      - ${LOCAL_VIDEO_ROOT_HOST:-/var/www/hanstone/media/lessons}:/var/lib/hanstone/media/lessons:ro
+    mem_limit: ${COMPACT_API_MEMORY_LIMIT:-384m}
+    memswap_limit: ${COMPACT_API_MEMORY_SWAP_LIMIT:-512m}

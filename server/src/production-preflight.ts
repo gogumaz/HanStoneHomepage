@@ -9,6 +9,7 @@ import { HlsTranscoderService } from "./content/hls-transcoder.service.js";
 import { ObjectStorageService } from "./storage/object-storage.service.js";
 import { createRateLimitStore } from "./common/rate-limit.store.js";
 import { withEvidenceCommitSha } from "./operations/evidence-metadata.js";
+import { LocalVideoService } from "./content/local-video.service.js";
 
 async function bootstrap(): Promise<void> {
   const prisma = new PrismaService();
@@ -19,6 +20,7 @@ async function bootstrap(): Promise<void> {
     const report = await new ProductionPreflightService(
       prisma,
       storage,
+      new LocalVideoService(),
       delivery,
       new HlsTranscoderService(),
       new MalwareScannerService(),

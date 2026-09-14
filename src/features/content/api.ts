@@ -57,7 +57,7 @@ export type PlaybackAccess = {
   playback: {
     status: 'asset_pending' | 'signer_pending' | 'ready';
     format: 'mp4' | 'hls' | null;
-    delivery: 'object-storage' | 'cloudfront' | null;
+    delivery: 'object-storage' | 'cloudfront' | 'local-download' | null;
     url: string | null;
     expiresAt: string | null;
     message: string;

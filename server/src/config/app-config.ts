@@ -1,4 +1,5 @@
 import { CURRENT_LEGAL_POLICY_VERSION } from "../common/legal-policy.js";
+import { isAbsolute, resolve } from "node:path";
 
 export type AppConfig = {
   nodeEnv: "development" | "test" | "production";
@@ -43,6 +44,9 @@ export type AppConfig = {
   guardianInvitationTtlHours: number;
   organizationClassInviteTtlHours: number;
   tossPaymentsSecretKey: string | null;
+  mediaDeliveryMode: "object-storage" | "local-download";
+  localVideoRoot: string | null;
+  localVideoMaxBytes: number;
   objectStorageEndpoint: string | null;
   objectStorageRegion: string;
   objectStorageBucket: string | null;
@@ -291,6 +295,28 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error("운영 환경에는 SMTP_HOST와 MAIL_FROM이 필요합니다.");
   }
 
+  const mediaDeliveryModeValue = env.MEDIA_DELIVERY_MODE?.trim().toLowerCase() || "object-storage";
+  if (mediaDeliveryModeValue !== "object-storage" && mediaDeliveryModeValue !== "local-download") {
+    throw new Error("MEDIA_DELIVERY_MODE은 object-storage 또는 local-download여야 합니다.");
+  }
+  const mediaDeliveryMode = mediaDeliveryModeValue as AppConfig["mediaDeliveryMode"];
+  const localVideoRootValue = env.LOCAL_VIDEO_ROOT?.trim() || null;
+  if (localVideoRootValue && !isAbsolute(localVideoRootValue)) {
+    throw new Error("LOCAL_VIDEO_ROOT는 절대 경로여야 합니다.");
+  }
+  const localVideoRoot = localVideoRootValue ? resolve(localVideoRootValue) : null;
+  if (mediaDeliveryMode === "local-download" && !localVideoRoot) {
+    throw new Error("MEDIA_DELIVERY_MODE=local-download이면 LOCAL_VIDEO_ROOT가 필요합니다.");
+  }
+  const localVideoMaxBytes = positiveInteger(
+    env.LOCAL_VIDEO_MAX_BYTES,
+    268_435_456,
+    "LOCAL_VIDEO_MAX_BYTES",
+  );
+  if (localVideoMaxBytes > 1_073_741_824) {
+    throw new Error("LOCAL_VIDEO_MAX_BYTES는 1GiB 이하여야 합니다.");
+  }
+
   const objectStorageBucket = env.OBJECT_STORAGE_BUCKET?.trim() || null;
   const objectStorageEndpoint = optionalUrl(env.OBJECT_STORAGE_ENDPOINT, "OBJECT_STORAGE_ENDPOINT");
   const objectStorageAccessKeyId = env.OBJECT_STORAGE_ACCESS_KEY_ID?.trim() || null;
@@ -335,6 +361,9 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   );
   if (cdnValuesPresent && (!cdnProviderValue || !playbackCdnBaseUrl || !playbackCdnKeyPairId || !playbackCdnPrivateKeyBase64)) {
     throw new Error("CDN 설정은 공급자·기본 URL·키 페어 ID·개인키를 함께 입력해야 합니다.");
+  }
+  if (mediaDeliveryMode === "local-download" && (storageValuesPresent || objectStorageBucket || cdnValuesPresent)) {
+    throw new Error("local-download 모드에서는 객체 저장소와 CDN 설정을 함께 사용할 수 없습니다.");
   }
   if (preflightRequireCdn && !cdnValuesPresent) {
     throw new Error("PREFLIGHT_REQUIRE_CDN=true이면 CDN 설정이 필요합니다.");
@@ -703,6 +732,9 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ),
     organizationClassInviteTtlHours,
     tossPaymentsSecretKey,
+    mediaDeliveryMode,
+    localVideoRoot,
+    localVideoMaxBytes,
     objectStorageEndpoint,
     objectStorageRegion: env.OBJECT_STORAGE_REGION?.trim() || "ap-northeast-2",
     objectStorageBucket,

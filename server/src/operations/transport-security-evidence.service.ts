@@ -40,7 +40,7 @@ export type TransportSecurityEvidenceReport = {
   deploymentVerifiedAt: string | null;
   activeTransports: {
     oauthProviders: string[];
-    objectStorage: "provider-default-https" | "custom-https" | "invalid";
+    objectStorage: "provider-default-https" | "custom-https" | "local-download" | "invalid";
     cdn: "https" | "disabled" | "invalid";
     smtp: "implicit-tls" | "starttls" | "invalid";
   };
@@ -203,8 +203,11 @@ export class TransportSecurityEvidenceService {
     const oauthValid = oauthProviderNamesValid && apiOrigin !== null &&
       oauthEntries.every(({ url }) => url?.origin === apiOrigin);
 
+    const localDownload = env.MEDIA_DELIVERY_MODE?.trim().toLowerCase() === "local-download";
     const objectEndpoint = env.OBJECT_STORAGE_ENDPOINT?.trim();
-    const objectStorage = objectEndpoint
+    const objectStorage = localDownload
+      ? "local-download" as const
+      : objectEndpoint
       ? (httpsUrl(objectEndpoint) ? "custom-https" as const : "invalid" as const)
       : (env.OBJECT_STORAGE_BUCKET?.trim() && env.OBJECT_STORAGE_REGION?.trim()
         ? "provider-default-https" as const : "invalid" as const);
@@ -239,7 +242,7 @@ export class TransportSecurityEvidenceService {
     const fresh = (date: Date | null) => date !== null && now.getTime() - date.getTime() >= 0 &&
       now.getTime() - date.getTime() <= input.maximumAgeHours * 60 * 60_000;
     const notFuture = (date: Date | null) => date !== null && date.getTime() <= now.getTime() + 5 * 60_000;
-    const requireCdn = boolean(env.PREFLIGHT_REQUIRE_CDN) || cdn === "https";
+    const requireCdn = !localDownload && (boolean(env.PREFLIGHT_REQUIRE_CDN) || cdn === "https");
 
     const checks = [
       check("productionEnvironment", env.NODE_ENV === "production", "TRANSPORT_NODE_ENV_NOT_PRODUCTION"),

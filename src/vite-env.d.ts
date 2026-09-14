@@ -12,6 +12,7 @@ interface Window {
     apiBaseUrl?: string;
     oauthEnabled?: boolean;
     oauthProviders?: Array<'naver' | 'kakao' | 'google'>;
+    mediaDeliveryMode?: 'object-storage' | 'local-download';
     tossPayments?: {
       mode?: 'test' | 'live';
       clientKey?: string;

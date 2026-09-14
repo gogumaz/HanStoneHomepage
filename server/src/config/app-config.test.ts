@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolve } from "node:path";
 import { loadAppConfig } from "./app-config.js";
 
 const resendWebhookTestSecret = `whsec_${Buffer.from("test_resend_webhook_secret").toString("base64")}`;
@@ -354,6 +355,46 @@ describe("loadAppConfig CDN settings", () => {
       .toThrow(/PLAYBACK_CDN_PROVIDER/);
     expect(() => loadAppConfig({ ...base, PREFLIGHT_REQUIRE_CDN: "true" }))
       .toThrow(/PREFLIGHT_REQUIRE_CDN/);
+  });
+});
+
+describe("loadAppConfig media delivery mode", () => {
+  const base = { DATABASE_URL: "postgresql://test:test@localhost/test" };
+
+  it("supports bounded local download playback without object storage", () => {
+    expect(loadAppConfig({
+      ...base,
+      MEDIA_DELIVERY_MODE: "local-download",
+      LOCAL_VIDEO_ROOT: "/var/lib/hanstone/media/lessons",
+      LOCAL_VIDEO_MAX_BYTES: "268435456",
+    })).toMatchObject({
+      mediaDeliveryMode: "local-download",
+      localVideoRoot: resolve("/var/lib/hanstone/media/lessons"),
+      localVideoMaxBytes: 268_435_456,
+      objectStorageBucket: null,
+    });
+  });
+
+  it("rejects missing, relative, oversized, or mixed local media settings", () => {
+    expect(() => loadAppConfig({ ...base, MEDIA_DELIVERY_MODE: "local-download" }))
+      .toThrow(/LOCAL_VIDEO_ROOT/);
+    expect(() => loadAppConfig({
+      ...base,
+      MEDIA_DELIVERY_MODE: "local-download",
+      LOCAL_VIDEO_ROOT: "relative/videos",
+    })).toThrow(/절대 경로/);
+    expect(() => loadAppConfig({
+      ...base,
+      MEDIA_DELIVERY_MODE: "local-download",
+      LOCAL_VIDEO_ROOT: "/videos",
+      LOCAL_VIDEO_MAX_BYTES: String(1_073_741_825),
+    })).toThrow(/1GiB/);
+    expect(() => loadAppConfig({
+      ...base,
+      MEDIA_DELIVERY_MODE: "local-download",
+      LOCAL_VIDEO_ROOT: "/videos",
+      OBJECT_STORAGE_BUCKET: "mixed-storage",
+    })).toThrow(/함께 사용할 수 없습니다/);
   });
 });
 

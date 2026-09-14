@@ -77,6 +77,7 @@ export function AdminLessonsPage() {
   const [assetFile, setAssetFile] = useState<File | null>(null);
   const meQuery = useQuery({ queryKey: ['current-user'], queryFn: getCurrentUser, retry: false });
   const canManage = meQuery.data?.roles.some((role) => role === 'operator' || role === 'admin') ?? false;
+  const managedMediaEnabled = window.APP_CONFIG?.mediaDeliveryMode !== 'local-download';
   const lessonsQuery = useQuery({
     queryKey: ['admin-lessons'],
     queryFn: listAdminLessons,
@@ -90,13 +91,13 @@ export function AdminLessonsPage() {
   const assetsQuery = useQuery({
     queryKey: ['lesson-assets', editingId],
     queryFn: () => listLessonAssets(editingId ?? ''),
-    enabled: Boolean(canManage && editingId),
+    enabled: Boolean(canManage && editingId && managedMediaEnabled),
     retry: false,
   });
   const videoUploadsQuery = useQuery({
     queryKey: ['lesson-video-uploads', editingId],
     queryFn: () => listLessonVideoUploads(editingId ?? ''),
-    enabled: Boolean(canManage && editingId),
+    enabled: Boolean(canManage && editingId && managedMediaEnabled),
     retry: false,
     refetchInterval: 5_000,
   });
@@ -290,7 +291,9 @@ export function AdminLessonsPage() {
           {editingLesson ? (
             <div className="admin-publish-panel">
               <h3>영상과 공개 상태</h3>
-              <p>기본 단계 {editingLesson.stepCount}/6 · {editingLesson.hasVideo ? '영상 연결 완료' : '영상 업로드 필요'}</p>
+              <p>기본 단계 {editingLesson.stepCount}/6 · {editingLesson.hasVideo ? '영상 연결 완료' : '영상 배포 필요'}</p>
+              {managedMediaEnabled ? (
+                <>
               <p>업로드한 MP4는 비공개 격리 상태에서 스트리밍 악성코드 검사를 통과한 뒤 자동 연결됩니다.</p>
               <div className="admin-upload-row">
                 <input type="file" aria-label="CMS MP4 영상 파일" accept="video/mp4,.mp4" onChange={(event) => setVideoFile(event.target.files?.[0] ?? null)} />
@@ -351,6 +354,14 @@ export function AdminLessonsPage() {
                   </li>
                 ))}
               </ul>
+                </>
+              ) : (
+                <div className="completion-message" role="status">
+                  현재는 다운로드 재생 모드입니다. 서버의 로컬 영상 디렉터리에
+                  <strong> {editingLesson.id}.mp4</strong> 이름으로 배포하면 자동으로 연결됩니다.
+                  S3 업로드와 HLS 변환은 서비스 고도화 단계에서 다시 활성화합니다.
+                </div>
+              )}
               <div className="admin-status-actions">
                 <button type="button" disabled={statusMutation.isPending || editingLesson.status === 'draft'} onClick={() => statusMutation.mutate({ lessonId: editingLesson.id, status: 'draft' })}>비공개</button>
                 <button type="button" disabled={statusMutation.isPending || editingLesson.status === 'published' || !editingLesson.hasVideo || editingLesson.stepCount !== 6} onClick={() => statusMutation.mutate({ lessonId: editingLesson.id, status: 'published' })}>공개</button>
@@ -358,7 +369,7 @@ export function AdminLessonsPage() {
               </div>
               {statusMutation.data ? <p className="completion-message" role="status">강의 상태를 {STATUS_LABEL[statusMutation.data.status]}로 변경했습니다.</p> : null}
 
-              <div className="admin-assets-panel">
+              {managedMediaEnabled ? <div className="admin-assets-panel">
                 <h3>썸네일·학습자료</h3>
                 <p>업로드 파일은 격리 후 형식 검사와 ClamAV 악성코드 검사를 통과해야 활성화됩니다.</p>
                 <div className="admin-asset-upload">
@@ -397,7 +408,12 @@ export function AdminLessonsPage() {
                     </li>
                   ))}
                 </ul>
-              </div>
+              </div> : (
+                <div className="admin-assets-panel">
+                  <h3>썸네일·학습자료</h3>
+                  <p>객체 저장소를 사용하지 않는 현재 운영 단계에서는 관리자 파일 업로드를 제공하지 않습니다.</p>
+                </div>
+              )}
             </div>
           ) : null}
           {error ? <p className="auth-error" role="alert">{error.message}{error.requestId ? ` (요청 ID: ${error.requestId})` : ''}</p> : null}
