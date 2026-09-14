@@ -272,8 +272,6 @@ def command_check(args: argparse.Namespace) -> int:
 
 def command_backup(args: argparse.Namespace) -> int:
     validate_limits(args)
-    if os.name == "posix" and os.geteuid() != 0:
-        raise MaintenanceError("ROOT_REQUIRED")
     backup_arg = absolute_path(args.backup_root, "BACKUP_ROOT")
     if not backup_arg.exists():
         checked_directory(backup_arg.parent, "BACKUP_PARENT")
@@ -329,8 +327,6 @@ def command_restore(args: argparse.Namespace) -> int:
         return 0
     if args.confirm != "RESTORE_LOCAL_LESSON_VIDEOS":
         raise MaintenanceError("CONFIRMATION_REQUIRED")
-    if os.name == "posix" and os.geteuid() != 0:
-        raise MaintenanceError("ROOT_REQUIRED")
     objects = backup / "objects"
     restored = 0
     for entry in files:
