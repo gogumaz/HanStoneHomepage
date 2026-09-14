@@ -76,7 +76,8 @@ PHPS Ubuntu 20.04 정적 테스트 서버는 ESM 활성화 후 다음처럼 명�
 
 - Ubuntu Pro의 `esm-infra`와 `esm-apps`를 모두 활성화합니다.
 - `--allow-ubuntu-20-test`를 지정한 `base` 또는 `static` 모드만 사용합니다.
-- 전체 API 운영은 메모리를 최소 2GB, 권장 4GB로 증설합니다.
+- 관리형 ClamAV를 포함한 전체 API 운영은 메모리를 최소 4GB로 증설합니다. 4GB 미만은
+  스왑 유무와 관계없이 `full` 점검에서 FAIL 처리합니다.
 - 512MB를 유지하면 `static` 모드까지만 사용하고 API·DB·Redis·영상 워커는 외부로
   분리합니다.
 - 서버 IP가 발급되기 전에는 `--expected-ip` 비교를 완료할 수 없습니다.

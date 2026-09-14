@@ -226,11 +226,9 @@ if [[ "$MEM_KB" =~ ^[0-9]+$ ]]; then
       fail "Memory ${MEM_MIB} MiB is below the static-only minimum"
     fi
   elif ((MEM_MIB >= 3800)); then
-    pass "Memory ${MEM_MIB} MiB meets the recommended full-service baseline"
-  elif ((MEM_MIB >= 1900)); then
-    warn "Memory ${MEM_MIB} MiB meets the minimum but 4 GiB is recommended"
+    pass "Memory ${MEM_MIB} MiB meets the full-service baseline"
   else
-    fail "Memory ${MEM_MIB} MiB is below the 2 GiB full-service minimum"
+    fail "Memory ${MEM_MIB} MiB is below the 4 GiB full-service minimum required for the managed ClamAV scanner"
   fi
 else
   fail 'Unable to read total memory'
