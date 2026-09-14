@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -55,19 +55,56 @@ describe("local video maintenance", () => {
     expect(await readFile(join(source, "LESSON-01.mp4"))).toEqual(video);
   });
 
+  it("prunes only expired manifests and objects no longer referenced by the latest backup", async () => {
+    const root = await mkdtemp(join(tmpdir(), "hanstone-video-prune-"));
+    temporaryRoots.push(root);
+    const source = join(root, "source");
+    const backup = join(root, "backup");
+    await mkdir(source);
+    await mkdir(backup);
+    await writeFile(join(source, "LESSON-01.mp4"), Buffer.from("0000ftypisom-old-video"));
+    expect(run("backup", source, backup).status).toBe(0);
+    const [firstManifest] = await readdir(join(backup, "manifests"));
+    await rename(
+      join(backup, "manifests", firstManifest),
+      join(backup, "manifests", "20200101T000000.000000Z.json"),
+    );
+
+    await writeFile(join(source, "LESSON-01.mp4"), Buffer.from("0000ftypisom-new-video"));
+    expect(run("backup", source, backup).status).toBe(0);
+    const dryRun = run("prune", source, backup, ["--retention-days", "30"]);
+    expect(dryRun.status, dryRun.stderr || dryRun.stdout).toBe(0);
+    expect(JSON.parse(dryRun.stdout)).toMatchObject({
+      mode: "dry-run", expiredManifests: 1, expiredObjects: 1, reclaimedBytes: 0,
+    });
+    expect(run("prune", source, backup, ["--retention-days", "30", "--apply"]).status).toBe(2);
+    const applied = run("prune", source, backup, [
+      "--retention-days", "30", "--apply", "--confirm", "PRUNE_LOCAL_VIDEO_BACKUPS",
+    ]);
+    expect(applied.status, applied.stderr || applied.stdout).toBe(0);
+    expect(JSON.parse(applied.stdout)).toMatchObject({ mode: "applied", expiredObjects: 1 });
+    expect(await readdir(join(backup, "manifests"))).toHaveLength(1);
+    expect(await readdir(join(backup, "objects"))).toHaveLength(1);
+    expect(run("verify", source, backup).status).toBe(0);
+  });
+
   it("ships hardened timers and an explicit apply confirmation", async () => {
-    const [installer, backupService, checkService, backupTimer] = await Promise.all([
+    const [installer, backupService, checkService, pruneService, backupTimer, pruneTimer] = await Promise.all([
       readFile(resolve(process.cwd(), "../deploy/configure-local-video-maintenance.sh"), "utf8"),
       readFile(resolve(process.cwd(), "../deploy/systemd/hanstone-local-video-backup.service"), "utf8"),
       readFile(resolve(process.cwd(), "../deploy/systemd/hanstone-local-video-check.service"), "utf8"),
+      readFile(resolve(process.cwd(), "../deploy/systemd/hanstone-local-video-prune.service"), "utf8"),
       readFile(resolve(process.cwd(), "../deploy/systemd/hanstone-local-video-backup.timer"), "utf8"),
+      readFile(resolve(process.cwd(), "../deploy/systemd/hanstone-local-video-prune.timer"), "utf8"),
     ]);
     expect(installer).toContain("CONFIGURE_LOCAL_VIDEO_MAINTENANCE");
     expect(installer).toContain("systemctl enable --now");
     expect(backupService).toContain("ProtectSystem=strict");
     expect(backupService).toContain("ReadOnlyPaths=/var/www/hanstone/media/lessons");
     expect(checkService).toContain("local-video-maintenance.py check");
+    expect(pruneService).toContain("--confirm PRUNE_LOCAL_VIDEO_BACKUPS");
     expect(backupTimer).toContain("Persistent=true");
-    expect([installer, backupService, checkService].join("\n")).not.toContain("rm -rf");
+    expect(pruneTimer).toContain("04:10:00 Asia/Seoul");
+    expect([installer, backupService, checkService, pruneService].join("\n")).not.toContain("rm -rf");
   });
 });

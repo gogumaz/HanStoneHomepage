@@ -9,6 +9,7 @@ MAX_BYTES="${LOCAL_VIDEO_MAX_BYTES:-268435456}"
 WARNING_BYTES="${LOCAL_VIDEO_WARNING_FREE_BYTES:-5368709120}"
 CRITICAL_BYTES="${LOCAL_VIDEO_CRITICAL_FREE_BYTES:-1073741824}"
 MAX_BACKUP_AGE_HOURS="${LOCAL_VIDEO_MAX_BACKUP_AGE_HOURS:-36}"
+RETENTION_DAYS="${LOCAL_VIDEO_BACKUP_RETENTION_DAYS:-30}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
 usage() {
@@ -18,8 +19,8 @@ Usage:
   sudo ./deploy/configure-local-video-maintenance.sh \
     --apply --confirm CONFIGURE_LOCAL_VIDEO_MAINTENANCE
 
-The first command validates the installation. The apply command installs two
-systemd timers, performs an initial backup, and verifies storage health.
+The first command validates the installation. The apply command installs three
+systemd timers, performs an initial backup and retention pass, then verifies storage health.
 USAGE
 }
 
@@ -45,19 +46,22 @@ BACKUP_PARENT="$(dirname -- "$BACKUP_ROOT")"
   printf 'BACKUP_ROOT_INVALID\n' >&2
   exit 2
 }
-for value in "$MAX_BYTES" "$WARNING_BYTES" "$CRITICAL_BYTES" "$MAX_BACKUP_AGE_HOURS"; do
+for value in "$MAX_BYTES" "$WARNING_BYTES" "$CRITICAL_BYTES" "$MAX_BACKUP_AGE_HOURS" "$RETENTION_DAYS"; do
   [[ "$value" =~ ^[0-9]+$ ]] || { printf 'NUMERIC_SETTING_INVALID\n' >&2; exit 2; }
 done
 ((MAX_BYTES > 0 && MAX_BYTES <= 1073741824)) || { printf 'MAX_BYTES_INVALID\n' >&2; exit 2; }
 ((CRITICAL_BYTES > 0 && WARNING_BYTES > CRITICAL_BYTES)) || { printf 'FREE_SPACE_THRESHOLDS_INVALID\n' >&2; exit 2; }
 ((MAX_BACKUP_AGE_HOURS >= 1 && MAX_BACKUP_AGE_HOURS <= 168)) || { printf 'MAX_BACKUP_AGE_INVALID\n' >&2; exit 2; }
+((RETENTION_DAYS >= 1 && RETENTION_DAYS <= 3650)) || { printf 'RETENTION_DAYS_INVALID\n' >&2; exit 2; }
 
 for file in \
   "$SCRIPT_DIR/local-video-maintenance.py" \
   "$SCRIPT_DIR/systemd/hanstone-local-video-backup.service" \
   "$SCRIPT_DIR/systemd/hanstone-local-video-backup.timer" \
   "$SCRIPT_DIR/systemd/hanstone-local-video-check.service" \
-  "$SCRIPT_DIR/systemd/hanstone-local-video-check.timer"; do
+  "$SCRIPT_DIR/systemd/hanstone-local-video-check.timer" \
+  "$SCRIPT_DIR/systemd/hanstone-local-video-prune.service" \
+  "$SCRIPT_DIR/systemd/hanstone-local-video-prune.timer"; do
   [[ -f "$file" && ! -L "$file" ]] || { printf 'INSTALL_SOURCE_INVALID\n' >&2; exit 2; }
 done
 
@@ -78,7 +82,7 @@ install -d -o root -g root -m 0755 /usr/local/lib/hanstone
 install -d -o root -g root -m 0755 /etc/hanstone
 install -d -o root -g root -m 0700 "$BACKUP_ROOT"
 install -o root -g root -m 0755 "$SCRIPT_DIR/local-video-maintenance.py" /usr/local/lib/hanstone/local-video-maintenance.py
-for unit in hanstone-local-video-backup.service hanstone-local-video-backup.timer hanstone-local-video-check.service hanstone-local-video-check.timer; do
+for unit in hanstone-local-video-backup.service hanstone-local-video-backup.timer hanstone-local-video-check.service hanstone-local-video-check.timer hanstone-local-video-prune.service hanstone-local-video-prune.timer; do
   install -o root -g root -m 0644 "$SCRIPT_DIR/systemd/$unit" "/etc/systemd/system/$unit"
 done
 
@@ -93,13 +97,15 @@ LOCAL_VIDEO_MAX_BYTES=$MAX_BYTES
 LOCAL_VIDEO_WARNING_FREE_BYTES=$WARNING_BYTES
 LOCAL_VIDEO_CRITICAL_FREE_BYTES=$CRITICAL_BYTES
 LOCAL_VIDEO_MAX_BACKUP_AGE_HOURS=$MAX_BACKUP_AGE_HOURS
+LOCAL_VIDEO_BACKUP_RETENTION_DAYS=$RETENTION_DAYS
 EOF
 chown root:root "$ENV_TEMP"
 mv -f -- "$ENV_TEMP" /etc/hanstone/local-video-maintenance.env
 trap - EXIT
 
 systemctl daemon-reload
-systemctl enable --now hanstone-local-video-backup.timer hanstone-local-video-check.timer
+systemctl enable --now hanstone-local-video-backup.timer hanstone-local-video-check.timer hanstone-local-video-prune.timer
 systemctl start hanstone-local-video-backup.service
+systemctl start hanstone-local-video-prune.service
 systemctl start hanstone-local-video-check.service
-printf 'mode=applied\ntimers=enabled\ninitialBackup=complete\ninitialCheck=healthy\n'
+printf 'mode=applied\ntimers=enabled\ninitialBackup=complete\ninitialPrune=complete\ninitialCheck=healthy\n'

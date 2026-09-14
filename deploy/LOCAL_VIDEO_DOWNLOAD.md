@@ -16,8 +16,8 @@
 
 ## 자동 백업과 용량 감시
 
-다음 도구는 동일한 영상을 내용 해시로 한 번만 저장하는 증분 백업과 시간별 상태 점검을
-systemd 타이머로 설치합니다. 기본 백업 위치는
+다음 도구는 동일한 영상을 내용 해시로 한 번만 저장하는 증분 백업, 보존기간 정리와 시간별
+상태 점검을 systemd 타이머로 설치합니다. 기본 백업 위치는
 `/var/backups/hanstone/local-videos`이며 운영 영상 디렉터리와 겹치는 경로는 거부합니다.
 
 ```bash
@@ -27,8 +27,10 @@ sudo ./deploy/configure-local-video-maintenance.sh \
 systemctl list-timers 'hanstone-local-video-*'
 ```
 
-백업은 매일 03:20(Asia/Seoul), 상태 점검은 매시간 실행됩니다. 디스크 여유 공간이 기본
-5GiB 이하면 `attention`, 1GiB 이하면 `critical`입니다. 같은 정보는 운영자 화면과 보호된
+백업은 매일 03:20(Asia/Seoul), 보존기간 정리는 매일 04:10, 상태 점검은 매시간 실행됩니다.
+정리 작업은 최신 백업을 항상 보존하고 30일이 지난 이전 매니페스트와 어떤 보존 매니페스트도
+참조하지 않는 영상 객체만 삭제합니다. 디스크 여유 공간이 기본 5GiB 이하면 `attention`,
+1GiB 이하면 `critical`입니다. 같은 정보는 운영자 화면과 보호된
 Prometheus 지표 `baduk_local_video_*`에서도 확인할 수 있습니다. 영상 설치 도구는 백업
 서비스가 설치되어 있으면 설치 직후 증분 백업을 요청합니다.
 
@@ -40,6 +42,15 @@ sudo python3 /usr/local/lib/hanstone/local-video-maintenance.py verify
 sudo python3 /usr/local/lib/hanstone/local-video-maintenance.py restore
 sudo python3 /usr/local/lib/hanstone/local-video-maintenance.py restore \
   --apply --confirm RESTORE_LOCAL_LESSON_VIDEOS
+```
+
+정리 후보와 예상 회수 용량은 변경 없이 미리 확인할 수 있습니다. 수동 적용은 자동 타이머와
+동일한 확인 문자열이 필요합니다.
+
+```bash
+sudo python3 /usr/local/lib/hanstone/local-video-maintenance.py prune --retention-days 30
+sudo python3 /usr/local/lib/hanstone/local-video-maintenance.py prune --retention-days 30 \
+  --apply --confirm PRUNE_LOCAL_VIDEO_BACKUPS
 ```
 
 현재 백업 디렉터리는 운영 서버의 같은 디스크에 있으므로 운영자 실수나 파일 손상 복구에는

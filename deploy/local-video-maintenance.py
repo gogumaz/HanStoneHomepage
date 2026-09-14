@@ -349,15 +349,72 @@ def command_restore(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_prune(args: argparse.Namespace) -> int:
+    if args.retention_days < 1 or args.retention_days > 3650:
+        raise MaintenanceError("RETENTION_DAYS_INVALID")
+    _, backup = validate_roots(args.source, args.backup_root)
+    with backup_lock(backup):
+        objects, manifests = ensure_backup_layout(backup)
+        latest = validate_manifest_files(read_manifest(backup))
+        verify_objects(backup, latest)
+        referenced = {str(entry["sha256"]) for entry in latest}
+        cutoff = utc_now() - dt.timedelta(days=args.retention_days)
+        expired_manifests: list[Path] = []
+        retained_manifests = 0
+        for path in sorted(manifests.iterdir(), key=lambda item: item.name):
+            if path.is_symlink() or not path.is_file() or not re.fullmatch(
+                r"[0-9]{8}T[0-9]{6}\.[0-9]{6}Z\.json", path.name
+            ):
+                raise MaintenanceError("BACKUP_MANIFEST_ENTRY_INVALID")
+            created = dt.datetime.strptime(path.name, "%Y%m%dT%H%M%S.%fZ.json").replace(tzinfo=dt.timezone.utc)
+            if created > utc_now() + dt.timedelta(minutes=5):
+                raise MaintenanceError("BACKUP_MANIFEST_TIMESTAMP_FUTURE")
+            files = validate_manifest_files(read_manifest(backup, path.name))
+            if created < cutoff:
+                expired_manifests.append(path)
+            else:
+                retained_manifests += 1
+                referenced.update(str(entry["sha256"]) for entry in files)
+
+        expired_objects: list[Path] = []
+        reclaimed_bytes = 0
+        for path in sorted(objects.iterdir(), key=lambda item: item.name):
+            metadata = path.lstat()
+            match = re.fullmatch(r"([a-f0-9]{64})\.mp4", path.name)
+            if path.is_symlink() or not stat.S_ISREG(metadata.st_mode) or match is None:
+                raise MaintenanceError("BACKUP_OBJECT_ENTRY_INVALID")
+            if match.group(1) not in referenced:
+                expired_objects.append(path)
+                reclaimed_bytes += metadata.st_size
+
+        if args.apply and args.confirm != "PRUNE_LOCAL_VIDEO_BACKUPS":
+            raise MaintenanceError("CONFIRMATION_REQUIRED")
+        if args.apply:
+            for path in expired_manifests:
+                path.unlink()
+            for path in expired_objects:
+                os.chmod(path, 0o600)
+                path.unlink()
+        emit({
+            "operation": "prune", "mode": "applied" if args.apply else "dry-run", "status": "healthy",
+            "retentionDays": args.retention_days, "retainedManifests": retained_manifests,
+            "expiredManifests": len(expired_manifests), "expiredObjects": len(expired_objects),
+            "reclaimedBytes": reclaimed_bytes if args.apply else 0,
+            "reclaimableBytes": reclaimed_bytes,
+        })
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("command", choices=("check", "backup", "verify", "restore"))
+    result.add_argument("command", choices=("check", "backup", "verify", "restore", "prune"))
     result.add_argument("--source", default=DEFAULT_SOURCE)
     result.add_argument("--backup-root", default=DEFAULT_BACKUP_ROOT)
     result.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
     result.add_argument("--warning-free-bytes", type=int, default=DEFAULT_WARNING_FREE_BYTES)
     result.add_argument("--critical-free-bytes", type=int, default=DEFAULT_CRITICAL_FREE_BYTES)
     result.add_argument("--max-backup-age-hours", type=int, default=36)
+    result.add_argument("--retention-days", type=int, default=30)
     result.add_argument("--manifest", default="latest.json")
     result.add_argument("--apply", action="store_true")
     result.add_argument("--confirm", default="")
@@ -372,6 +429,7 @@ def main() -> int:
             "backup": command_backup,
             "verify": command_verify,
             "restore": command_restore,
+            "prune": command_prune,
         }[args.command](args)
     except (MaintenanceError, OSError) as error:
         emit({"operation": args.command, "status": "critical", "error": str(error)})

@@ -1,0 +1,28 @@
+[Unit]
+Description=Hanstone expired local lesson video backup pruning
+After=local-fs.target hanstone-local-video-backup.service
+ConditionPathIsDirectory=/var/www/hanstone/media/lessons
+ConditionPathIsDirectory=/var/backups/hanstone/local-videos
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+EnvironmentFile=/etc/hanstone/local-video-maintenance.env
+ExecStart=/usr/bin/python3 /usr/local/lib/hanstone/local-video-maintenance.py prune --source ${LOCAL_VIDEO_SOURCE} --backup-root ${LOCAL_VIDEO_BACKUP_ROOT} --retention-days ${LOCAL_VIDEO_BACKUP_RETENTION_DAYS} --apply --confirm PRUNE_LOCAL_VIDEO_BACKUPS
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadOnlyPaths=/var/www/hanstone/media/lessons
+ReadWritePaths=/var/backups/hanstone/local-videos
