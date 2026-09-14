@@ -65,6 +65,7 @@ describe("local video maintenance", () => {
     await writeFile(join(source, "LESSON-01.mp4"), Buffer.from("0000ftypisom-old-video"));
     expect(run("backup", source, backup).status).toBe(0);
     const [firstManifest] = await readdir(join(backup, "manifests"));
+    if (!firstManifest) throw new Error("Expected the first backup manifest.");
     await rename(
       join(backup, "manifests", firstManifest),
       join(backup, "manifests", "20200101T000000.000000Z.json"),
