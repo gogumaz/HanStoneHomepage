@@ -10,7 +10,7 @@
 | 우선순위 | 항목 | 확인 결과 | 다음 완료 조건 |
 |---|---|---|---|
 | 1 | 카카오 로그인 | `KOE004`의 원인이던 TEST 앱 로그인 비활성화를 해소했고, TEST 앱의 닉네임·이메일 필수 동의도 활성화함. 운영 서버의 REST API 키와 클라이언트 시크릿을 정식 운영 앱 값으로 함께 전환했으며, 운영 앱의 로그인 ON·필수 동의·정확한 콜백 URI·클라이언트 시크릿 활성 상태를 확인함. 운영 URL은 정식 운영 앱과 `https://handol-edu.com/api/v1/auth/oauth/kakao/callback`으로 정상 전환되고, 비로그인 흐름이 `accounts.kakao.com` HTTP 200에 도달하며 `KOE004`가 재발하지 않음 | 실제 카카오 계정으로 동의→콜백→서비스 세션 발급→로그아웃→재로그인까지 브라우저 검증하고 TEST 앱 의존 제거를 최종 확인 |
-| 2 | 운영 API·웹 배포 | API·정적 웹은 `82aa5e50c2d12d9f95428aa3a1ca26261db7c5ad` 후보로 배포됐고 운영 소스는 상태 문서 커밋 `3b37f1c`까지 fast-forward됨. DB 마이그레이션 4건, Docker health, 외부 liveness/readiness와 정적 번들 검증이 통과함. `account-mail-worker`·`inquiry-notification-worker`·`assignment-reminder-worker`를 API 이미지 기반 Compose 서비스로 통일했고 계정메일 암호화키를 권한 제한 환경파일에 생성함. API·DB·Redis와 세 워커 모두 `unless-stopped` 재시작 정책으로 실행 중임. 전환용 Compose도 배포 후보 SHA·이미지 digest·PITR·저장소·메일 DNS 등 운영 프리플라이트 입력을 API에 전달하며 실제 프록시 홉 수 `1`을 적용함 | 자체 호스팅 DB·Redis가 TLS를 제공하지 않고 법무 승인·객체 저장소가 미설정이므로 API는 아직 전환용 `development` 런타임임. 관리형 TLS DB·Redis, 법무 승인값, 객체 저장소를 준비한 뒤 `deploy/compose.production.yaml`과 불변 이미지 digest로 전환 |
+| 2 | 운영 API·웹 배포 | API·정적 웹은 `82aa5e50c2d12d9f95428aa3a1ca26261db7c5ad` 후보로 배포됐고 운영 소스는 상태 문서 커밋 `3b37f1c`까지 fast-forward됨. DB 마이그레이션 4건, Docker health, 외부 liveness/readiness와 정적 번들 검증이 통과함. `account-mail-worker`·`inquiry-notification-worker`·`assignment-reminder-worker`를 API 이미지 기반 Compose 서비스로 통일했고 계정메일 암호화키를 권한 제한 환경파일에 생성함. API·DB·Redis와 세 워커 모두 `unless-stopped` 재시작 정책으로 실행 중임. 전환용 Compose도 배포 후보 SHA·이미지 digest·PITR·저장소·메일 DNS 등 운영 프리플라이트 입력을 API에 전달하며 실제 프록시 홉 수 `1`을 적용함 | 자체 호스팅 DB·Redis가 TLS를 제공하지 않고 법무 승인·객체 저장소가 미설정이므로 API는 아직 전환용 `development` 런타임임. 실제 호스트 메모리는 `1967 MiB`이고 UFW가 비활성 상태이므로 최소 4GB 증설과 SSH·HTTP·HTTPS 허용 규칙을 보존한 방화벽 활성화를 선행한 뒤 관리형 TLS DB·Redis, 법무 승인값, 객체 저장소와 함께 `deploy/compose.production.yaml`로 전환 |
 | 3 | 릴리스 준비 감사 | CodeQL과 전체 CI가 최신 커밋에서도 통과함. 열린 CodeQL·Dependabot 취약점 경고와 업데이트 PR은 0건임. GitHub `production` 환경에는 운영 API URL·웹 URL·보호 메트릭 토큰을 등록했으며, 인증 메트릭은 `200`, 무인증 요청은 `401`, 워커 건강도는 정상임. 남은 감사 실패 조건은 저장소 Secret 6개와 production Secret 6개임 | 최소 권한 `RELEASE_READINESS_TOKEN`과 실제 스테이징·격리 복구·메일 반송·법무 승인 자료를 준비해 남은 Secret 12개를 등록한 뒤 공식 감사를 재실행 |
 | 4 | 스테이징·인수 증빙 | 최신 CI run `34797563496`와 CodeQL run `34797563500`이 성공했고 웹·브라우저·SBOM artifact가 존재함. 실제 스테이징 부하·워커 soak·후보 인수 실행은 없음 | 스테이징 URL·메트릭 토큰·불변 이미지 digest·격리 복구 DB를 준비하고 부하→soak→후보 인수 순으로 성공 artifact 생성 |
 | 5 | 결제 운영 전환 | 프런트 설정은 토스 테스트 모드이며 실제 결제 운영키·웹훅은 미등록. 소액 승인·중복 승인·웹훅·전액 환불·토스 취소를 봉인하는 12개 판정과 릴리스별 임시 Secret 수명주기 도구는 구현됨 | 토스 운영 클라이언트 키·Secret Key·웹훅 Secret을 비밀 저장소에 등록하고, 실제 후보에서 소액 왕복 증빙을 생성해 임시 Secret 등록→운영 검증→제거 순서로 완료 |
@@ -40,10 +40,16 @@
 같은 날 저장소의 운영 Compose에는 사설망 전용 ClamAV 서비스, 서명 DB 영속 볼륨,
 4GB 메모리 상한, 2GB 영상 검사용 2200MB 제한, 헬스체크 기반 API·영상 워커 시작 순서를
 반영했습니다. 호스트 준비 점검도 API·ClamAV 이미지의 불변 digest, Compose 유효성,
-ClamAV 헬스와 호스트 3310 포트 미노출을 검사합니다. 이는 저장소 구현 완료 상태이며,
-실서버의 `MALWARE_SCANNER_NOT_CONFIGURED` 해소는 커스텀 ClamAV 이미지를 레지스트리에
-게시하고 실제 `CLAMAV_IMAGE=repository@sha256:...`를 등록한 뒤 재배포·프리플라이트해야
-완료로 판정합니다.
+ClamAV 헬스와 호스트 3310 포트 미노출을 검사하며, 관리형 ClamAV를 포함하는 `full`
+모드는 4GB 미만 호스트를 실패 처리합니다.
+
+2026-09-14 수동 승인형 `Publish managed ClamAV image` 워크플로 run `34800240067`이
+성공했습니다. `ghcr.io/gogumaz/hanstone-clamav`에 SBOM·provenance가 결합된 이미지를
+게시했고 익명 pull을 검증했으며, 배포용 불변 참조는
+`ghcr.io/gogumaz/hanstone-clamav@sha256:d5db12ce7cd7a7365ecda2a9db990fb7eda731cbb0c42a4cdd06fc65aef3acee`입니다.
+실서버 재점검에서는 메모리 `1967 MiB`로 새 용량 게이트가 실패해 OOM 위험 없이 배포를
+중단했습니다. 메모리를 최소 4GB로 증설한 뒤 이 digest를 `CLAMAV_IMAGE`에 등록하고
+재배포·프리플라이트해야 `MALWARE_SCANNER_NOT_CONFIGURED`가 해소됩니다.
 
 메일 도메인 프리플라이트는 SPF의 마지막 `all`이 `~all` 또는 `-all`인지, DMARC 정책이
 중복 없이 `quarantine` 또는 `reject`인지, 레거시 `pct`가 있으면 `100`인지까지 검사하도록
