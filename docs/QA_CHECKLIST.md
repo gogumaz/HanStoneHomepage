@@ -125,7 +125,7 @@
 - [x] 이메일 인증 토큰이 일회용이며 인증 상태가 `/me`에 반영됨
 - [x] SMTP 이메일의 인증·재설정 링크, HTML 이스케이프와 발송 결과 감사로그가 검증됨
 - [ ] SMTP 운영 도메인의 SPF·DKIM·DMARC와 반송 처리가 검증됨
-  - Resend SMTP STARTTLS 인증, 제한된 발송키, `email.bounced` 웹훅 생성·활성화, 운영 `RESEND_WEBHOOK_SECRET` 반영과 무서명 요청 `401` 차단까지 확인함. 계정메일 워커도 별도 암호화키와 함께 실행 중임. 남은 완료 조건은 `notify.handol-edu.com`에 Resend가 발급한 MAIL FROM·DKIM 레코드와 강화된 DMARC를 등록하고, 전용 `MAIL_FROM`·`MAIL_SPF_DOMAIN`·`MAIL_DKIM_SELECTORS`를 적용한 뒤 운영 프리플라이트와 실제 영구 반송 시험 증적을 생성하는 것임. 프리플라이트와 `verify:mail-operations`는 DNS·이벤트 원문 대신 SHA-256과 감사기록 ID만 결합해 90일 증빙으로 보관함.
+  - Resend SMTP STARTTLS 인증, 제한된 발송키, `email.bounced` 웹훅 생성·활성화, 운영 `RESEND_WEBHOOK_SECRET` 반영과 무서명 요청 `401` 차단까지 확인함. 계정메일 워커도 별도 암호화키와 함께 실행 중임. 2026-09-14 PHPS 1:1 상담 번호 4로 `notify.handol-edu.com`의 실제 Resend DKIM·발송/반송 CNAME과 강화된 DMARC 등록을 요청했고 `접수중` 상태를 확인함. 남은 완료 조건은 공개 DNS 전파와 Resend 인증을 확인하고 전용 `MAIL_FROM`·`MAIL_SPF_DOMAIN`·`MAIL_DKIM_SELECTORS`를 적용한 뒤 운영 프리플라이트와 실제 영구 반송 시험 증적을 생성하는 것임. 프리플라이트와 `verify:mail-operations`는 DNS·이벤트 원문 대신 SHA-256과 감사기록 ID만 결합해 90일 증빙으로 보관함.
 - [x] 비밀번호 또는 연결된 OAuth ID 재인증 후 계정 탈퇴와 개인정보 익명화가 동작함
 - [x] 탈퇴 시 모든 세션·로그인 수단·학습 진도가 제거되고 같은 이메일로 재가입할 수 있음
 - [x] 소셜 전용 계정 탈퇴 시 현재 계정과 다른 제공사 사용자 ID를 거부함
