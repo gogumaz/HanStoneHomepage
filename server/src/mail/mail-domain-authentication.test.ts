@@ -70,6 +70,27 @@ describe("mail domain authentication", () => {
     expect(cnameLookup).toHaveBeenCalledTimes(2);
   });
 
+  it("accepts Resend's direct p-only DKIM record and custom return-path SPF alias", async () => {
+    const lookup = resolver({
+      "rsend.notify.example.com": ["v=spf1 include:amazonses.com ~all"],
+      "_dmarc.notify.example.com": ["v=DMARC1; p=quarantine; pct=100"],
+      "resend._domainkey.notify.example.com": ["p=QUJDREVGRw=="],
+    });
+
+    const result = await verifyMailDomainAuthentication({
+      mailFrom: "no-reply@notify.example.com",
+      spfDomain: "rsend.notify.example.com",
+      dkimSelectors: ["resend"],
+    }, lookup);
+
+    expect(result).toMatchObject({
+      domain: "notify.example.com",
+      dkimSelectors: ["resend"],
+      dmarcPolicy: "quarantine",
+    });
+    expect(lookup).toHaveBeenCalledWith("rsend.notify.example.com");
+  });
+
   it("does not mistake the From domain SPF for Resend's MAIL FROM SPF", async () => {
     const lookup = resolver({
       "notify.example.com": ["v=spf1 ip4:192.0.2.1 ~all"],
@@ -104,6 +125,11 @@ describe("mail domain authentication", () => {
     [{
       "example.com": ["v=spf1 -all"],
       "_dmarc.example.com": ["v=DMARC1; p=quarantine"],
+    }, "MAIL_DKIM_MISSING"],
+    [{
+      "example.com": ["v=spf1 -all"],
+      "_dmarc.example.com": ["v=DMARC1; p=quarantine"],
+      "mail2026._domainkey.example.com": ["p=not-valid-base64!"],
     }, "MAIL_DKIM_MISSING"],
     [{
       "example.com": ["v=spf1 +all"],

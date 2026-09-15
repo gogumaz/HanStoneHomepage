@@ -34,10 +34,8 @@ describe("production Resend deployment", () => {
     expect(environment).toContain("SMTP_USER=resend");
     expect(environment).toContain("SMTP_PASSWORD=re_운영_RESEND_API_KEY");
     expect(environment).toContain('MAIL_FROM="바둑타고 <no-reply@notify.handol-edu.com>"');
-    expect(environment).toContain("MAIL_SPF_DOMAIN=send.notify.handol-edu.com");
-    expect(environment).toContain(
-      "MAIL_DKIM_SELECTORS=replace_with_resend_dkim_selector_1,replace_with_resend_dkim_selector_2,replace_with_resend_dkim_selector_3",
-    );
+    expect(environment).toContain("MAIL_SPF_DOMAIN=rsend.notify.handol-edu.com");
+    expect(environment).toContain("MAIL_DKIM_SELECTORS=resend");
     expect(environment).toContain("RESEND_WEBHOOK_SECRET=whsec_replace_with_resend_signing_secret");
     expect(environment).not.toMatch(/^SMTP_PASSWORD=re_[A-Za-z0-9]{20,}$/mu);
   });

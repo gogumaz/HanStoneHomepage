@@ -60,11 +60,29 @@ async function readDkimTxt(
   }
   visited.add(hostname);
   const direct = await readTxt(hostname, txtResolver);
-  if (direct.some((record) => /^v=dkim1(?:\s*;|$)/iu.test(record))) return direct;
+  if (direct.some(hasDkimPublicKey)) return direct;
   const aliases = await readCname(hostname, cnameResolver);
   if (aliases.length === 0) return direct;
   if (aliases.length !== 1) throw new MailDomainAuthenticationError("MAIL_DKIM_CNAME_INVALID");
   return readDkimTxt(aliases[0]!, txtResolver, cnameResolver, visited);
+}
+
+function hasDkimPublicKey(record: string): boolean {
+  const tags = record.split(";").map((part) => part.trim()).filter(Boolean).map((part) => {
+    const separator = part.indexOf("=");
+    return separator < 1
+      ? null
+      : { name: part.slice(0, separator).trim().toLowerCase(), value: part.slice(separator + 1).trim() };
+  }).filter((tag): tag is { name: string; value: string } => tag !== null);
+  const versions = tags.filter((tag) => tag.name === "v").map((tag) => tag.value.toLowerCase());
+  const publicKeys = tags.filter((tag) => tag.name === "p").map((tag) => tag.value);
+  return (
+    versions.length <= 1
+    && (versions.length === 0 || versions[0] === "dkim1")
+    && publicKeys.length === 1
+    && publicKeys[0]!.length >= 8
+    && /^[a-z0-9+/]+={0,2}$/iu.test(publicKeys[0]!)
+  );
 }
 
 function requireEnforcingSpf(record: string): void {
@@ -149,10 +167,7 @@ export async function verifyMailDomainAuthentication(
   if (percentages.length > 1 || (percentages.length === 1 && percentages[0] !== "100")) {
     throw new MailDomainAuthenticationError("MAIL_DMARC_PERCENTAGE_INSUFFICIENT");
   }
-  const validDkim = dkimRecordSets.every((records) => records.some((record) => (
-    /^v=dkim1(?:\s*;|$)/iu.test(record)
-    && /(?:^|;)\s*p=[a-z0-9+/=]+(?:;|\s|$)/iu.test(record)
-  )));
+  const validDkim = dkimRecordSets.every((records) => records.some(hasDkimPublicKey));
   if (!validDkim) {
     throw new MailDomainAuthenticationError("MAIL_DKIM_MISSING");
   }
@@ -164,8 +179,7 @@ export async function verifyMailDomainAuthentication(
     dmarc: [...dmarc].sort(),
     dkim: dkimSelectors.map((selector, index) => ({
       selector,
-      records: [...(dkimRecordSets[index] ?? [])
-        .filter((record) => /^v=dkim1(?:\s*;|$)/iu.test(record))].sort(),
+      records: [...(dkimRecordSets[index] ?? []).filter(hasDkimPublicKey)].sort(),
     })),
   });
   return {

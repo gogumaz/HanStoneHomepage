@@ -125,7 +125,7 @@
 - [x] 이메일 인증 토큰이 일회용이며 인증 상태가 `/me`에 반영됨
 - [x] SMTP 이메일의 인증·재설정 링크, HTML 이스케이프와 발송 결과 감사로그가 검증됨
 - [ ] SMTP 운영 도메인의 SPF·DKIM·DMARC와 반송 처리가 검증됨
-  - Resend SMTP STARTTLS 인증, 제한된 발송키, `email.bounced` 웹훅 생성·활성화, 운영 `RESEND_WEBHOOK_SECRET` 반영과 무서명 요청 `401` 차단까지 확인함. 계정메일 워커도 별도 암호화키와 함께 실행 중임. 2026-09-14 PHPS 1:1 상담 번호 4로 `notify.handol-edu.com`의 실제 Resend DKIM·발송/반송 CNAME과 강화된 DMARC 등록을 요청했고 `접수중` 상태를 확인함. 남은 완료 조건은 공개 DNS 전파와 Resend 인증을 확인하고 전용 `MAIL_FROM`·`MAIL_SPF_DOMAIN`·`MAIL_DKIM_SELECTORS`를 적용한 뒤 운영 프리플라이트와 실제 영구 반송 시험 증적을 생성하는 것임. 프리플라이트와 `verify:mail-operations`는 DNS·이벤트 원문 대신 SHA-256과 감사기록 ID만 결합해 90일 증빙으로 보관함.
+  - Resend SMTP STARTTLS 인증, 제한된 발송키, `email.bounced` 웹훅 생성·활성화, 운영 `RESEND_WEBHOOK_SECRET` 반영과 무서명 요청 `401` 차단까지 확인함. 계정메일 워커도 별도 암호화키와 함께 실행 중임. 2026-09-15 PHPS 권한 네임서버와 Cloudflare·Google DNS에서 `notify.handol-edu.com`의 DKIM, `rsend` Return-Path SPF·MX, 강화된 DMARC를 확인했고 애플리케이션 DNS 검증도 통과함. 잘못 등록된 `send` CNAME은 제거하거나 Resend가 제시한 실제 Tracking CNAME으로 교체해야 함. 남은 완료 조건은 Resend 인증 성공 후 전용 `MAIL_FROM`·`MAIL_SPF_DOMAIN=rsend.notify.handol-edu.com`·`MAIL_DKIM_SELECTORS=resend`를 적용하고 운영 프리플라이트와 실제 영구 반송 시험 증적을 생성하는 것임. 프리플라이트와 `verify:mail-operations`는 DNS·이벤트 원문 대신 SHA-256과 감사기록 ID만 결합해 90일 증빙으로 보관함.
   - 관리형 ClamAV 이미지는 수동 확인형 워크플로로 GHCR에 게시하고 SBOM·provenance·불변 digest manifest·익명 pull을 검증함. 운영 호스트 실측 메모리 `1967 MiB`는 최소 4GB 게이트를 통과하지 못하므로 증설 전에는 스캐너를 기동하지 않음.
 - [x] 비밀번호 또는 연결된 OAuth ID 재인증 후 계정 탈퇴와 개인정보 익명화가 동작함
 - [x] 탈퇴 시 모든 세션·로그인 수단·학습 진도가 제거되고 같은 이메일로 재가입할 수 있음
