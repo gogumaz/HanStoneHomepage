@@ -1,22 +1,27 @@
 # 채택 권장안과 남은 검토 사항
 
-기준일: 2026-09-14
+기준일: 2026-09-15
 
 ## 0. 운영 전환 현황과 우선순위
 
-2026-09-14 실제 운영 환경을 기준으로 확인한 상태입니다. 아래 순서의 선행 조건이
+2026-09-15 공개 서비스·DNS·GitHub 상태를 기준으로 확인한 내용입니다. 아래 순서의 선행 조건이
 충족되기 전에는 후보 인수·운영 배포 검증·closeout 워크플로를 임의로 실행하지 않습니다.
 
 | 우선순위 | 항목 | 확인 결과 | 다음 완료 조건 |
 |---|---|---|---|
 | 1 | 카카오 로그인 | `KOE004`의 원인이던 TEST 앱 로그인 비활성화를 해소했고, TEST 앱의 닉네임·이메일 필수 동의도 활성화함. 운영 서버의 REST API 키와 클라이언트 시크릿을 정식 운영 앱 값으로 함께 전환했으며, 운영 앱의 로그인 ON·필수 동의·정확한 콜백 URI·클라이언트 시크릿 활성 상태를 확인함. 운영 URL은 정식 운영 앱과 `https://handol-edu.com/api/v1/auth/oauth/kakao/callback`으로 정상 전환되고, 비로그인 흐름이 `accounts.kakao.com` HTTP 200에 도달하며 `KOE004`가 재발하지 않음 | 실제 카카오 계정으로 동의→콜백→서비스 세션 발급→로그아웃→재로그인까지 브라우저 검증하고 TEST 앱 의존 제거를 최종 확인 |
-| 2 | 운영 API·웹 배포 | API·정적 웹은 배포되어 DB 마이그레이션, Docker health, 외부 liveness/readiness와 정적 번들 검증이 통과함. API·DB·Redis와 메일·문의·과제 워커는 `unless-stopped`로 실행 중이고 UFW는 외부에 SSH·HTTP·HTTPS만 허용함. 현재 영상은 256MB 이하 로컬 MP4 전체를 권한 확인 후 브라우저로 내려받아 재생하도록 확정했으며 S3·HLS·ClamAV 미디어 워커는 고도화 시점까지 비활성화함. 로컬 영상은 내용 해시 증분 백업·30일 보존 정리·디스크 용량 감시를 적용하며 운영자 화면·Prometheus에서 상태를 확인함 | 동일 디스크 백업은 실수·파일 손상 복구용이므로 원본을 별도 매체에도 보관. 자체 호스팅 DB·Redis가 TLS를 제공하지 않고 법무 승인이 미설정이므로 API는 아직 전환용 `development` 런타임임. 4GB 증설 대신 4GB 스왑과 `deploy/compose.production.compact.yaml`·`deploy/compose.production.local-download.yaml`을 사용하고 관리형 TLS DB·Redis와 법무 승인값을 연결 |
-| 3 | 릴리스 준비 감사 | CodeQL과 전체 CI가 최신 커밋에서도 통과함. 열린 CodeQL·Dependabot 취약점 경고와 업데이트 PR은 0건임. GitHub `production` 환경에는 운영 API URL·웹 URL·보호 메트릭 토큰을 등록했으며, 인증 메트릭은 `200`, 무인증 요청은 `401`, 워커 건강도는 정상임. 남은 감사 실패 조건은 저장소 Secret 6개와 production Secret 6개임 | 최소 권한 `RELEASE_READINESS_TOKEN`과 실제 스테이징·격리 복구·메일 반송·법무 승인 자료를 준비해 남은 Secret 12개를 등록한 뒤 공식 감사를 재실행 |
-| 4 | 스테이징·인수 증빙 | 최신 CI run `34797563496`와 CodeQL run `34797563500`이 성공했고 웹·브라우저·SBOM artifact가 존재함. 실제 스테이징 부하·워커 soak·후보 인수 실행은 없음 | 스테이징 URL·메트릭 토큰·불변 이미지 digest·격리 복구 DB를 준비하고 부하→soak→후보 인수 순으로 성공 artifact 생성 |
+| 2 | 운영 API·웹 배포 | API·정적 웹은 배포되어 DB 마이그레이션, Docker health, 외부 liveness/readiness와 정적 번들 검증이 통과함. 2026-09-15 공개 liveness/readiness도 HTTP 200임. API·DB·Redis와 메일·문의·과제 워커의 `unless-stopped` 실행 및 UFW의 SSH·HTTP·HTTPS 제한은 2026-09-14 운영 점검에서 확인함. 현재 영상은 256MB 이하 로컬 MP4 전체를 권한 확인 후 브라우저로 내려받아 재생하도록 확정했으며 S3·HLS·ClamAV 미디어 워커는 고도화 시점까지 비활성화함. 로컬 영상은 내용 해시 증분 백업·30일 보존 정리·디스크 용량 감시를 적용하며 운영자 화면·Prometheus에서 상태를 확인함. GitHub의 경로 주입 수정 `5af8624`와 Resend DNS 수정 `eeeee6a`의 운영 런타임 적용은 미확인 | 인증된 운영 SSH로 후보 커밋과 API 이미지 digest를 확인하고 두 수정의 API 배포·건강도 검증을 완료. 동일 디스크 백업은 실수·파일 손상 복구용이므로 원본을 운영자 PC 또는 별도 매체에도 보관. 자체 호스팅 DB·Redis TLS와 법무 승인값을 준비한 뒤 정식 운영 모드로 전환 |
+| 3 | 릴리스 준비 감사 | 최신 커밋 `eeeee6a`의 CI·CodeQL은 모두 성공. 2026-09-15 열린 CodeQL·Dependabot 경고는 각각 0건이며 저장소 Secret은 0개, GitHub `production` 환경 Secret은 운영 API URL·웹 URL·보호 메트릭 토큰 3개뿐임 | 최소 권한 `RELEASE_READINESS_TOKEN`과 실제 스테이징·격리 복구·메일 반송·법무 승인 자료를 준비하고 릴리스 준비 감사가 요구하는 Secret을 등록한 뒤 공식 감사를 재실행 |
+| 4 | 스테이징·인수 증빙 | 최신 CI run `34921418781`과 CodeQL run `34921418738`이 성공함. 실제 스테이징 부하·워커 soak·후보 인수 실행은 없음 | 스테이징 URL·메트릭 토큰·불변 이미지 digest·격리 복구 DB를 준비하고 부하→soak→후보 인수 순으로 성공 artifact 생성 |
 | 5 | 결제 운영 전환 | 프런트 설정은 토스 테스트 모드이며 실제 결제 운영키·웹훅은 미등록. 소액 승인·중복 승인·웹훅·전액 환불·토스 취소를 봉인하는 12개 판정과 릴리스별 임시 Secret 수명주기 도구는 구현됨 | 토스 운영 클라이언트 키·Secret Key·웹훅 Secret을 비밀 저장소에 등록하고, 실제 후보에서 소액 왕복 증빙을 생성해 임시 Secret 등록→운영 검증→제거 순서로 완료 |
 | 6 | 메일·DNS·TLS | Resend SMTP `smtp.resend.com:587` STARTTLS 인증이 통과했고 제한된 발송키를 사용함. `https://handol-edu.com/api/v1/mail/webhooks/resend`의 `email.bounced` 웹훅이 Resend에서 `Enabled`이며 서명 Secret도 운영 서버에 반영됨. 계정메일 워커가 암호화키와 함께 정상 실행 중이고 무서명 웹훅 요청은 `401`로 차단됨. 2026-09-15 PHPS 권한 네임서버와 Cloudflare·Google DNS에서 `notify.handol-edu.com`의 DKIM, `rsend` Return-Path SPF·MX, 강화된 DMARC를 확인했고 애플리케이션 DNS 검증도 통과함. 잘못 등록된 `send` CNAME 대상은 존재하지 않음 | PHPS에 잘못된 `send.notify.handol-edu.com` CNAME 제거 또는 Resend가 제시한 실제 Tracking CNAME 교체를 요청. Resend `Verify DNS Records` 성공 후 `MAIL_FROM=no-reply@notify.handol-edu.com`, `MAIL_SPF_DOMAIN=rsend.notify.handol-edu.com`, `MAIL_DKIM_SELECTORS=resend`를 운영 서버에 반영하고 프리플라이트와 실제 영구 반송 시험 증빙 생성 |
 | 7 | 법무·사업자 정보 | 상호·대표자·사업자번호·통신판매업·고객센터·정책 승인값이 확정되지 않음 | 실제 값을 입력하고 이용약관·개인정보·환불·보호자 동의문 법률 검토와 승인 기록 완료 |
 | 8 | 최종 릴리스 종료 | 운영 배포 검증과 closeout 실행 이력 없음 | 성공한 후보 인수→실제 배포→운영 검증→closeout을 동일 릴리스 ID·후보 SHA·이미지 digest로 연결해 90일 보관 |
+
+즉시 처리할 운영 순서는 잘못된 `send.notify.handol-edu.com` CNAME 정정 → Resend 도메인
+인증 → 운영 메일 환경 전환·실제 발송/반송 검증입니다. 이와 별개로 두 API 수정의 운영 배포
+확인과 운영자 PC·분리 매체 백업 복제 검증을 진행합니다. HLS와 객체 저장소는 서비스 고도화
+시점까지 보류합니다.
 
 2026-09-14 운영 재점검에서 API·DB·Redis·계정메일·문의알림·과제알림 프로세스는 모두
 실행 중이고 공개 홈페이지·liveness·readiness가 HTTP 200임을 확인했습니다. 다만 완전한
@@ -70,11 +75,11 @@
 
 메일 도메인 프리플라이트는 SPF의 마지막 `all`이 `~all` 또는 `-all`인지, DMARC 정책이
 중복 없이 `quarantine` 또는 `reject`인지, 레거시 `pct`가 있으면 `100`인지까지 검사하도록
-강화했습니다. 2026-09-14 재조회한 `handol-edu.com` SPF는
+강화했습니다. 2026-09-14 당시 재조회한 `handol-edu.com` SPF는
 `v=spf1 ip4:115.71.237.165 ~all`로 이 기준을 통과하지만 DMARC는
-`v=DMARC1; p=none;`이어서 실패합니다. `notify.handol-edu.com`과
-`_dmarc.notify.handol-edu.com`은 현재 와일드카드 영향으로 `handol-edu.com`을 가리키는
-CNAME으로 응답하며 Resend 전용 SPF·DMARC가 아닙니다. 확인한 `mail2026`·`default`·`selector1`
+`v=DMARC1; p=none;`이어서 실패했습니다. 당시 `notify.handol-edu.com`과
+`_dmarc.notify.handol-edu.com`은 와일드카드 영향으로 `handol-edu.com`을 가리키는
+CNAME으로 응답하며 Resend 전용 SPF·DMARC가 아니었습니다. 확인한 `mail2026`·`default`·`selector1`
 DKIM 선택자에는 TXT 공개키가 없었고 `mail.handol-edu.com`의 25·465·587 포트도 외부에서
 연결되지 않았습니다. Resend가 발급한 MAIL FROM·DKIM DNS 레코드와
 명시적인 `_dmarc.notify.handol-edu.com` 정책을 등록해 와일드카드보다 우선하게 하고
